@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      Countdown labels.
+
+      Declared as plurals rather than "In %d days" with a substituted number, because plural
+      rules are not a two-case problem in every language — Arabic has six forms, Polish three.
+      Concatenating a number onto a fixed noun produces text that is wrong for most of the
+      world, and the mistake is invisible to anyone testing in English.
+    -->
+    <string name="countdown_today">Today</string>
+    <string name="countdown_tomorrow">Tomorrow</string>
+    <string name="countdown_yesterday">Yesterday</string>
+    <string name="countdown_next_week">Next week</string>
+    <string name="countdown_starting_soon">Starting soon</string>
+    <string name="countdown_completed">Completed</string>
+    <string name="countdown_expired">Expired</string>
+
+    <plurals name="countdown_in_days">
+        <item quantity="one">In %1$d day</item>
+        <item quantity="other">In %1$d days</item>
+    </plurals>
+
+    <plurals name="countdown_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+
+    <!-- The large numeral on a card, with its unit. -->
+    <plurals name="countdown_unit_days">
+        <item quantity="one">day</item>
+        <item quantity="other">days</item>
+    </plurals>
+
+    <!-- Event categories. -->
+    <string name="category_general">General</string>
+    <string name="category_birthday">Birthday</string>
+    <string name="category_holiday">Holiday</string>
+    <string name="category_travel">Travel</string>
+    <string name="category_work">Work</string>
+    <string name="category_education">Education</string>
+    <string name="category_health">Health</string>
+    <string name="category_finance">Finance</string>
+    <string name="category_entertainment">Entertainment</string>
+    <string name="category_relationship">Relationship</string>
+
+</resources>
