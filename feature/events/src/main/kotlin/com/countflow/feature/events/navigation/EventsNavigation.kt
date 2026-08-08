@@ -3,7 +3,7 @@ package com.countflow.feature.events.navigation
 import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
-import com.countflow.feature.events.create.CreateEventScreen
+import com.countflow.feature.events.edit.CreateEventScreen
 import com.countflow.feature.events.home.HomeScreen
 import kotlinx.serialization.Serializable
 
@@ -42,18 +42,22 @@ fun NavController.navigateToEditEvent(eventId: String) = navigate(EditEventRoute
  * Navigation out of this feature is expressed as callbacks so the module never depends on
  * another feature — cross-feature wiring is `:app`'s responsibility.
  *
- * @param onNavigateToCreateEvent invoked when the user starts a new event.
+ * `CreateEventRoute` and `EditEventRoute` share a screen and a ViewModel; the ViewModel reads
+ * the route from its `SavedStateHandle` to decide whether it is creating or amending.
+ *
  * @param onNavigateToSettings invoked when the user opens settings.
  * @param onNavigateBack invoked to pop the current destination.
  */
 fun NavGraphBuilder.eventsSection(
     onNavigateToCreateEvent: () -> Unit,
+    onNavigateToEditEvent: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     composable<HomeRoute> {
         HomeScreen(
             onNavigateToCreateEvent = onNavigateToCreateEvent,
+            onNavigateToEditEvent = onNavigateToEditEvent,
             onNavigateToSettings = onNavigateToSettings,
         )
     }

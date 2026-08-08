@@ -7,6 +7,7 @@ import androidx.navigation.compose.rememberNavController
 import com.countflow.feature.events.navigation.HomeRoute
 import com.countflow.feature.events.navigation.eventsSection
 import com.countflow.feature.events.navigation.navigateToCreateEvent
+import com.countflow.feature.events.navigation.navigateToEditEvent
 import com.countflow.feature.premium.navigation.navigateToPremium
 import com.countflow.feature.premium.navigation.premiumSection
 import com.countflow.feature.settings.navigation.navigateToAbout
@@ -33,6 +34,7 @@ fun CountFlowNavHost(
     ) {
         eventsSection(
             onNavigateToCreateEvent = navController::navigateToCreateEvent,
+            onNavigateToEditEvent = navController::navigateToEditEvent,
             onNavigateToSettings = navController::navigateToSettings,
             onNavigateBack = navController::popBackStack,
         )
