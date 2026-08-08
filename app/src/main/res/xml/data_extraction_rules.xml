@@ -5,9 +5,18 @@
   Both sections are currently permissive: CountFlow's data is a list of the user's own
   countdown events, and restoring them onto a new device is the behaviour a user expects.
 
-  MILESTONE 4: widget bindings must be excluded from both. A binding maps an appWidgetId to
-  an event, and appWidgetIds are allocated by the launcher on the device that created them —
-  restoring them elsewhere would point widgets at the wrong events or at nothing.
+  WIDGET BINDINGS: cannot be excluded here. Android's data-extraction-rules operate at file
+  granularity — a whole database, a whole SharedPreferences file — not at the table level within
+  one file, and widget_bindings lives in the same countflow.db as events and reminders, which we
+  do want backed up. Splitting bindings into a second Room database purely to make them
+  excludable is a real option but a bigger change than this file; not taken up for Milestone 4.
+
+  The mitigation instead is on the read side: appWidgetId values are allocated by the launcher,
+  so restored binding rows can never coincidentally match live widget ids on a new device.
+  WidgetLifecycleCoordinator.pruneOrphans(), called at app startup by
+  GlanceWidgetRefreshScheduler against the launcher's actual live ids, discards them
+  automatically on first run — the rows may travel with a backup, but they stop pointing at
+  anything real the moment the app first checks. See KNOWN_ISSUES.md and DECISIONS.md.
 -->
 <data-extraction-rules>
     <cloud-backup />
