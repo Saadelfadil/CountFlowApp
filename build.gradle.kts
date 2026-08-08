@@ -11,4 +11,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.hilt) apply false
+    // Declared here so the Room Gradle plugin lands on the shared buildscript classpath. The
+    // convention plugin depends on it `compileOnly`, so without this its RoomExtension type is
+    // absent at execution time and applying the convention fails.
+    alias(libs.plugins.room) apply false
 }
