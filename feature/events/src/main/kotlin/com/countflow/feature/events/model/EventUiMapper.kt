@@ -1,12 +1,11 @@
 package com.countflow.feature.events.model
 
 import com.countflow.core.domain.countdown.CountdownEngine
-import com.countflow.core.domain.countdown.CountdownLabel
-import com.countflow.core.domain.countdown.CountdownResult
+import com.countflow.core.domain.countdown.showsMeaningfulDayCount
 import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.Event
-import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.model.ProgressStyle
+import com.countflow.core.domain.model.defaultEmoji
 import java.time.Instant
 import java.time.ZoneId
 import javax.inject.Inject
@@ -47,7 +46,7 @@ class EventUiMapper @Inject constructor(
             category = event.category,
             label = countdown.label,
             daysValue = countdown.calendarDaysRemaining.absoluteValue.toInt(),
-            showDaysValue = countdown.showsDayCount(),
+            showDaysValue = countdown.showsMeaningfulDayCount,
             progress = countdown.percentComplete,
             progressPercent = countdown.percentCompleteWhole,
             showProgress = event.defaultProgressStyle != ProgressStyle.NONE,
@@ -57,46 +56,4 @@ class EventUiMapper @Inject constructor(
             isArchived = event.isArchived,
         )
     }
-
-    /**
-     * Whether the headline number adds anything beyond the label.
-     *
-     * "1" next to "Tomorrow" is noise, and "0" next to "Today" is worse — it reads as an error.
-     * Only counts of two or more earn the large numeral.
-     */
-    private fun CountdownResult.showsDayCount(): Boolean = when (label) {
-        CountdownLabel.Today,
-        CountdownLabel.Tomorrow,
-        CountdownLabel.Yesterday,
-        CountdownLabel.StartingSoon,
-        CountdownLabel.Completed,
-        CountdownLabel.Expired,
-        -> false
-
-        else -> calendarDaysRemaining.absoluteValue >= MIN_DAYS_WORTH_SHOWING
-    }
-
-    private companion object {
-        const val MIN_DAYS_WORTH_SHOWING = 2
-    }
 }
-
-/**
- * The emoji shown when an event has none of its own.
- *
- * A per-category default rather than a single generic glyph: a list of identical placeholder
- * icons is harder to scan than one where holidays and birthdays look different at a glance.
- */
-internal val EventCategory.defaultEmoji: String
-    get() = when (this) {
-        EventCategory.GENERAL -> "📅"
-        EventCategory.BIRTHDAY -> "🎂"
-        EventCategory.HOLIDAY -> "🎄"
-        EventCategory.TRAVEL -> "✈️"
-        EventCategory.WORK -> "💼"
-        EventCategory.EDUCATION -> "🎓"
-        EventCategory.HEALTH -> "🩺"
-        EventCategory.FINANCE -> "💰"
-        EventCategory.ENTERTAINMENT -> "🎮"
-        EventCategory.RELATIONSHIP -> "💛"
-    }

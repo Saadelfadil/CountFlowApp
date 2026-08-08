@@ -45,4 +45,16 @@ value class ReminderId(val value: String) {
  * widget bindings must be excluded from cloud backup and device transfer.
  */
 @JvmInline
-value class AppWidgetId(val value: Int)
+value class AppWidgetId(val value: Int) {
+
+    companion object {
+        /**
+         * The value Android's own `AppWidgetManager.INVALID_APPWIDGET_ID` uses.
+         *
+         * Restated here rather than imported so this module keeps no Android dependency
+         * (D-003) — it is the platform's well-known sentinel, not a value CountFlow chose, so
+         * duplicating the literal costs nothing in practice and is not a real coupling.
+         */
+        const val INVALID: Int = 0
+    }
+}

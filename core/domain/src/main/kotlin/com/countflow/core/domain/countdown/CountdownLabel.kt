@@ -50,3 +50,31 @@ sealed interface CountdownLabel {
      */
     data class DaysAgo(val days: Int) : CountdownLabel
 }
+
+/**
+ * Whether a headline day count adds anything beyond [CountdownResult.label] on its own.
+ *
+ * "1" next to "Tomorrow" is noise, and "0" next to "Today" reads as an error. Every label other
+ * than the six near-term tokens already implies a count of two or more by construction — see
+ * [CountdownLabel.InDays] and [CountdownLabel.DaysAgo]'s own documentation — so this is a pure
+ * function of which label applies, not a second threshold check that could drift from the one
+ * [CountdownEngine] already used to choose the label.
+ *
+ * Shared by the app's event list and the widget renderer, which is why it lives beside the label
+ * type itself rather than inside either consumer's mapper.
+ */
+val CountdownResult.showsMeaningfulDayCount: Boolean
+    get() = when (label) {
+        CountdownLabel.Today,
+        CountdownLabel.Tomorrow,
+        CountdownLabel.Yesterday,
+        CountdownLabel.StartingSoon,
+        CountdownLabel.Completed,
+        CountdownLabel.Expired,
+        -> false
+
+        CountdownLabel.NextWeek,
+        is CountdownLabel.InDays,
+        is CountdownLabel.DaysAgo,
+        -> true
+    }
