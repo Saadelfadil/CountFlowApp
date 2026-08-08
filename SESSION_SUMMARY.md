@@ -1,152 +1,171 @@
 # CountFlow
 
-## Session 2
+## Session 3
 
 Date: 2026-08-08
-Current Milestone: **Milestone 1 — Project Foundation (COMPLETE)**
+Current Milestone: **Milestone 2 — Domain, Countdown Engine, Persistence (COMPLETE)**
 
-> **READ THIS FIRST:** Milestone 1 is done and verified — the app builds, installs, launches,
-> and navigates on a real emulator. Do **not** start Milestone 2 without explicit approval.
-> One P0 question is outstanding (see Pending Work): the brief said "Use Kotlin Native", which
-> was interpreted as native Android Kotlin, not Kotlin Multiplatform.
+> **READ THIS FIRST:** Milestone 2 is done. 86 tests pass, `:core:domain` is at 99.4% line
+> coverage with the countdown engine at 100%, and the build is green. Do **not** start
+> Milestone 3 without explicit approval.
 >
 > Authoritative documents, in reading order: `ARCHITECTURE.md` (design, wins on conflict),
-> `PROJECT_STATUS.md` (permanent overview), then this file.
+> `PROJECT_STATUS.md` (permanent overview), `DECISIONS.md` (27 entries), then this file.
+>
+> The Session 2 "Kotlin Native" question is closed: this session's brief specified Room and
+> DataStore, both Android-only, so native Android was confirmed by instruction. The one place
+> that decision is load-bearing is recorded as D-018.
 
 ----------------------------------
 
 ## Objective
 
-Build the complete project foundation: git, Gradle, version catalog, convention plugins, the
-14-module structure, Hilt with WorkManager, the Material 3 theme, and Navigation Compose with
-placeholder destinations. Infrastructure only — explicitly no Room entities, no domain model,
-no widgets, no business logic.
+Build the business model everything else depends on: the complete domain model in pure Kotlin,
+the countdown engine with exhaustive tests, then Room, repositories, and DataStore — in that
+order, and only in that order. No widgets, no UI, no notifications, no billing.
 
 ----------------------------------
 
 ## Completed
 
-**Build infrastructure**
-- Initialized the git repository with a Kotlin/Android `.gitignore`; 7 commits made.
-- Gradle 9.6.1 wrapper, `gradle.properties` (4 GB JVM, parallel, build cache, configuration cache).
-- `gradle/libs.versions.toml` — every version verified to resolve against Maven Central and
-  Google's Maven before use (20 artifacts checked; all 200 OK).
-- Six convention plugins in a `build-logic` composite build.
-- `settings.gradle.kts` with 14 modules, type-safe project accessors, and repository filtering.
-- Installed `platforms;android-37.0` and `build-tools;37.0.0`, which were missing locally.
+**Step 1 — Domain model (`:core:domain`, pure Kotlin/JVM, zero Android)**
+- `Event`, `EventTarget`, `WidgetBinding`, `Reminder` as immutable data classes.
+- `EventCategory`, `WidgetStyle` (with a `isPremium` flag), `ProgressStyle`, `ReminderType`.
+- `AccentColor` as a sealed type: `Dynamic` or `Fixed(argb)`.
+- `EventId`, `ReminderId`, `AppWidgetId` as value classes, so an event id cannot be passed where
+  a reminder id belongs.
+- `EventTarget` encodes the all-day/timed distinction and owns zone resolution.
 
-**Application**
-- `CountFlowApplication` with `@HiltAndroidApp` and `Configuration.Provider` supplying a
-  `HiltWorkerFactory`; manifest removes WorkManager's default initializer.
-- `MainActivity` — single activity, edge-to-edge, system splash screen.
-- Adaptive launcher icon with monochrome layer; `data_extraction_rules.xml`.
+**Step 2 — Countdown engine**
+- `CountdownEngine` computing years, months, weeks, days, hours, minutes, seconds, percentage
+  complete, elapsed, and remaining, plus a status and a display label.
+- `CountdownResult` splits three easily-conflated quantities into distinct fields:
+  `breakdown` (calendar remainders), `totals` (whole units), and `calendarDaysRemaining` (the
+  midnight count a widget should actually display).
+- `CountdownStatus` — COMPLETED, EXPIRED, IMMINENT, TODAY, UPCOMING — drives behaviour.
+- `CountdownLabel` — a sealed token type, not a string — drives text.
+- `CountdownConfig` holds every threshold as data, including the locale's first day of week.
 
-**Design system**
-- Material 3 theme: dynamic colour on by default plus brand light/dark fallback schemes,
-  typography, shapes, and a shared `PlaceholderScreen` with navigable actions.
+**Step 3 — Tests: 86 across three modules, 0 failures**
+- 69 in `:core:domain`, covering DST in both directions, leap years and leap days, timezone
+  travel, all-day versus timed lifetimes, month and year boundaries, past events, progress
+  edge cases, and every label boundary.
+- 11 mapper round-trip tests in `:core:data`; 6 schema guard tests in `:core:database`.
+- Kover gate at 95% on `:core:domain`; actual **99.4% lines, 94% branches**, with the
+  `countdown` and `model` packages at **100%**.
 
-**Core**
-- Injectable dispatcher qualifiers and a `SupervisorJob`-backed application scope.
-- `Logger` facade with a Logcat implementation, bound through Hilt.
+**Step 4 — Room (`:core:database`)**
+- `EventEntity`, `WidgetBindingEntity`, `ReminderEntity` with cascading foreign keys, a unique
+  `(event_id, type)` index on reminders, and indexes on the columns the list filters and sorts by.
+- Converters for enums, `Instant`, and `LocalTime`.
+- Three DAOs. Filtering and sorting run in SQL, sorting via `CASE WHEN` arms so Room verifies
+  the query at compile time.
+- Schema v1 exported to `core/database/schemas` and committed.
+- `Migrations.kt` plus a guard test asserting the migration count matches the schema version.
 
-**Navigation**
-- Type-safe `@Serializable` routes; five destinations across three feature modules; each feature
-  contributes a `NavGraphBuilder` extension and exposes navigation only as callbacks.
+**Step 5 — Repositories**
+- Contracts in the domain: `EventRepository`, `WidgetBindingRepository`, `ReminderRepository`,
+  `PreferencesRepository`, with `EventFilter`, `EventSort`, `ThemeMode`, `UserPreferences`.
+- Room-backed implementations in `:core:data`, mapping on the IO dispatcher.
 
-**Verification (all performed, not assumed)**
-- `./gradlew assembleDebug` — BUILD SUCCESSFUL from clean.
-- `./gradlew :app:lintDebug` with `abortOnError=true`, `checkDependencies=true` — 0 errors.
-- `./gradlew test` — passes (no test classes yet).
-- Installed on a booted API 36 emulator; cold launch 1506 ms, warm 1172 ms (debug build,
-  software GPU — not representative of release).
-- Drove the full navigation graph through `uiautomator`: Home → Settings → Premium → back →
-  About → back → back → Home → New event → back. **All 9 transitions passed.**
-- Captured light and dark screenshots; both render correctly. Dynamic colour confirmed active
-  (the emulator wallpaper produced a blue scheme, not the teal brand fallback).
-- Crash buffer empty; no `FATAL` or app `AndroidRuntime` entries.
+**Step 6 — DataStore**
+- Preferences only, with a corruption handler and defensive enum parsing.
 
-**Documentation** — created `PROJECT_STATUS.md`, `DECISIONS.md` (17 entries), `KNOWN_ISSUES.md`,
-`ROADMAP.md`, `CHANGELOG.md`, `TODO.md`; updated this file.
+**Build**
+- `countflow.android.room` convention plugin; Kover; `java.time.Clock` provided through DI.
+
+----------------------------------
+
+## Two defects found and fixed
+
+Both were found by tests, not by inspection, and both would have shipped.
+
+1. **All-day events reported `IMMINENT` for their whole day.** The imminent threshold was
+   applied to every event, so once an all-day event's midnight start had passed it satisfied the
+   check indefinitely. A widget would have shown a live ticking countdown to a moment already
+   gone. Fixed by excluding all-day events from the check entirely (D-023).
+
+2. **`remaining` counted upward for an event in progress.** It was the absolute distance to the
+   target, so an all-day event twelve hours into its day reported "12 hours" while `isPast` was
+   false — reading as twelve hours still to wait. Fixed by separating three quantities that had
+   been one: `remaining` (forward-looking, clamps to zero), `gap` (unsigned, feeds breakdown and
+   totals), and `calendarDaysRemaining` (signed).
+
+A third issue was a test error rather than a code error, and is worth recording because the
+distinction is the heart of this milestone: across a spring-forward weekend the engine reports
+a three-day calendar gap and a 71-hour duration. Both are correct. I had written the expectation
+as two days and 23 hours. The test now asserts both numbers and explains why they differ.
 
 ----------------------------------
 
 ## Files Created
 
-29 Kotlin files, 1,097 lines. Full tree in "Current Project Structure" below. New this session:
+47 Kotlin files added this session (76 total, ~3,600 lines).
 
 ```
-.gitignore  gradle.properties  local.properties (git-ignored)
-gradlew  gradlew.bat  gradle/wrapper/*  gradle/libs.versions.toml
-settings.gradle.kts  build.gradle.kts
+core/domain/src/main/kotlin/com/countflow/core/domain/
+    model/{Ids,EventCategory,WidgetStyle,AccentColor,EventTarget,Event,WidgetBinding,Reminder}.kt
+    countdown/{CountdownStatus,CountdownLabel,CountdownConfig,CountdownResult,CountdownEngine}.kt
+    repository/{EventRepository,WidgetBindingRepository,ReminderRepository,PreferencesRepository}.kt
+core/domain/src/test/kotlin/com/countflow/core/domain/
+    testing/TestFixtures.kt
+    countdown/{CountdownEngineLabelTest,CountdownEngineCalendarTest,
+               CountdownEngineTimeZoneTest,CountdownEngineProgressTest}.kt
+    model/DomainModelTest.kt
+    repository/RepositoryContractTest.kt
 
-build-logic/settings.gradle.kts
-build-logic/convention/build.gradle.kts
-build-logic/convention/src/main/kotlin/
-    AndroidApplicationConventionPlugin.kt   AndroidLibraryConventionPlugin.kt
-    AndroidComposeConventionPlugin.kt       AndroidFeatureConventionPlugin.kt
-    AndroidHiltConventionPlugin.kt          JvmLibraryConventionPlugin.kt
-    com/countflow/gradle/KotlinAndroid.kt   com/countflow/gradle/ProjectExtensions.kt
+core/database/src/main/kotlin/com/countflow/core/database/
+    {CountFlowDatabase,Migrations}.kt
+    entity/{EventEntity,WidgetBindingEntity,ReminderEntity,WidgetBindingWithEvent}.kt
+    dao/{EventDao,WidgetBindingDao,ReminderDao}.kt
+    converter/Converters.kt
+    di/DatabaseModule.kt
+core/database/src/test/kotlin/com/countflow/core/database/DatabaseSchemaTest.kt
+core/database/schemas/com.countflow.core.database.CountFlowDatabase/1.json
 
-app/build.gradle.kts  app/proguard-rules.pro  app/src/main/AndroidManifest.xml
-app/src/main/kotlin/com/countflow/app/{CountFlowApplication,MainActivity}.kt
-app/src/main/kotlin/com/countflow/app/navigation/CountFlowNavHost.kt
-app/src/main/res/{values/{strings,colors,themes}.xml, drawable/ic_launcher_foreground.xml,
-                  mipmap-anydpi-v26/{ic_launcher,ic_launcher_round}.xml,
-                  xml/data_extraction_rules.xml}
+core/data/src/main/kotlin/com/countflow/core/data/
+    mapper/{EventMapper,WidgetBindingMapper,ReminderMapper}.kt
+    repository/{EventRepositoryImpl,WidgetBindingRepositoryImpl,ReminderRepositoryImpl}.kt
+    preferences/PreferencesRepositoryImpl.kt
+    di/{DataModule,DataStoreModule}.kt
+core/data/src/test/kotlin/com/countflow/core/data/mapper/MapperRoundTripTest.kt
 
-core/common/src/main/kotlin/com/countflow/core/common/
-    di/{Dispatcher,CoroutinesModule,LoggingModule}.kt   log/{Logger,AndroidLogger}.kt
-core/designsystem/src/main/kotlin/com/countflow/core/designsystem/
-    theme/{Color,Type,Shape,Theme}.kt   component/PlaceholderScreen.kt
-
-feature/events/src/.../{navigation/EventsNavigation,home/HomeScreen,create/CreateEventScreen}.kt
-feature/settings/src/.../{navigation/SettingsNavigation,SettingsScreen,about/AboutScreen}.kt
-feature/premium/src/.../{navigation/PremiumNavigation,PremiumScreen}.kt
-
-build.gradle.kts in all 14 modules
-
-PROJECT_STATUS.md  DECISIONS.md  KNOWN_ISSUES.md  ROADMAP.md  CHANGELOG.md  TODO.md
+core/common/src/main/kotlin/com/countflow/core/common/di/TimeModule.kt
+build-logic/convention/src/main/kotlin/AndroidRoomConventionPlugin.kt
 ```
-
-----------------------------------
 
 ## Files Modified
 
-- `SESSION_SUMMARY.md` — rewritten from Session 1 to Session 2.
-- `ARCHITECTURE.md` — unchanged. Still authoritative; note that D-002 supersedes its §4.3
-  snapshot recommendation.
+`gradle/libs.versions.toml` (Room plugin, Kover, javax.inject; kotlinx-datetime removed),
+`build.gradle.kts` (Room plugin on the buildscript classpath),
+`build-logic/convention/build.gradle.kts`, `core/{domain,database,data}/build.gradle.kts`,
+and all seven documents.
 
 ----------------------------------
 
 ## Architecture Decisions
 
-Full detail with alternatives and tradeoffs is in `DECISIONS.md` (D-001 … D-017). The four that
-changed how this session was built:
+Ten new entries, D-018 to D-027, all detailed in `DECISIONS.md`. The ones that shape the code:
 
-### Owner decisions applied
-- **D-002 — no snapshot layer.** Room is the single source of truth; widgets will read it
-  directly. This reverses the Session 1 recommendation and simplifies the MVP. The cost is that
-  `:widget:glance` will depend on the data layer rather than a narrow contract, which weakens
-  D-004's reusability goal. Recoverable later by inserting a mapper.
-- **D-007 — Glance 1.1.1 stable**, not the 1.3.0-alpha02 Google's own sample uses.
-- **D-008 — the replacement refresh strategy** is approved and scheduled for Milestone 8.
-- **D-012 to D-015 — SDK levels and the three spec corrections** are locked in.
-
-### Decisions forced by the toolchain during this session
-- **D-005 — `android.builtInKotlin=false` and `android.newDsl=false`.** AGP 9 enables built-in
-  Kotlin by default and then refuses to run `org.jetbrains.kotlin.android`. KSP, Hilt, and the
-  Compose compiler are all documented against that plugin, and both Hilt and Room need KSP — so
-  the built-in path would have put DI and persistence on unproven ground. Google's own
-  `platform-samples` sets the same two flags at the same AGP version. **Both flags are removed
-  in AGP 10** (TD-001).
-- **D-006 — Kotlin 2.3.21, not 2.4.0.** KSP's newest release (2.3.11) is still built against
-  Kotlin 2.3.20. Google's sample runs Kotlin 2.4.0 but does no annotation processing, so it
-  proves nothing about KSP. A matched pair beats a newer minor version.
-- **D-003 — `:core:domain` is a pure Kotlin/JVM module**, so an Android import there is a
-  compile error rather than a review comment.
-- **D-017 — convention plugins before modules.** With 14 modules, duplicated Gradle config would
-  have drifted immediately. AGP 9's DSL changes hit the convention plugins first, which is
-  exactly where you want to absorb them once instead of fourteen times.
+- **D-018 — `java.time`, not `kotlinx-datetime`.** Strongest DST and calendar semantics, native
+  at minSdk 31. **This is the one thing in `:core:domain` that would have to change for Kotlin
+  Multiplatform**, recorded explicitly because of the Session 2 ambiguity.
+- **D-019 — `:core:database` depends on `:core:domain`.** Made, then reversed mid-session. The
+  independent version made every enum column stringly typed and left converters with nothing to
+  do. The database is part of the data layer; depending on the domain is the correct direction.
+- **D-020 — enums persisted by name, never ordinal.** An ordinal is smaller and is a live
+  grenade: inserting a constant mid-enum silently reinterprets every stored row.
+- **D-021 — the domain returns label tokens, not strings.** Returning `"Tomorrow"` would
+  hard-code English and break plural rules.
+- **D-022 — breakdown, totals, and calendar days are three separate fields.** Conflating them is
+  the classic countdown bug.
+- **D-023 — all-day events are never `IMMINENT`.** Found by a failing test.
+- **D-024 — destructive migration is never enabled.** It would delete every countdown the user
+  made and blank every widget, on an ordinary update.
+- **D-025 — coverage is enforced at 95% on `:core:domain`,** not merely reported.
+- **D-026 — `java.time.Clock` injected directly,** no bespoke wrapper. Nothing outside the DI
+  module calls `Instant.now()`.
+- **D-027 — `CASE WHEN` sorting, not `@RawQuery`,** to keep Room's compile-time SQL verification.
 
 ----------------------------------
 
@@ -154,139 +173,107 @@ changed how this session was built:
 
 ```
 CountFlow App/
-├── ARCHITECTURE.md  PROJECT_STATUS.md  SESSION_SUMMARY.md
-├── DECISIONS.md  KNOWN_ISSUES.md  ROADMAP.md  CHANGELOG.md  TODO.md
-├── settings.gradle.kts  build.gradle.kts  gradle.properties
-├── gradlew  gradlew.bat  gradle/{wrapper/, libs.versions.toml}
-├── build-logic/                 6 convention plugins
-├── app/                         Application, MainActivity, NavHost, resources
+├── 8 markdown documents
+├── build-logic/                7 convention plugins (Room added)
+├── app/                        Application, MainActivity, NavHost
 ├── core/
-│   ├── common/                  dispatchers, app scope, logging       [implemented]
-│   ├── designsystem/            M3 theme + PlaceholderScreen          [implemented]
-│   ├── domain/                  pure Kotlin/JVM                       [empty — M2]
-│   ├── data/                                                          [empty — M2]
-│   ├── database/                                                      [empty — M2]
-│   ├── notifications/                                                 [empty — M7]
-│   ├── analytics/                                                     [empty — M9]
-│   └── billing/                                                       [empty — M9]
-├── feature/
-│   ├── events/                  Home + Create/Edit placeholders       [nav done]
-│   ├── settings/                Settings + About placeholders         [nav done]
-│   └── premium/                 Premium placeholder                   [nav done]
-└── widget/
-    ├── engine/                                                        [empty — M4]
-    └── glance/                                                        [empty — M4]
+│   ├── common/                 dispatchers, scope, logging, Clock       [implemented]
+│   ├── designsystem/           M3 theme + PlaceholderScreen             [implemented]
+│   ├── domain/                 model, countdown engine, contracts       [COMPLETE]
+│   ├── database/               Room, 3 entities, 3 DAOs, schema v1      [COMPLETE]
+│   ├── data/                   repositories, mappers, DataStore         [COMPLETE]
+│   ├── notifications/                                                   [empty — M7]
+│   ├── analytics/                                                       [empty — M9]
+│   └── billing/                                                         [empty — M9]
+├── feature/{events,settings,premium}/    navigation + placeholders      [nav done]
+└── widget/{engine,glance}/                                              [empty — M4]
 ```
 
 ----------------------------------
 
 ## Dependencies Added
 
-All declared in `gradle/libs.versions.toml`; every version was verified to resolve before use.
+| Component | Version | Why |
+|---|---|---|
+| `androidx.room:room-gradle-plugin` | 2.8.4 | schema export via convention plugin |
+| `org.jetbrains.kotlinx.kover` | 0.9.9 | coverage gate on `:core:domain` |
+| `javax.inject` | 1 | `@Inject` in the domain without pulling in Hilt |
 
-| Component | Version | | Component | Version |
-|---|---|---|---|---|
-| AGP | 9.2.1 | | Hilt (Dagger) | 2.60.1 |
-| Gradle | 9.6.1 | | androidx.hilt | 1.4.0 |
-| Kotlin | 2.3.21 | | Room *(declared, unused)* | 2.8.4 |
-| KSP | 2.3.11 | | DataStore *(declared, unused)* | 1.2.1 |
-| compile/target/min SDK | 37 / 36 / 31 | | WorkManager | 2.11.2 |
-| Compose BOM | 2026.06.01 | | Glance | 1.1.1 |
-| Navigation Compose | 2.9.8 | | kotlinx-coroutines | 1.11.0 |
-| Lifecycle | 2.11.0 | | kotlinx-serialization-json | 1.11.0 |
-| Activity Compose | 1.13.0 | | kotlinx-datetime | 0.6.2 |
-| core-splashscreen | 1.2.0 | | Testing: JUnit4 4.13.2, Turbine 1.2.1, Truth 1.4.5 | |
+Removed: `kotlinx-datetime` (superseded by `java.time`, D-018).
+
+Room 2.8.4 and DataStore 1.2.1 were already in the catalog and are now actually applied.
 
 ----------------------------------
 
 ## Current Features Working
 
-- Builds, installs, and launches on API 36 with no crashes.
-- Five destinations with a correct back stack — verified by driving the UI, not by inspection.
-- Material 3 light and dark theming with dynamic colour active.
-- Hilt component graph builds and injects at runtime.
-- WorkManager configured with `HiltWorkerFactory`, ready for injected workers.
+- Countdown computation correct across DST both directions, leap years, leap days, timezone
+  travel, all-day and timed events, month and year boundaries, and past events.
+- Persistence: events, widget bindings, and reminders with cascading deletes.
+- Repositories exposing `Flow`s the UI can collect; DataStore preferences with defaults.
+- The app still builds, installs, and runs — unchanged from Session 2, since no UI was touched.
 
 ----------------------------------
 
 ## Pending Work
 
-**P0 — blocks Session 3**
-1. **Confirm "Kotlin Native" meant native Android, not Kotlin Multiplatform.** The brief listed
-   it beside an entirely Android-specific stack (Glance, Room, Hilt, Compose), so it was built
-   as a native Android app in Kotlin. If KMP was actually intended, that is foundational and
-   Milestone 1 must be revisited before more code lands.
-2. **Explicit approval to begin Milestone 2.**
+**P0 — blocks Session 4**
+1. **Approval to begin Milestone 3.**
+2. **Confirm the countdown label policy** (see "Requires approval" below). Cheap to change now,
+   expensive once screens and widgets depend on it.
 
-**P1 — Milestone 2:** domain models, `CountdownEngine` plus its test suite, Room entities and
-DAOs with a migration harness, repositories, DataStore.
+**P1 — Milestone 3:** open with TD-003 (Robolectric + DAO tests), then home screen, create/edit
+form, ViewModels, and mapping `CountdownLabel` tokens to string resources with proper plurals.
 
-**P2 and beyond:** Milestones 3–9 per `ROADMAP.md`. Full task breakdown in `TODO.md`.
+Full breakdown in `TODO.md`.
 
 ----------------------------------
 
 ## Known Issues
 
-Full detail in `KNOWN_ISSUES.md`. No runtime bugs. The items worth knowing before writing code:
+No runtime bugs. Full detail in `KNOWN_ISSUES.md`.
 
-**Technical debt**
-- **TD-001 (High)** — `android.builtInKotlin=false` / `android.newDsl=false` are removed in
-  AGP 10. Migration to built-in Kotlin is required before upgrading past AGP 9.x. Budget a
-  full session.
-- **TD-002 (Low)** — eight empty scaffold modules cost build time before they hold code.
-- **TD-003 (Medium)** — no tests exist. Test infrastructure is wired; Milestone 2 opens with
-  the `CountdownEngine` suite.
-- **TD-004 (Low)** — the Gradle build cache served stale resource output after a resource
-  *directory* rename. `clean` did not help; only `--no-build-cache` did. Sidestepped by keeping
-  the conventional `-v26` mipmap qualifier. If a resource that exists on disk is ever reported
-  as not found, test with `--no-build-cache` first.
+- **TD-001 (High)** — `builtInKotlin=false` / `newDsl=false` are removed in AGP 10. Unchanged.
+- **TD-003 (Medium, narrowed)** — **no DAO or repository integration tests.** The domain is
+  thoroughly covered and the mappers are round-trip tested, but nothing exercises a real SQLite
+  database. Unverified: that the `CASE WHEN` sort arms order correctly, that the cascade actually
+  deletes, that the empty-set `IN`/`NOT IN` handling behaves, and that `getActiveReminders`
+  filters on both switches. Needs Robolectric; scheduled for the start of Milestone 3.
+- **TD-005 (Low, new)** — ~28 lines of build-script deprecation noise per build, a side effect of
+  TD-001. Filter with `grep -vE "^w: file:.*build.gradle.kts|Deprecated 'org"`.
+- **TD-006 (Low, new)** — title search is ASCII-case-insensitive only; "ÉCOLE" will not match
+  "école".
+- Platform limitations LIM-001 to LIM-006 unchanged and still relevant from Milestone 4 onward.
 
-**Platform limitations that constrain later milestones**
-- **LIM-001** — Glance has no determinate circular progress. Rings must be Canvas bitmaps.
-- **LIM-002** — `PeriodicWorkRequest` has a 15-minute floor; hence D-008.
-- **LIM-003** — widget bitmaps are capped at `6 × screenW × screenH` bytes; exceeding it makes
-  the host **silently drop the widget**.
-- **LIM-004** — Glance has no autosizing text; the sample's workaround inflates a real View per
-  call and uses deprecated `scaledDensity`.
-- **LIM-005** — Hilt cannot inject `GlanceAppWidget`; use `EntryPointAccessors`.
-- **LIM-006** — widget emoji rendering is launcher-dependent; verify on real hardware.
-
-**Accepted lint warnings:** 0 errors, 11 warnings — `OldTargetApi` ×4 (targetSdk 36 with
-compileSdk 37, deliberate), `AndroidGradlePluginVersion` ×5 and `NewerVersionAvailable` ×1
-(informational), `ObsoleteSdkInt` ×1 (the `-v26` qualifier, kept on purpose).
+**Lint:** 0 errors, 10 accepted warnings, all documented.
 
 ----------------------------------
 
 ## Next Session Plan
 
-**Step 0 is a gate.** Resolve the two P0 items above. Do not start Milestone 2 without approval.
+**Step 0 is a gate.** Resolve the two P0 items. Do not start Milestone 3 without approval.
 
-Then, Milestone 2 — database, repositories, and the countdown engine:
+1. Add Robolectric to the test convention plugin and close TD-003 with DAO tests against an
+   in-memory database — the cascade, the four sort arms, the empty-set filter behaviour, and the
+   `getActiveReminders` join. Do this **before** UI code depends on query behaviour nothing has
+   exercised.
+2. Repository tests with Turbine over the returned `Flow`s.
+3. Map `CountdownLabel` tokens to string resources in `:core:designsystem` or `:feature:events`,
+   using `plurals` rather than concatenation.
+4. `EventsViewModel` exposing immutable state via `StateFlow`, combining the repository flow with
+   search and sort inputs.
+5. Home screen: list, realtime search, sort menu, category filter, empty state.
+6. Create/edit form: title, emoji picker, category, date picker, time picker, all-day toggle,
+   accent colour, reminders.
+7. Archive, complete, and delete with undo.
+8. Verify `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug`, then run on the
+   emulator and drive the CRUD flow the way navigation was driven in Session 2.
+9. Write the Milestone 3 rationale note and update all seven documents.
 
-1. Build `:core:domain` first, in pure Kotlin: `Event`, `WidgetBinding`, `EventCategory`,
-   `WidgetStyle`, `ProgressStyle`, `AccentColor` (sealed: `Dynamic` or `Fixed(argb)`), and a
-   `Clock` abstraction. Apply D-013 (style on the binding) and D-014 (epoch millis + zone id +
-   all-day flag).
-2. Write `CountdownEngine` and its tests **together**. Table-driven: DST transitions both
-   directions, leap years, all-day versus timed, targets in a foreign zone, past events, and the
-   exact boundaries where Today / Tomorrow / Next Week / Yesterday / Completed flip. Compare
-   `LocalDate` in the target zone — never divide a duration (D-015).
-3. Define repository interfaces in domain: `EventRepository`, `WidgetBindingRepository`,
-   `PreferencesRepository`.
-4. Add a `countflow.android.room` convention plugin, then `:core:database` — `EventEntity`,
-   `WidgetBindingEntity` with a cascade-delete foreign key, DAOs, converters, schema export,
-   and a migration test harness from version 1.
-5. Implement `:core:data` — repositories returning `Flow`, DataStore for preferences, and
-   entity/domain mappers with round-trip tests.
-6. Verify: `./gradlew assembleDebug test :app:lintDebug` all green, and confirm `:core:domain`
-   still has no Android dependency.
-7. Write the Milestone 2 rationale note and update all seven documents.
-
-Suggested commits: `feat(domain): event and countdown models`,
-`feat(domain): countdown engine with timezone-aware labels`,
-`test(domain): countdown engine dst and boundary coverage`,
-`feat(database): room entities, daos, and migration harness`,
-`feat(data): repositories and datastore preferences`.
+Suggested commits: `test(database): dao and cascade coverage with robolectric`,
+`feat(designsystem): countdown label string resources`,
+`feat(events): home screen with search and sort`,
+`feat(events): create and edit event form`.
 
 ----------------------------------
 
@@ -295,12 +282,12 @@ Suggested commits: `feat(domain): event and countdown models`,
 **✅ Builds Successfully**
 
 Verified from clean this session:
-- `./gradlew clean assembleDebug` → BUILD SUCCESSFUL
-- `./gradlew :app:lintDebug` → BUILD SUCCESSFUL, 0 errors, 11 accepted warnings
-- `./gradlew test` → BUILD SUCCESSFUL
-- Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (40 MB — debug tooling and no R8;
-  not indicative of release size)
-- No dependency cycles; Gradle configures all 14 modules cleanly.
+- `./gradlew clean assembleDebug test :core:domain:koverVerify :app:lintDebug` → BUILD SUCCESSFUL
+- 86 tests, 0 failures — 69 domain, 11 data, 6 database
+- Coverage gate passed: `:core:domain` 99.4% lines against a 95% minimum
+- Lint: 0 errors, 10 warnings, all previously accepted
+- Debug APK 39 MB (debug tooling, no R8)
+- Room schema v1 exported and committed
 
 Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed.
 
@@ -308,79 +295,83 @@ Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed.
 
 ## Tests
 
-- Tests written: **none**
-- Tests passing: **none** (`./gradlew test` succeeds with no test classes)
-- Tests failing: none
+**86 written, 86 passing, 0 failing.**
 
-Infrastructure is in place — JUnit4, Turbine, Truth, and coroutines-test are wired into the
-feature and JVM convention plugins; Compose UI test and `glance-appwidget-testing` are wired
-where relevant. There is genuinely nothing to test yet: Milestone 1 is configuration, a theme,
-and placeholder screens.
+| Module | Tests | What they cover |
+|---|---|---|
+| `:core:domain` | 69 | Labels and statuses, calendar-versus-duration day counts, DST both directions, leap years and days, timezone travel, all-day lifetimes, progress edge cases, model invariants, reminder scheduling, contract defaults |
+| `:core:data` | 11 | Entity/domain round trips: every category, every style combination, every reminder type, dynamic versus fixed accent, all-day flag and zone preservation |
+| `:core:database` | 6 | Schema export present and versioned, every table declared, both cascades declared, migration count matches version |
 
-Milestone 2 opens with the `CountdownEngine` suite, which is pure Kotlin and testable from its
-first line. Later: repositories against in-memory Room with Turbine, ViewModels with a
-`TestDispatcher` rule, and widgets via `GlanceAppWidgetUnitTest`.
+**Coverage** — `:core:domain` 99.4% lines, 94% branches. `countdown` and `model` packages at
+100%. Enforced by `koverVerify` at a 95% minimum, so the build fails if it regresses.
+
+Two techniques worth keeping. The DST tests call `assertCrossesDstTransition`, which fails if a
+transition does *not* fall inside the window under test — without it, a tz database update could
+leave them passing while silently exercising an ordinary week. And the label tests are
+table-driven, so adding a boundary case is one line.
+
+**Not covered:** anything requiring a real SQLite database (TD-003).
 
 ----------------------------------
 
 ## Git Status
 
-Repository initialized this session on branch `master`. Seven commits, ordered so each builds
-on the last:
+Seven commits this session, on `master`, ordered so each builds on the last:
 
 ```
-5cf0d34  chore: initialize gradle wrapper and project scaffolding
-6f46d61  build: add version catalog and convention plugins
-eeedc94  build: add module structure and dependency graph
-3d99b64  feat(designsystem): material 3 theme with dynamic color
-1630563  feat(core): coroutine dispatchers and logging facade
-bb7f170  feat(navigation): navigation graph with placeholder destinations
-a91057d  feat(app): hilt application, workmanager config, and single activity
-         docs: milestone 1 documentation        ← this commit
+7697c26  build: add room convention plugin and coverage gate
+6c30375  feat(domain): event, widget binding, and reminder models
+33cbe07  feat(domain): countdown engine with calendar-accurate day counts
+9338e00  feat(domain): repository contracts
+82d8508  test(domain): dst, leap year, travel, and boundary coverage
+52721cf  feat(database): entities, daos, converters, and schema export
+8b06b56  feat(data): repositories, mappers, and datastore preferences
+         docs: milestone 2 documentation        ← this commit
 ```
 
-No remote configured. `local.properties` is git-ignored.
+Fifteen commits total. No remote configured.
 
 ----------------------------------
 
 ## Developer Notes
 
-- **`ARCHITECTURE.md` is authoritative**, with one exception: **D-002 supersedes its §4.3
-  snapshot recommendation.** The owner chose Room as the single source of truth for the MVP.
-  When the two disagree elsewhere, `ARCHITECTURE.md` wins.
-- **Do not add versions inline in a module's build script.** Everything goes in
-  `libs.versions.toml`. And verify a version resolves before committing to it — several
-  plausible-looking versions were checked this session and the exercise paid for itself.
-- **The convention plugins absorb AGP churn.** AGP 9 made `CommonExtension` non-generic and
-  moved lambda overloads onto the concrete extensions, so shared config uses property access
-  (`extension.defaultConfig.minSdk = …`) rather than block syntax. Expect DSL breakage to
-  surface in `build-logic` first — that is the design working.
-- **Verify at runtime, not just at compile time.** The navigation graph compiled fine while
-  being completely unreachable, because the placeholder screens accepted navigation callbacks
-  without exposing any way to trigger them. Only driving the UI caught it.
-- **Two warnings are load-bearing information.** `OldTargetApi` and `ObsoleteSdkInt` are
-  deliberate; do not "fix" them without reading `KNOWN_ISSUES.md` first. Removing the `-v26`
-  qualifier is what triggered TD-004.
-- **Emulator note.** `Pixel_9` AVD, API 36. It goes unresponsive under sustained Compose
-  rendering with the software GPU; a clean restart with `-no-snapshot` fixes it. Cold-start
-  numbers from it are not meaningful.
-- Build: `./gradlew assembleDebug` · Lint: `./gradlew :app:lintDebug` · Tests: `./gradlew test`.
+- **`calendarDaysRemaining` is the number to display.** Not `totals.totalDays`. They disagree
+  whenever a DST transition or an odd hour falls between now and the target, and the calendar
+  count is what "five days away" means to a person. `CountdownEngineCalendarTest` documents
+  every divergence.
+- **Never call `Instant.now()` or `LocalDate.now()`.** Inject `java.time.Clock`. The whole test
+  suite depends on time being a parameter; one direct call makes its caller untestable at exactly
+  the boundaries where this app breaks.
+- **The domain must not return display strings.** `CountdownLabel` is a token. Milestone 3 maps
+  tokens to string resources with proper plurals — resist the shortcut of a `toString()`.
+- **Widget style resolution belongs to `WidgetBinding.resolveWidgetStyle(event)`.** Do not
+  reimplement "override, else default" at a call site; the precedence rule exists in one place
+  so two widgets on one event can genuinely differ.
+- **Do not enable `fallbackToDestructiveMigration`,** in any build type, ever (D-024). If Room
+  throws about a missing migration, write the migration.
+- **Bumping the database version fails the build** until a migration is added — `DatabaseSchemaTest`
+  asserts the count matches. That is intentional.
+- **Build output is noisy** (TD-005). Filter with
+  `grep -vE "^w: file:.*build.gradle.kts|Deprecated 'org"` or real warnings will hide in it.
+- Commands: `./gradlew assembleDebug` · `./gradlew test` · `./gradlew :core:domain:koverVerify` ·
+  `./gradlew :app:lintDebug`. Coverage HTML lands in `core/domain/build/reports/kover/`.
 
 ----------------------------------
 
 ## Estimated Progress
 
 ```
-Overall Progress            12%
+Overall Progress            24%
 
 Research & Architecture    100%
 Project Setup              100%
-Database                     0%
-Domain / Countdown Engine    0%
+Domain / Countdown Engine  100%
+Database                   100%
+UI                           8%   (theme + navigation shell; no real screens)
 Widgets                      0%
-UI                           8%    (theme + navigation shell; no real screens)
 Notifications                0%
 Billing                      0%
-Testing                      0%
+Testing                     35%   (domain complete; DAO layer outstanding — TD-003)
 Play Store                   0%
 ```

@@ -10,7 +10,63 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. Milestone 2 begins the database, repositories, and countdown engine.
+Nothing yet. Milestone 3 begins event CRUD and the first real screens.
+
+---
+
+## [0.2.0] — 2026-08-08 — Milestone 2: domain, countdown engine, and persistence
+
+The business model everything else will depend on. Still no UI and no widgets by design.
+
+### Added
+
+**Domain (`:core:domain`, pure Kotlin/JVM)**
+- `Event`, `EventTarget`, `WidgetBinding`, `Reminder`, and supporting types: `EventCategory`,
+  `WidgetStyle`, `ProgressStyle`, `AccentColor`, `ReminderType`, and `EventId` / `ReminderId` /
+  `AppWidgetId` value classes.
+- `EventTarget` distinguishes all-day from timed events. All-day resolves in the device's
+  current zone so it follows a traveller; timed stays pinned to its authored zone.
+- `CountdownEngine` computing years, months, weeks, days, hours, minutes, seconds, percentage
+  complete, elapsed, and remaining, plus a status and a display label.
+- `CountdownResult` splits calendar remainders (`CountdownBreakdown`), unit totals
+  (`CountdownTotals`), and the midnight count (`calendarDaysRemaining`) into distinct fields.
+- `CountdownLabel` as a sealed token type the UI maps to string resources.
+- `CountdownConfig` making label thresholds and the locale's first day of the week configurable.
+- Repository contracts: `EventRepository`, `WidgetBindingRepository`, `ReminderRepository`,
+  `PreferencesRepository`, with `EventFilter`, `EventSort`, `ThemeMode`, and `UserPreferences`.
+
+**Database (`:core:database`)**
+- `EventEntity`, `WidgetBindingEntity`, `ReminderEntity` with cascading foreign keys and indexes
+  on the columns the list actually filters and sorts by.
+- Type converters for enums, `Instant`, and `LocalTime`.
+- Three DAOs. Filtering and sorting run in SQL, with sorting expressed as `CASE WHEN` arms so
+  Room verifies the query at compile time.
+- Schema export to `core/database/schemas`, committed, plus a `Migrations` list and a guard test
+  asserting the migration count matches the schema version.
+
+**Data (`:core:data`)**
+- Repository implementations backed by Room, mapping on the IO dispatcher.
+- Entity/domain mappers with round-trip test coverage.
+- DataStore preferences with a corruption handler and defensive enum parsing.
+
+**Build**
+- `countflow.android.room` convention plugin configuring schema export centrally.
+- Kover, gating `:core:domain` at 95% line coverage.
+- `java.time.Clock` provided through DI so nothing calls `Instant.now()` directly.
+
+**Tests** — 86 across three modules, 0 failures. `:core:domain` at 99.4% line coverage with the
+`countdown` and `model` packages at 100%. The daylight-saving tests assert that a transition
+genuinely falls inside the window they exercise.
+
+### Changed
+- `:core:database` now depends on `:core:domain`, so entity columns hold real enums rather than
+  strings. Reversed mid-session; see D-019.
+- `kotlinx-datetime` removed in favour of `java.time` (D-018).
+
+### Fixed
+- All-day events reported `IMMINENT` for their entire day, which would have shown a live ticking
+  countdown to a moment already past.
+- `remaining` counted upward for an event already in progress, reading as time still to wait.
 
 ---
 

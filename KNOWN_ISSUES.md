@@ -50,16 +50,50 @@ collapse into `:app` and be re-extracted later — they sit behind interfaces ei
 
 ---
 
-### TD-003 — No tests exist
-**Severity:** Medium · **Opened:** Session 2
+### TD-003 — No database or repository integration tests
+**Severity:** Medium · **Opened:** Session 2 · **Narrowed:** Session 3
 
-Test dependencies (JUnit4, Turbine, Truth, coroutines-test, Compose UI test, Glance widget
-testing) are wired into the convention plugins and `./gradlew test` runs green, but there are
-zero test classes. There is nothing to test yet — Milestone 1 is infrastructure.
+The domain is comprehensively covered (86 tests, 99.4% line coverage on `:core:domain`) and the
+entity/domain mappers have round-trip tests. What is **not** covered is anything that needs a
+real SQLite database: DAO queries, the foreign-key cascades, and the repository implementations.
 
-**Resolution path.** Milestone 2 opens with the `CountdownEngine` test suite. It is pure Kotlin,
-so it is testable from the first line of code. Table-driven coverage must include DST
-transitions, leap years, all-day versus timed events, cross-timezone targets, and past events.
+Those tests need either Robolectric or an instrumented test run, neither of which is set up.
+Adding Robolectric was deliberately deferred rather than bolted on at the end of a long session.
+
+**What this leaves unverified.** That the `CASE WHEN` sort arms order correctly, that the
+cascade actually deletes bindings and reminders, that `IN ()` and `NOT IN ()` behave as the
+repository assumes, and that the `getActiveReminders` join filters on both switches. The schema
+guard test (`DatabaseSchemaTest`) covers the cascade *declaration* but not its behaviour.
+
+**Resolution path.** Add Robolectric to the test convention plugin and write DAO tests against
+an in-memory database. Best done at the start of Milestone 3, before UI code starts depending
+on query behaviour nothing has exercised.
+
+---
+
+### TD-005 — Build output is drowned in deprecation warnings
+**Severity:** Low, but it hides real warnings · **Opened:** Session 3
+
+Every module emits two build-script deprecation warnings on every compile — one about
+`Project.android(...)` being deprecated in favour of the new DSL, one about the
+`org.jetbrains.kotlin.android` plugin. With fourteen modules that is ~28 lines of noise per
+build, which is enough to hide a genuine warning.
+
+Both are direct consequences of the `newDsl=false` / `builtInKotlin=false` opt-out (D-005), so
+they disappear when TD-001 is resolved. Until then, filtering with
+`grep -vE "^w: file:.*build.gradle.kts|Deprecated 'org"` makes build output readable.
+
+---
+
+### TD-006 — Title search is ASCII-case-insensitive only
+**Severity:** Low · **Opened:** Session 3
+
+The event search uses SQLite `LIKE ... COLLATE NOCASE`, whose case folding covers ASCII only.
+Searching "ÉCOLE" will not match a title stored as "école".
+
+Acceptable for now — most titles are typed as they are searched — but it will read as a bug to
+users of languages with cased non-ASCII characters. The fix is either an ICU collation or a
+normalised lowercase shadow column populated on write.
 
 ---
 
@@ -145,6 +179,25 @@ Lint currently reports **0 errors and 11 warnings** on `:app:lintDebug` with
 ---
 
 ## Resolved
+
+### BUG-R001 — All-day events read as "starting soon" all day *(found and fixed Session 3)*
+
+The imminent threshold was applied to every event, so an all-day event whose start instant had
+passed satisfied it for the whole of its day and reported `IMMINENT` — meaning a widget would
+have shown a live ticking countdown to a moment already gone.
+
+Found by a test, not by inspection. Fixed by excluding all-day events from the imminent check
+entirely (D-023), and pinned by `an all-day event is never imminent`.
+
+### BUG-R002 — "Remaining" counted upward for an event in progress *(found and fixed Session 3)*
+
+`remaining` was computed as the absolute distance to the target, so an all-day event twelve
+hours into its day reported "12 hours" while `isPast` was false — reading as twelve hours still
+to wait.
+
+Fixed by splitting three quantities that had been conflated: `remaining` is forward-looking and
+clamps to zero once the event starts, `gap` is the unsigned distance used for the breakdown and
+totals, and `calendarDaysRemaining` is signed.
 
 ### TD-R001 — Missing data extraction rules *(resolved Session 2)*
 Lint flagged the app as having no `android:dataExtractionRules`. Added

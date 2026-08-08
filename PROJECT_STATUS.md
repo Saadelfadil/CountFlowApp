@@ -12,13 +12,13 @@ Android 16 lockscreen and Always-On Display as later targets.
 
 | | |
 |---|---|
-| **Current milestone** | 1 of 9 complete |
-| **Last session** | Session 2 — 2026-08-08 |
+| **Current milestone** | 2 of 9 complete |
+| **Last session** | Session 3 — 2026-08-08 |
 | **Build status** | ✅ `assembleDebug` succeeds |
-| **Lint** | 0 errors, 11 accepted warnings |
-| **Tests** | None yet (nothing to test — infrastructure only) |
-| **Runtime** | ✅ Verified on API 36 emulator: launches, navigates, themes, no crashes |
-| **Overall progress** | ~12% |
+| **Lint** | 0 errors, 10 accepted warnings |
+| **Tests** | 86 passing, 0 failing. `:core:domain` 99.4% line coverage, gated at 95% |
+| **Runtime** | ✅ Verified on API 36 emulator in Session 2: launches, navigates, themes |
+| **Overall progress** | ~24% |
 
 ---
 
@@ -49,8 +49,10 @@ Read in this order when picking the project up cold:
 | UI | Jetpack Compose (BOM) | 2026.06.01 |
 | Widgets | Jetpack Glance | 1.1.1 stable |
 | DI | Hilt / androidx.hilt | 2.60.1 / 1.4.0 |
-| Database | Room *(not yet applied)* | 2.8.4 |
-| Preferences | DataStore *(not yet applied)* | 1.2.1 |
+| Database | Room | 2.8.4 |
+| Preferences | DataStore | 1.2.1 |
+| Date & time | `java.time` (not kotlinx-datetime) | JDK 17 |
+| Coverage | Kover, gating `:core:domain` at 95% | 0.9.9 |
 | Background | WorkManager | 2.11.2 |
 | Navigation | Navigation Compose, type-safe routes | 2.9.8 |
 | Architecture | Clean Architecture + MVVM, unidirectional data flow | — |
@@ -76,7 +78,8 @@ Dependencies point downward only. Features never depend on each other.
 :widget:engine ──► :core:common
 
 :core:data ──► :core:domain, :core:database, :core:common
-:core:database, :core:notifications, :core:analytics, :core:billing ──► :core:common
+:core:database ──► :core:domain, :core:common
+:core:notifications, :core:analytics, :core:billing ──► :core:common
 :core:designsystem ──► (Compose only)
 :core:domain ──► nothing
 ```
@@ -90,38 +93,54 @@ reviewer has to catch (D-003).
 | Module | State |
 |---|---|
 | `:app` | Application, MainActivity, NavHost |
-| `:core:common` | Dispatchers, application scope, logging facade |
+| `:core:common` | Dispatchers, application scope, logging facade, `Clock` provision |
 | `:core:designsystem` | Theme, typography, shapes, PlaceholderScreen |
+| `:core:domain` | **Full model, countdown engine, repository contracts** |
+| `:core:database` | **Room: 3 entities, 3 DAOs, converters, schema v1** |
+| `:core:data` | **Repository implementations, mappers, DataStore preferences** |
 | `:feature:events` `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
-| `:core:domain` `:core:data` `:core:database` `:core:notifications` `:core:analytics` `:core:billing` `:widget:engine` `:widget:glance` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
+| `:core:notifications` `:core:analytics` `:core:billing` `:widget:engine` `:widget:glance` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
 
 ---
 
 ## What works today
 
-- The app builds, installs, and launches on API 36 with no crashes.
-- Five destinations navigate correctly with a working back stack: Home → New event, Home →
-  Settings → Premium, Settings → About.
-- Material 3 theming works in light and dark, with dynamic colour active (verified: the
-  emulator's wallpaper produces a blue scheme rather than the teal brand fallback).
-- Hilt builds its component graph and injects successfully at runtime.
-- WorkManager is configured with a `HiltWorkerFactory`, ready for injected workers.
+- The app builds, installs, and launches on API 36 with no crashes; five destinations navigate
+  with a correct back stack; Material 3 light and dark with dynamic colour active.
+- Hilt builds its component graph and injects at runtime; WorkManager has a `HiltWorkerFactory`.
+- **The countdown engine is complete and correct** across DST transitions in both directions,
+  leap years and leap days, timezone travel, all-day versus timed events, month and year
+  boundaries, and past events. 100% line coverage.
+- **Persistence is complete**: Room with cascading foreign keys and a committed schema,
+  repository implementations behind domain interfaces, and DataStore preferences.
 
 ## What does not exist yet
 
-No data model, no database, no repositories, no countdown engine, no widgets, no ViewModels,
-no notifications, no billing, and no tests. All of it is scheduled; see `ROADMAP.md`.
+No screens beyond placeholders, no ViewModels, no widgets, no notifications, no billing.
+DAO-level integration tests are also missing (TD-003). All scheduled; see `ROADMAP.md`.
+
+## Where the important logic lives
+
+| Question | File |
+|---|---|
+| How is time until an event computed? | `core/domain/…/countdown/CountdownEngine.kt` |
+| Why is a day count not a duration division? | Same file, plus `CountdownEngineCalendarTest` |
+| How do all-day and timed events differ? | `core/domain/…/model/EventTarget.kt` |
+| What does the widget display? | `CountdownResult.calendarDaysRemaining` |
+| Where are label thresholds set? | `core/domain/…/countdown/CountdownConfig.kt` |
+| What is the schema? | `core/database/schemas/…/1.json` |
 
 ---
 
 ## Progress
 
 ```
-Overall                      12%
+Overall                      24%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
-Database & domain             0%   Milestone 2
+Domain & countdown engine   100%   Milestone 2
+Database & persistence      100%   Milestone 2
 Event CRUD / UI               0%   Milestone 3
 Widget engine                 0%   Milestone 4
 Widget themes & sizes         0%   Milestone 5
@@ -129,7 +148,7 @@ Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
 Optimization & a11y           0%   Milestone 8
 Play Store                    0%   Milestone 9
-Testing                       0%   begins Milestone 2
+Testing                      35%   domain done; DAO layer outstanding (TD-003)
 ```
 
 ---

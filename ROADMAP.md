@@ -8,7 +8,7 @@ Living document. Update the status column as milestones move.
 |---|---|---|---|
 | 0 | Research & architecture | **Completed** | 1 |
 | 1 | Project foundation | **Completed** | 2 |
-| 2 | Database, repositories, countdown engine | Not Started | — |
+| 2 | Database, repositories, countdown engine | **Completed** | 3 |
 | 3 | Event CRUD | Not Started | — |
 | 4 | Widget engine | Not Started | — |
 | 5 | Multiple widgets | Not Started | — |
@@ -40,34 +40,38 @@ dark themes render.
 
 ---
 
-## Milestone 2 — Database, repositories, countdown engine · Not Started
+## Milestone 2 — Database, repositories, countdown engine · Completed (Session 3)
 
 **Reordered:** the countdown engine was pulled forward from Milestone 4. It is pure Kotlin, so
-it is testable from day one, and everything downstream depends on it.
+it was testable from day one, and everything downstream depends on it.
 
-1. `:core:domain` — `Event`, `Countdown`, `EventCategory`, `WidgetStyle`, `ProgressStyle`,
-   `AccentColor`, repository interfaces, and a `Clock` abstraction.
-2. `CountdownEngine` with a table-driven test suite: DST transitions, leap years, all-day versus
-   timed events, cross-timezone targets, past events, and the friendly labels
-   (Today / Tomorrow / Next Week / Yesterday / Completed).
-3. `:core:database` — `EventEntity`, `WidgetBindingEntity`, DAOs, converters, schema export,
-   and a migration test harness from version 1.
-4. `:core:data` — repository implementations, DataStore for preferences, entity/domain mappers.
+Delivered: the full domain model (`Event`, `EventTarget`, `WidgetBinding`, `Reminder`, and the
+supporting enums and value classes); `CountdownEngine` at 100% line coverage; four repository
+contracts; Room with three entities, cascading foreign keys, converters, and committed schema
+export; repository implementations with round-trip-tested mappers; and DataStore preferences.
 
-**Carries decisions:** D-002 (Room as the only source of truth), D-013 (style on the binding),
-D-014 (epoch millis + zone + all-day), D-015 (calendar comparison for Today/Tomorrow).
+86 tests, 0 failures. `:core:domain` at 99.4% line coverage, enforced by a Kover gate.
 
-**Done when:** the engine's test suite passes, a Room migration test runs, and repositories
-expose `Flow`s the UI can collect.
+Two defects were found by the tests and fixed: all-day events read as "starting soon" for their
+whole day, and "remaining" counted upward once an event was in progress.
+
+**Not delivered:** DAO and repository integration tests, which need Robolectric. Tracked as
+TD-003 and scheduled for the start of Milestone 3.
 
 ---
 
 ## Milestone 3 — Event CRUD · Not Started
 
+**Open with TD-003:** add Robolectric and write DAO tests before UI code starts depending on
+query behaviour nothing has exercised.
+
 Home screen with the upcoming-events list, realtime search, sort (date, title, created,
 category), category filtering, and the add action. Create/edit form with title, emoji picker,
 category, date and time pickers, accent colour, and a live widget preview.
 ViewModels expose immutable state via `StateFlow`.
+
+This is also where `CountdownLabel` tokens first get mapped to string resources, with plurals
+declared properly rather than concatenated.
 
 **Done when:** an event can be created, edited, archived, and deleted, and survives process death.
 

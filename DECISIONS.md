@@ -297,3 +297,176 @@ plugin alias, a namespace, and its dependencies — nothing else.
 **Tradeoffs.** Convention plugins are compiled Kotlin without version-catalog type-safe accessors,
 so they look up the catalog by name. AGP DSL changes hit them first, which is exactly what
 happened during this milestone.
+
+---
+
+## D-018 — `java.time` rather than `kotlinx-datetime`
+
+**Date:** 2026-08-08 · **Status:** Provisional · **Milestone:** 2
+
+**Reason.** The countdown engine lives or dies on calendar correctness, and `java.time` has the
+strongest DST and calendar semantics available: `ZonedDateTime`, zone rules, `ChronoUnit`
+stepping that re-anchors after each unit, and `atStartOfDay` returning a real instant on days
+where midnight does not exist. At `minSdk 31` it is native on device, so there is no desugaring
+cost. `kotlinx-datetime` is a thinner wrapper over the same platform types.
+
+**Alternatives.** `kotlinx-datetime`, which was in the catalog after Milestone 1 and has now
+been removed.
+
+**Tradeoffs.** `java.time` is JVM-only. **This is the single thing in `:core:domain` that would
+have to change if CountFlow ever became a Kotlin Multiplatform project** — everything else in
+the module is plain Kotlin. Recorded explicitly because the Session 2 brief said "Use Kotlin
+Native", which was read as native Android rather than KMP.
+
+**Revisit when:** multiplatform is genuinely on the table.
+
+---
+
+## D-019 — `:core:database` depends on `:core:domain`
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+Entities hold real domain enums; Room's converters serialise them.
+
+**Reason.** This decision was made, then reversed mid-session. The first attempt kept the
+database module independent of the domain, with every enum column typed as `String`. That is
+defensible on purity grounds and worse in practice: it makes every column stringly typed, moves
+enum parsing into hand-written mapper code, and leaves converters with nothing to do. The
+database is part of the data layer, and the data layer depending on the domain is the correct
+direction — not a violation.
+
+**Alternatives.** The stringly-typed independent module described above.
+
+**Tradeoffs.** A domain enum rename becomes a schema migration. That is true either way, since
+values are persisted by name; the dependency just makes it visible at compile time.
+
+---
+
+## D-020 — Enums are persisted by name, never by ordinal
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+**Reason.** An ordinal is smaller and is a live grenade. Inserting a constant into the middle of
+an enum silently reinterprets every stored row — everyone's "Birthday" events quietly become
+"Holiday" on the next release, with no error anywhere. Names make reordering harmless.
+
+**Tradeoffs.** A few bytes per row, and renaming a constant is still breaking. Renaming is at
+least a deliberate act that a migration can accompany; reordering is an accident waiting to
+happen.
+
+Unknown names fall back to the default rather than throwing: a row written by a newer build and
+read by an older one after a Play rollback must not make the event list uncrashable.
+
+---
+
+## D-021 — The domain returns label tokens, not display strings
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+`CountdownLabel` is a sealed type — `Today`, `Tomorrow`, `InDays(n)` — that the UI maps to
+string resources.
+
+**Reason.** Returning `"Tomorrow"` from the domain would hard-code English and bypass Android's
+resource system. It would also break plural rules: "in 1 day" versus "in 2 days" is not a
+concatenation problem in every language, and some languages have more than two plural forms.
+
+**Tradeoffs.** The UI layer must exhaustively map every token, and adding a token is a
+two-module change. The compiler enforces the exhaustiveness, so the second half is safe.
+
+---
+
+## D-022 — Calendar breakdown and unit totals are separate types
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+`CountdownBreakdown` holds remainders (1 year, 2 months, 3 days); `CountdownTotals` holds whole
+counts of each unit (400 days, 57 weeks); `calendarDaysRemaining` holds the midnight count.
+
+**Reason.** Conflating these is *the* classic countdown bug. A 400-day countdown is "one year
+and change", and code that reads `days` expecting 400 gets a small number. Three names that
+cannot be mistaken for one another beat one ambiguous field.
+
+`calendarDaysRemaining` is separate again because it is the number a widget should display —
+"five days away" means five sleeps, not 120 hours, and the two disagree whenever a DST
+transition or an odd hour falls in between.
+
+**Tradeoffs.** More surface on the result type. Every field is documented with which question
+it answers.
+
+---
+
+## D-023 — All-day events are never `IMMINENT`
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+**Reason.** Found by a failing test, not by design. `IMMINENT` exists to drive second-level
+ticking, and there is nothing to tick towards when the event is a whole day. Without the rule,
+an all-day event read as "starting soon" from midnight onward for its entire day.
+
+**Tradeoffs.** The hour before an all-day event begins shows "Tomorrow" rather than "Starting
+soon". That is the more useful of the two.
+
+---
+
+## D-024 — Destructive migration is never enabled
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+`fallbackToDestructiveMigration` is absent from the Room builder in every build type.
+
+**Reason.** It is tempting during development and it silently deletes user data. For this app
+that means every countdown the user created, plus every widget on their home screen going
+blank, after an ordinary update. Room throwing on a missing migration is the correct behaviour:
+it fails for the developer instead of for the user.
+
+**Tradeoffs.** Schema changes during development need a real migration or a manual app
+uninstall. A test asserts the migration count matches the version number, so the omission is
+caught in CI rather than in the field.
+
+---
+
+## D-025 — Coverage on `:core:domain` is enforced, not reported
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+Kover fails the build below 95% line coverage on `:core:domain`.
+
+**Reason.** A coverage number nobody enforces drifts downward. The domain is the one module
+where the cost of a bug is highest and the cost of testing is lowest — it is pure Kotlin with
+no Android, no I/O, and an injected clock.
+
+**Tradeoffs.** Only `:core:domain` is gated. Applying the same bar to UI modules would reward
+writing shallow tests for composables; that is not where correctness lives.
+
+Current: **99.4% lines, 94% branches**, with the `countdown` and `model` packages at 100%.
+
+---
+
+## D-026 — `java.time.Clock` is injected directly, with no wrapper
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+**Reason.** `java.time.Clock` *is* a clock abstraction: an injectable type with a ready-made
+`Clock.fixed` for tests. A bespoke `CountFlowClock` interface would add a layer whose only
+function is to require its own fake.
+
+**Tradeoffs.** Ties the domain to `java.time`, which D-018 already does. The rule that matters
+is the one this enables: nothing outside the DI module calls `Instant.now()`, because that reads
+the system clock straight through and makes the caller untestable at exactly the time boundaries
+where a countdown app breaks.
+
+---
+
+## D-027 — Dynamic sorting via `CASE WHEN`, not `@RawQuery`
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 2
+
+**Reason.** The event list sorts four ways and filters on four axes. A `@RawQuery` with a
+string-built `ORDER BY` would be shorter and would give up Room's compile-time verification of
+the SQL. `CASE WHEN` arms keep the query checked at build time.
+
+Filtering and sorting stay in SQL rather than in Kotlin because the search field re-queries on
+every keystroke; filtering in memory would load the whole table each time.
+
+**Tradeoffs.** The query is uglier, and adding a sort option means editing SQL rather than
+Kotlin. Verified SQL is worth it.
