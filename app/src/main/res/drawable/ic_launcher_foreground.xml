@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CountFlow mark: a ring with a filled arc, reading as elapsed progress around a countdown.
+  Drawn inside the 72dp safe zone of the 108dp adaptive-icon canvas.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Track -->
+    <path
+        android:fillColor="#4DFFFFFF"
+        android:pathData="M54,32
+                          A22,22 0 1,1 53.99,32
+                          Z
+                          M54,38
+                          A16,16 0 1,0 54.01,38
+                          Z" />
+
+    <!-- Elapsed arc, roughly three quarters -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,32
+                          A22,22 0 1,1 32,54
+                          L38,54
+                          A16,16 0 1,0 54,38
+                          Z" />
+
+    <!-- Center dot -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,50 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+</vector>

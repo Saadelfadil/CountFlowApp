@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Splash and launcher-icon colors live in XML rather than the Compose theme: they are read
+      by the system before any Compose content exists, so they cannot come from a ColorScheme.
+    -->
+    <color name="splash_background">#006A60</color>
+    <color name="ic_launcher_background">#006A60</color>
+</resources>

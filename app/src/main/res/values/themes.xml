@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      The theme the window is created with. Compose paints everything after that, so this only
+      needs to avoid an action bar and let the Compose content draw edge to edge.
+    -->
+    <!--
+      Theme.DeviceDefault.DayNight is the only framework theme that follows the system
+      light/dark setting; the framework ships no Material.DayNight, and DeviceDefault has no
+      NoActionBar variant, so the action bar is removed explicitly here.
+    -->
+    <style name="Theme.CountFlow" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!--
+      Applied to MainActivity so the system splash screen is themed. installSplashScreen()
+      swaps to Theme.CountFlow as soon as the first frame is ready.
+    -->
+    <style name="Theme.CountFlow.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.CountFlow</item>
+    </style>
+
+</resources>
