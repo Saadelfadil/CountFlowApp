@@ -20,5 +20,12 @@ dependencies {
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)
+    testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Room DAOs run against real SQLite under Robolectric. Cascades, collations, and the
+    // empty-set behaviour of IN/NOT IN are SQLite semantics — asserting them requires the
+    // real engine, not a fake.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core.ktx)
 }

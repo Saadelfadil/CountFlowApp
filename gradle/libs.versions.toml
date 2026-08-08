@@ -47,6 +47,8 @@ androidxTestEspresso = "3.7.0"
 turbine = "1.2.1"
 truth = "1.4.5"
 kover = "0.9.9"
+robolectric = "4.16.1"
+androidxTestCore = "1.7.0"
 
 [libraries]
 # --- Kotlin ----------------------------------------------------------------
@@ -116,6 +118,11 @@ androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidxTestEspresso" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
+
+# Robolectric runs Android-dependent tests — chiefly Room DAOs against real SQLite — in the
+# fast JVM test source set, with no emulator. Only modules that need it declare it.
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core-ktx = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
 
 # --- Build-logic plugin artifacts ------------------------------------------
 # Referenced as implementation deps inside build-logic so convention plugins can

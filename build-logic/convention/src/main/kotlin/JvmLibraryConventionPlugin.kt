@@ -1,3 +1,4 @@
+import com.countflow.gradle.configureTestTasks
 import com.countflow.gradle.libs
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
@@ -29,6 +30,8 @@ class JvmLibraryConventionPlugin : Plugin<Project> {
                 jvmTarget.set(JvmTarget.JVM_17)
             }
         }
+
+        configureTestTasks()
 
         dependencies {
             add("testImplementation", libs.findLibrary("junit4").get())

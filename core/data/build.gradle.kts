@@ -21,4 +21,14 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Repositories are tested against real SQLite rather than a mocked DAO. A mock would only
+    // confirm that the repository calls the method the test author expected it to call.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core.ktx)
+    // Test-only, deliberately. :core:database stays an `implementation` dependency so Room's
+    // types cannot leak upward into features or widgets; the tests need them to build an
+    // in-memory database, and only the tests get them.
+    testImplementation(libs.androidx.room.runtime)
+    testImplementation(libs.androidx.room.ktx)
 }
