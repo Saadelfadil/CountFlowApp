@@ -9,7 +9,7 @@ Living document. Update the status column as milestones move.
 | 0 | Research & architecture | **Completed** | 1 |
 | 1 | Project foundation | **Completed** | 2 |
 | 2 | Database, repositories, countdown engine | **Completed** | 3 |
-| 3 | Event CRUD | Not Started | — |
+| 3 | Event CRUD | **Completed** | 4 |
 | 4 | Widget engine | Not Started | — |
 | 5 | Multiple widgets | Not Started | — |
 | 6 | Settings | Not Started | — |
@@ -60,20 +60,22 @@ TD-003 and scheduled for the start of Milestone 3.
 
 ---
 
-## Milestone 3 — Event CRUD · Not Started
+## Milestone 3 — Event CRUD · Completed (Session 4)
 
-**Open with TD-003:** add Robolectric and write DAO tests before UI code starts depending on
-query behaviour nothing has exercised.
+Built in the order the owner set: tests first, then validation, then UI models, then ViewModels,
+then screens — so neither validation nor presentation logic could end up living in a composable.
 
-Home screen with the upcoming-events list, realtime search, sort (date, title, created,
-category), category filtering, and the add action. Create/edit form with title, emoji picker,
-category, date and time pickers, accent colour, and a live widget preview.
-ViewModels expose immutable state via `StateFlow`.
+Delivered: Robolectric with 32 DAO tests and 20 repository tests closing TD-003; `EventValidator`
+in the domain; `CountdownLabel` and category formatting through plural resources;
+`EventCardUiModel` with an injectable mapper; `EventsViewModel` and `EditEventViewModel` over
+`StateFlow`; and the home list and create/edit form.
 
-This is also where `CountdownLabel` tokens first get mapped to string resources, with plurals
-declared properly rather than concatenated.
+269 tests, 0 failures. `:core:domain` at 99.5% line coverage. Verified on an API 36 emulator with
+14 end-to-end checks driving create, validate, search, filter, and edit.
 
-**Done when:** an event can be created, edited, archived, and deleted, and survives process death.
+**Not delivered:** the live widget preview in the form, and the accent colour picker — both
+deferred to Milestone 5, where the widget renderer they should preview will actually exist.
+Archive, complete, and delete exist on the ViewModel but have no UI gesture yet.
 
 ---
 

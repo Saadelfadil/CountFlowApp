@@ -10,7 +10,52 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. Milestone 3 begins event CRUD and the first real screens.
+Nothing yet. Milestone 4 begins the widget engine.
+
+---
+
+## [0.3.0] — 2026-08-08 — Milestone 3: event CRUD
+
+The first release with real screens. Events can be created, validated, listed, searched,
+filtered, sorted, and edited.
+
+### Added
+
+**Domain**
+- `EventValidator` with field-tagged error tokens, reporting every problem at once rather than
+  stopping at the first. Emoji validation counts grapheme clusters, so a ZWJ family or a
+  regional-indicator flag is correctly one emoji while a pasted word is rejected.
+
+**Design system**
+- `CountdownLabelFormatter` mapping countdown and category tokens to string resources, with
+  plurals. Exposed both as a `Resources` function for the coming widget layer and as a composable
+  that re-resolves on configuration change.
+
+**Events feature**
+- `EventCardUiModel` and an injectable `EventUiMapper`; Compose no longer sees domain objects.
+- `EventsViewModel` with realtime search, four sort orders, category filtering, and two distinct
+  empty states.
+- `EditEventViewModel` serving both create and edit, with validation gating every write.
+- Home screen: list, search field, category chips, sort menu, empty states, add button.
+- Create/edit form: emoji, title, category, date picker, time picker, all-day toggle with an
+  explanation of what it actually changes.
+
+**Build and tests**
+- Robolectric, pinned to SDK 34.
+- 190 new tests: 32 DAO, 20 repository, 22 feature, and the rest domain. 269 in total.
+
+### Changed
+- `:core:designsystem` now depends on `:core:domain` and owns token-to-text formatting (D-028).
+- `:core:database` and `:core:data` gained Robolectric-backed integration tests, closing TD-003.
+- Gradle's `failOnNoDiscoveredTests` is disabled, because several modules are empty by design.
+
+### Fixed
+- Repository tests collided with two coroutine schedulers.
+- The first search debounce would also have delayed sort taps and lagged the text field.
+
+### Known gaps
+- Sort names, validation messages, and empty-state copy are not yet localised (TD-007).
+- Archive, complete, and delete exist on the ViewModel but have no UI gesture (TD-008).
 
 ---
 

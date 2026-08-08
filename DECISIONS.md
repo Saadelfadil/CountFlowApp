@@ -470,3 +470,94 @@ every keystroke; filtering in memory would load the whole table each time.
 
 **Tradeoffs.** The query is uglier, and adding a sort option means editing SQL rather than
 Kotlin. Verified SQL is worth it.
+
+
+---
+
+## D-028 — `:core:designsystem` is the shared presentation layer, not a generic component library
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 3
+
+It depends on `:core:domain` and owns the mapping from domain tokens to text and colour.
+
+**Reason.** `CountdownLabel` has to become a string somewhere, and that somewhere needs Android
+resources. Putting it in `:feature:events` would leave the widget layer unable to reach it, and
+widgets need the same "Tomorrow" the app shows. Both features and widgets already depend on the
+design system, so it is the one place that serves everyone.
+
+**Alternatives.** A new `:core:ui` module — correct in the abstract, and module creation
+mid-session for one file is churn. `:feature:events` — leaves widgets stranded.
+
+**Tradeoffs.** "Design system" now means more than buttons and colours. The name is slightly
+wrong for what the module is; the alternative was a fourth naming convention.
+
+**Revisit when:** the widget layer lands and the sharing is exercised for real.
+
+---
+
+## D-029 — UI models, with tokens deliberately left unresolved
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 3
+
+Compose consumes `EventCardUiModel`, never `Event`, `CountdownResult`, or `EventTarget`. But the
+UI model still carries `CountdownLabel` and `EventCategory` as tokens rather than finished
+strings.
+
+**Reason.** The first half keeps time semantics out of composables — the moment a screen can
+reach `event.target`, someone computes a day count in a composable and gets it wrong in a way no
+test catches. The second half is about locale: baking strings into the model freezes a row in
+whatever language was active when the flow last emitted, and a language change would not
+re-render it.
+
+**Alternatives.** Resolving strings in the mapper, which would make the mapper require
+`Resources` and lose locale reactivity.
+
+**Tradeoffs.** "No domain objects in Compose" is therefore not literally true — two plain enums
+and one sealed token cross the line. They carry no behaviour and no time semantics, which is the
+property that actually matters.
+
+---
+
+## D-030 — Mapping a list uses one shared instant
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 3
+
+`EventUiMapper.mapAll` takes `now` as a parameter rather than reading the clock per row.
+
+**Reason.** Reading `clock.instant()` inside the loop lets the first and last rows of a long list
+straddle midnight, so two identical events show different day counts. Rare, and it looks exactly
+like data corruption to a user.
+
+---
+
+## D-031 — Search text and list options are separate flows
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Milestone:** 3
+
+`EventsViewModel` holds the raw query in one `StateFlow` and sort/filter in another; the state
+combines the raw query with a debounced copy driving the query.
+
+**Reason.** Three requirements that a single debounced input cannot satisfy together: the text
+field must show the keystroke immediately, the database must not be queried per keystroke, and a
+sort tap must not inherit the typing delay.
+
+**Tradeoffs.** One user action can produce two emissions — clearing filters writes both flows —
+so there is a transient state between them. Compose coalesces it into one frame, but tests have
+to await a settled state rather than the first emission.
+
+---
+
+## D-032 — Gradle's empty-test-task check is disabled
+
+**Date:** 2026-08-08 · **Status:** Provisional · **Milestone:** 3
+
+`failOnNoDiscoveredTests` is set to false in the shared convention.
+
+**Reason.** Gradle 9 fails a test task that discovers nothing, assuming misconfiguration. Eight
+CountFlow modules are deliberately empty scaffolds.
+
+**Tradeoffs.** A module whose tests silently stopped being discovered would go unnoticed. Test
+counts are reported per module in every session summary, so a count dropping to zero is visible
+there.
+
+**Revisit when:** the scaffold modules have code and tests of their own.

@@ -12,13 +12,13 @@ Android 16 lockscreen and Always-On Display as later targets.
 
 | | |
 |---|---|
-| **Current milestone** | 2 of 9 complete |
-| **Last session** | Session 3 — 2026-08-08 |
+| **Current milestone** | 3 of 9 complete |
+| **Last session** | Session 4 — 2026-08-08 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 10 accepted warnings |
-| **Tests** | 86 passing, 0 failing. `:core:domain` 99.4% line coverage, gated at 95% |
-| **Runtime** | ✅ Verified on API 36 emulator in Session 2: launches, navigates, themes |
-| **Overall progress** | ~24% |
+| **Tests** | 269 passing, 0 failing. `:core:domain` 99.5% line coverage, gated at 95% |
+| **Runtime** | ✅ API 36 emulator, Session 4: 14 end-to-end checks across create, validate, search, filter, edit |
+| **Overall progress** | ~36% |
 
 ---
 
@@ -53,6 +53,7 @@ Read in this order when picking the project up cold:
 | Preferences | DataStore | 1.2.1 |
 | Date & time | `java.time` (not kotlinx-datetime) | JDK 17 |
 | Coverage | Kover, gating `:core:domain` at 95% | 0.9.9 |
+| Testing | JUnit4, Truth, Turbine, Robolectric | 4.16.1 |
 | Background | WorkManager | 2.11.2 |
 | Navigation | Navigation Compose, type-safe routes | 2.9.8 |
 | Architecture | Clean Architecture + MVVM, unidirectional data flow | — |
@@ -74,13 +75,14 @@ Dependencies point downward only. Features never depend on each other.
 :feature:settings  ─┼──► :core:designsystem, :core:domain, :core:common
 :feature:premium   ─┘    (+ :core:billing)
 
+:core:designsystem ──► :core:domain          (token-to-text formatting, D-028)
+
 :widget:glance ──► :widget:engine, :core:designsystem, :core:common
 :widget:engine ──► :core:common
 
 :core:data ──► :core:domain, :core:database, :core:common
 :core:database ──► :core:domain, :core:common
 :core:notifications, :core:analytics, :core:billing ──► :core:common
-:core:designsystem ──► (Compose only)
 :core:domain ──► nothing
 ```
 
@@ -94,11 +96,12 @@ reviewer has to catch (D-003).
 |---|---|
 | `:app` | Application, MainActivity, NavHost |
 | `:core:common` | Dispatchers, application scope, logging facade, `Clock` provision |
-| `:core:designsystem` | Theme, typography, shapes, PlaceholderScreen |
-| `:core:domain` | **Full model, countdown engine, repository contracts** |
+| `:core:designsystem` | Theme, typography, shapes, **token-to-text formatting** |
+| `:core:domain` | **Model, countdown engine, validation, repository contracts** |
 | `:core:database` | **Room: 3 entities, 3 DAOs, converters, schema v1** |
 | `:core:data` | **Repository implementations, mappers, DataStore preferences** |
-| `:feature:events` `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
+| `:feature:events` | **Home list, create/edit form, two ViewModels, UI mapper** |
+| `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
 | `:core:notifications` `:core:analytics` `:core:billing` `:widget:engine` `:widget:glance` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
 
 ---
@@ -112,12 +115,16 @@ reviewer has to catch (D-003).
   leap years and leap days, timezone travel, all-day versus timed events, month and year
   boundaries, and past events. 100% line coverage.
 - **Persistence is complete**: Room with cascading foreign keys and a committed schema,
-  repository implementations behind domain interfaces, and DataStore preferences.
+  repository implementations behind domain interfaces, and DataStore preferences — now verified
+  against real SQLite rather than assumed.
+- **Event CRUD works end to end**: create with validation, list, realtime search, category
+  filter, four sort orders, and edit. Driven on a device, not just unit-tested.
 
 ## What does not exist yet
 
-No screens beyond placeholders, no ViewModels, no widgets, no notifications, no billing.
-DAO-level integration tests are also missing (TD-003). All scheduled; see `ROADMAP.md`.
+No widgets, no notifications, no settings, no billing. Within the events feature: no delete or
+archive gesture (TD-008), no accent-colour picker, and no live widget preview — the last two wait
+for the widget renderer they would preview. Several UI strings are not localised (TD-007).
 
 ## Where the important logic lives
 
@@ -129,26 +136,29 @@ DAO-level integration tests are also missing (TD-003). All scheduled; see `ROADM
 | What does the widget display? | `CountdownResult.calendarDaysRemaining` |
 | Where are label thresholds set? | `core/domain/…/countdown/CountdownConfig.kt` |
 | What is the schema? | `core/database/schemas/…/1.json` |
+| What may be saved? | `core/domain/…/validation/EventValidator.kt` |
+| How does a token become text? | `core/designsystem/…/format/CountdownLabelFormatter.kt` |
+| What does Compose actually consume? | `feature/events/…/model/EventCardUiModel.kt` |
 
 ---
 
 ## Progress
 
 ```
-Overall                      24%
+Overall                      36%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
 Domain & countdown engine   100%   Milestone 2
 Database & persistence      100%   Milestone 2
-Event CRUD / UI               0%   Milestone 3
+Event CRUD / UI              85%   Milestone 3 (gestures and colour picker outstanding)
 Widget engine                 0%   Milestone 4
 Widget themes & sizes         0%   Milestone 5
 Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
 Optimization & a11y           0%   Milestone 8
 Play Store                    0%   Milestone 9
-Testing                      35%   domain done; DAO layer outstanding (TD-003)
+Testing                      70%   domain, DAO, repository, ViewModel; no UI tests yet
 ```
 
 ---

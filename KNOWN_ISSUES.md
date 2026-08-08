@@ -10,7 +10,7 @@ must design around · `WARN-nnn` accepted warnings
 
 ## Open bugs
 
-None. No runtime defects are known as of Session 2.
+None. No runtime defects are known as of Session 4.
 
 ---
 
@@ -50,8 +50,15 @@ collapse into `:app` and be re-extracted later — they sit behind interfaces ei
 
 ---
 
-### TD-003 — No database or repository integration tests
-**Severity:** Medium · **Opened:** Session 2 · **Narrowed:** Session 3
+### TD-003 — No database or repository integration tests — RESOLVED Session 4
+**Severity:** was Medium · **Opened:** Session 2 · **Closed:** Session 4
+
+Closed by adding Robolectric and 52 integration tests: 32 DAO tests in `:core:database` and 20
+repository tests in `:core:data`, all against real in-memory SQLite. Every behaviour listed below
+as unverified is now covered. The original entry is kept for the record.
+
+<details>
+<summary>Original entry</summary>
 
 The domain is comprehensively covered (86 tests, 99.4% line coverage on `:core:domain`) and the
 entity/domain mappers have round-trip tests. What is **not** covered is anything that needs a
@@ -68,6 +75,8 @@ guard test (`DatabaseSchemaTest`) covers the cascade *declaration* but not its b
 **Resolution path.** Add Robolectric to the test convention plugin and write DAO tests against
 an in-memory database. Best done at the start of Milestone 3, before UI code starts depending
 on query behaviour nothing has exercised.
+
+</details>
 
 ---
 
@@ -111,6 +120,50 @@ is a poor trade.
 
 **If it recurs.** Symptom is a resource that demonstrably exists on disk being reported as not
 found. Confirm with `./gradlew <task> --no-build-cache`; if that succeeds, the cache is stale.
+
+---
+
+### TD-007 — Some UI strings are not localised
+**Severity:** Medium · **Opened:** Session 4
+
+Countdown labels and category names go through string resources with proper plurals. Three sets
+of user-visible strings do not, and are hard-coded in Kotlin:
+
+- The four sort names in `HomeScreen.kt` (`Date`, `Title`, `Recently added`, `Category`).
+- The six validation messages in `CreateEventScreen.kt`.
+- The empty-state titles and bodies, the field labels, and the all-day explanation.
+
+Left as-is deliberately rather than half-done: moving them is mechanical, and doing it alongside
+Settings in Milestone 6 means one pass over every string in the app rather than two.
+
+**Risk if forgotten.** The app looks localised — because the parts a reviewer checks first are —
+while most of its text is not.
+
+---
+
+### TD-008 — Archive, complete, and delete have no UI gesture
+**Severity:** Low · **Opened:** Session 4
+
+`EventsViewModel` exposes `onArchivedChange`, `onCompletedChange`, and `onDelete`, all covered by
+tests, but nothing on the home screen calls them. There is no swipe action, no long-press menu,
+and no overflow on the card.
+
+Deliberate: the gesture design belongs with the widget work, since a card that previews a widget
+should not sprout a swipe affordance that the widget cannot have. Scheduled for Milestone 5.
+
+---
+
+### TD-009 — The date picker converts through UTC
+**Severity:** Low · **Opened:** Session 4
+
+Material 3's `DatePicker` speaks in UTC epoch milliseconds, so `CreateEventScreen` converts in
+and out through `ZoneOffset.UTC` to preserve the calendar date the user tapped. That is correct
+for the date itself — the real zone is applied when the `EventTarget` is built — but it is a
+subtlety that would be easy to "fix" wrongly into the device zone, which would shift the date by
+a day for users west of Greenwich.
+
+Guarded by comment only; there is no test, because the conversion lives inside a composable.
+Worth an instrumented test when Compose UI testing is set up.
 
 ---
 
@@ -179,6 +232,20 @@ Lint currently reports **0 errors and 11 warnings** on `:app:lintDebug` with
 ---
 
 ## Resolved
+
+### BUG-R003 — Repository tests collided with two coroutine schedulers *(found and fixed Session 4)*
+
+A `StandardTestDispatcher` created in `@Before` carries its own `TestCoroutineScheduler`, which
+collides with the one `runTest` installs — "Detected use of different schedulers" — the moment
+the code under test calls `withContext`. Fixed by using `Dispatchers.Unconfined` in the
+repository tests, which exercise SQL rather than virtual time, and `UnconfinedTestDispatcher`
+for `Dispatchers.setMain` in the ViewModel tests.
+
+### BUG-R004 — Debounce would have delayed sort taps *(found and fixed Session 4)*
+
+The first `EventsViewModel` debounced the whole input set, so changing the sort order while a
+search was active waited 250 ms, and the search field itself lagged a keystroke behind. Fixed by
+splitting the raw query and the list options into separate flows (D-031).
 
 ### BUG-R001 — All-day events read as "starting soon" all day *(found and fixed Session 3)*
 
