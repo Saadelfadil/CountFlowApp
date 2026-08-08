@@ -1,18 +1,24 @@
 plugins {
-    alias(libs.plugins.countflow.android.library)
+    alias(libs.plugins.countflow.jvm.library)
 }
 
-android {
-    namespace = "com.countflow.widget.engine"
-}
-
-// Intentionally empty scaffold. The update scheduler, render-model mapping, and progress-ring
-// renderer arrive in Milestones 4, 5, and 8.
+// Pure Kotlin/JVM, not an Android library — the same structural argument as :core:domain
+// (D-003): "no Android dependency" should be a compile error, not a rule someone has to
+// remember. WidgetRenderModel, the theme resolver, and the progress engine need nothing an
+// Android SDK would provide; the one thing that does — reading Context, AppWidgetManager,
+// GlanceId — belongs in :widget:glance, which is exactly the boundary this module exists to
+// enforce. See DECISIONS.md (D-033), which also explains why this reverses the android.library
+// scaffold from Milestone 1.
 //
-// This module must stay free of CountFlow-specific concepts so it can be reused by a future
-// widget app — it schedules and renders, it does not know what a countdown is.
-// See ARCHITECTURE.md section 4.1 and DECISIONS.md (D-004).
+// api, not implementation: :widget:glance needs Event, WidgetBinding, and the repository
+// interfaces directly (for the configuration activity and the receiver), and should not have to
+// redeclare a dependency this module already carries.
 dependencies {
-    implementation(projects.core.common)
-    implementation(libs.androidx.work.runtime.ktx)
+    api(projects.core.domain)
+    implementation(libs.kotlinx.coroutines.core)
+
+    testImplementation(libs.junit4)
+    testImplementation(libs.truth)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 }
