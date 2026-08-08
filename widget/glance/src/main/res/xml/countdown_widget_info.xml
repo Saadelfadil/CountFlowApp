@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One fixed size for this milestone — see CountdownGlanceWidget's doc comment for why. minWidth
+  and minHeight are approximate 2x2-cell dimensions; a dimens-resource-based sizing system that
+  matches the canonical-layout breakpoints properly is Milestone 5's job (KNOWN_ISSUES.md).
+
+  widgetFeatures combines two things that sound contradictory but are not: configuration_optional
+  means a launcher MAY place this widget without running configuration first, so the renderer
+  must cope with an absent binding (CountdownWidgetContent's UnconfiguredContent does); configure
+  being set at all means most launchers still run it immediately on placement, which is the path
+  this milestone actually exercises. reconfigurable lets a placed widget be re-pointed at a
+  different event without deleting and re-adding it.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/countdown_widget_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:resizeMode="none"
+    android:widgetCategory="home_screen|keyguard"
+    android:widgetFeatures="reconfigurable|configuration_optional"
+    android:configure="com.countflow.widget.glance.configuration.WidgetConfigurationActivity" />

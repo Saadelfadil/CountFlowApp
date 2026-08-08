@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      Compose draws everything inside WidgetConfigurationActivity; this only needs to remove the
+      framework action bar. Same base theme and same reasoning as :app's Theme.CountFlow.
+    -->
+    <style name="Theme.CountFlowWidgetConfiguration" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+</resources>

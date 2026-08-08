@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <receiver
+            android:name=".CountdownGlanceWidgetReceiver"
+            android:exported="false"
+            android:label="@string/countdown_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/countdown_widget_info" />
+        </receiver>
+
+        <!--
+          Widget configuration activities are a documented exception to "export nothing": the
+          system launches this from the launcher's process, a different UID from ours, and an
+          unexported activity would refuse that call with a SecurityException — even though we
+          also launch it ourselves for the reconfigure and unconfigured-placeholder paths.
+        -->
+        <activity
+            android:name=".configuration.WidgetConfigurationActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CountFlowWidgetConfiguration" />
+
+    </application>
+
+</manifest>

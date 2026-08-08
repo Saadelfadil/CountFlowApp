@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="countdown_widget_label">Countdown</string>
+    <string name="countdown_widget_description">Shows how long until one of your events.</string>
+</resources>
