@@ -3,8 +3,8 @@ package com.countflow.core.designsystem.format
 import android.content.res.Resources
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import com.countflow.core.designsystem.R
 import com.countflow.core.domain.countdown.CountdownLabel
 import com.countflow.core.domain.model.EventCategory
@@ -17,9 +17,10 @@ import com.countflow.core.domain.model.EventCategory
  * "in 1 day" and "in 2 days" are separate strings rather than a number glued to a fixed noun.
  *
  * Exposed twice on purpose. The [Resources] overload is the real implementation and is what the
- * widget layer will call, since Glance renders outside a Compose resource scope. The composable
- * wrapper reads through `LocalConfiguration` so text re-resolves when the user changes language
- * or font scale without the screen having to know it should.
+ * widget layer calls, since Glance renders outside a regular Compose UI resource scope and has
+ * no [stringResource] of its own. The composable wrapper below uses [stringResource] and
+ * [pluralStringResource] directly rather than re-deriving their internal recomposition handling
+ * — they already read the configuration that would need re-reading by hand otherwise.
  */
 object CountdownLabelFormatter {
 
@@ -53,24 +54,29 @@ object CountdownLabelFormatter {
 /**
  * The text for [label], re-resolved when the configuration changes.
  *
- * Reading [LocalConfiguration] is what makes that happen: without it Compose has no reason to
- * recompose this call when the user switches language in Settings, and the screen would keep
- * showing the old locale's text until it was rebuilt for some other reason.
+ * [stringResource] and [pluralStringResource] read the current configuration as part of their
+ * own implementation, which is what makes this recompose when the user switches language —
+ * unlike calling `Resources.getString` by hand, which reads a snapshot with nothing to key a
+ * recomposition on.
  */
 @Composable
 @ReadOnlyComposable
-fun CountdownLabel.asText(): String {
-    LocalConfiguration.current
-    return CountdownLabelFormatter.format(LocalContext.current.resources, this)
+fun CountdownLabel.asText(): String = when (this) {
+    CountdownLabel.Today -> stringResource(R.string.countdown_today)
+    CountdownLabel.Tomorrow -> stringResource(R.string.countdown_tomorrow)
+    CountdownLabel.Yesterday -> stringResource(R.string.countdown_yesterday)
+    CountdownLabel.NextWeek -> stringResource(R.string.countdown_next_week)
+    CountdownLabel.StartingSoon -> stringResource(R.string.countdown_starting_soon)
+    CountdownLabel.Completed -> stringResource(R.string.countdown_completed)
+    CountdownLabel.Expired -> stringResource(R.string.countdown_expired)
+    is CountdownLabel.InDays -> pluralStringResource(R.plurals.countdown_in_days, days, days)
+    is CountdownLabel.DaysAgo -> pluralStringResource(R.plurals.countdown_days_ago, days, days)
 }
 
 /** The display name of this category, re-resolved when the configuration changes. */
 @Composable
 @ReadOnlyComposable
-fun EventCategory.asText(): String {
-    LocalConfiguration.current
-    return LocalContext.current.resources.getString(nameRes)
-}
+fun EventCategory.asText(): String = stringResource(nameRes)
 
 /** The string resource naming this category. */
 internal val EventCategory.nameRes: Int

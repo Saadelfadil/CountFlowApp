@@ -27,12 +27,6 @@
         <item quantity="other">%1$d days ago</item>
     </plurals>
 
-    <!-- The large numeral on a card, with its unit. -->
-    <plurals name="countdown_unit_days">
-        <item quantity="one">day</item>
-        <item quantity="other">days</item>
-    </plurals>
-
     <!-- Event categories. -->
     <string name="category_general">General</string>
     <string name="category_birthday">Birthday</string>
