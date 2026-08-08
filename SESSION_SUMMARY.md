@@ -5,7 +5,7 @@
 Date: 2026-08-08
 Current Milestone: **Milestone 3 — Event CRUD (COMPLETE)**
 
-> **READ THIS FIRST:** Milestone 3 is done. 269 tests pass, `:core:domain` is at 99.5% line
+> **READ THIS FIRST:** Milestone 3 is done. 179 tests pass, `:core:domain` is at 99.5% line
 > coverage, and the CRUD flow was driven on a real emulator with 14 end-to-end checks. Do **not**
 > start Milestone 4 without explicit approval.
 >
@@ -61,7 +61,7 @@ impossible for validation or presentation logic to end up living in a composable
 
 **Verification**
 - `assembleDebug test :core:domain:koverVerify :app:lintDebug` — BUILD SUCCESSFUL.
-- 269 tests, 0 failures. Lint 0 errors, 10 accepted warnings.
+- 179 tests, 0 failures. Lint 0 errors, 10 accepted warnings.
 - On an API 36 emulator, a 14-step script drove: empty state → create form → blank-title
   rejection → non-emoji rejection → save → list render → search miss → search hit → clear →
   edit round trip → category filter → clear filters. **All 14 passed.**
@@ -264,8 +264,7 @@ Suggested commits: `feat(widget): configuration activity and binding lifecycle`,
 
 Verified this session:
 - `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` → BUILD SUCCESSFUL
-- 269 tests, 0 failures — 88 domain, 38 database, 31 data, 22 feature, plus 90 added across
-  those modules this session
+- 179 tests, 0 failures — 88 domain, 38 database, 31 data, 22 feature. 93 added this session
 - Coverage gate passed: `:core:domain` 99.5% lines, 94.4% branches, against a 95% line minimum
 - Lint: 0 errors, 10 warnings, all previously accepted
 - Runtime: installed on an API 36 emulator, 14 end-to-end checks passed, no crashes
@@ -276,7 +275,7 @@ Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed.
 
 ## Tests
 
-**269 written, 269 passing, 0 failing.**
+**179 written, 179 passing, 0 failing.**
 
 | Module | Tests | What they cover |
 |---|---|---|

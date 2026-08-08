@@ -16,7 +16,7 @@ Android 16 lockscreen and Always-On Display as later targets.
 | **Last session** | Session 4 — 2026-08-08 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 10 accepted warnings |
-| **Tests** | 269 passing, 0 failing. `:core:domain` 99.5% line coverage, gated at 95% |
+| **Tests** | 179 passing, 0 failing. `:core:domain` 99.5% line coverage, gated at 95% |
 | **Runtime** | ✅ API 36 emulator, Session 4: 14 end-to-end checks across create, validate, search, filter, edit |
 | **Overall progress** | ~36% |
 

@@ -70,7 +70,7 @@ in the domain; `CountdownLabel` and category formatting through plural resources
 `EventCardUiModel` with an injectable mapper; `EventsViewModel` and `EditEventViewModel` over
 `StateFlow`; and the home list and create/edit form.
 
-269 tests, 0 failures. `:core:domain` at 99.5% line coverage. Verified on an API 36 emulator with
+179 tests, 0 failures. `:core:domain` at 99.5% line coverage. Verified on an API 36 emulator with
 14 end-to-end checks driving create, validate, search, filter, and edit.
 
 **Not delivered:** the live widget preview in the form, and the accent colour picker — both

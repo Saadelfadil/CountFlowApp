@@ -42,7 +42,7 @@ filtered, sorted, and edited.
 
 **Build and tests**
 - Robolectric, pinned to SDK 34.
-- 190 new tests: 32 DAO, 20 repository, 22 feature, and the rest domain. 269 in total.
+- 93 new tests: 32 DAO, 20 repository, 22 feature, and 19 domain. 179 in total.
 
 ### Changed
 - `:core:designsystem` now depends on `:core:domain` and owns token-to-text formatting (D-028).

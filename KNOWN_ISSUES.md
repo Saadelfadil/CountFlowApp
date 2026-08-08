@@ -53,7 +53,7 @@ collapse into `:app` and be re-extracted later — they sit behind interfaces ei
 ### TD-003 — No database or repository integration tests — RESOLVED Session 4
 **Severity:** was Medium · **Opened:** Session 2 · **Closed:** Session 4
 
-Closed by adding Robolectric and 52 integration tests: 32 DAO tests in `:core:database` and 20
+Closed by adding Robolectric and 52 integration tests — 32 DAO tests in `:core:database` and 20
 repository tests in `:core:data`, all against real in-memory SQLite. Every behaviour listed below
 as unverified is now covered. The original entry is kept for the record.
 
