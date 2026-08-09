@@ -10,7 +10,75 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. Milestone 5 begins multiple widgets, themes, and sizes.
+Nothing yet. The rest of Milestone 5 (2×1/4×2 sizes, multiple independent widgets) begins next,
+pending approval — see `TODO.md` P0.
+
+---
+
+## [0.4.4] — 2026-08-09 — Milestone 5A: widget visual redesign
+
+Session 9. Scoped narrowly by the brief: make the one existing 2×2 widget look professionally
+designed before any new size or capability — explicitly excluding 2×1/4×2, Live Updates,
+lockscreen, billing, AdMob, notifications, cloud sync, and Wear OS. Directly answers Session 8's
+two highest-severity `docs/PRODUCT_REVIEW.md` findings: four of seven styles pixel-identical, and
+no widget-picker preview.
+
+### Added
+- Seven genuinely distinct per-style widget layouts (`CountdownWidgetLayouts.kt`) — different
+  alignment, type scale, progress presentation, and corner radius per style, not one shared tree
+  re-skinned with color. See `docs/WIDGET_DESIGN_GUIDE.md` for the design philosophy behind each.
+- The first working determinate circular progress ring in this project's history
+  (`CircularProgressRenderer`, `Canvas`→`Bitmap`, LRU-cached, quantized to whole percent) — closes
+  `LIM-001`, open since Milestone 0.
+- A widget-picker preview via `android:previewLayout` (`res/layout/widget_preview.xml`) — closes
+  TD-014, called "mandatory" in this session's brief.
+- A branded initial/loading layout (`res/layout/widget_initial_layout.xml`) replacing Glance's
+  generic spinner — a partial, honestly-scoped response to BUG-011 (see Known gaps below).
+- Target date rendering, wired for the first time via a new locale-aware `TargetDateFormatter`
+  (`java.time.format.DateTimeFormatter`, no hardcoded English).
+- The configuration screen's live preview: a new customize step (event → style/progress/toggles/
+  accent) that redraws instantly via `WidgetRenderModelProvider.preview()`, a pure no-I/O render
+  path that never writes to the database, preserving the existing no-orphan-bindings guarantee.
+- An accent-colour picker (Dynamic Material You + eight curated presets), wired into both the
+  create/edit form and the configuration screen's per-widget override.
+- `docs/WIDGET_DESIGN_GUIDE.md` and `docs/WIDGET_DESIGN_REVIEW.md`.
+
+### Fixed
+- **The "Tomorrow / Tomorrow" and unnecessary "N / In N days" redundancies**, closed at the type
+  level via a new shared `WidgetHeadline` content-hierarchy model, computed once before any style
+  renders — not patched per fixture.
+- **BUG-R011** — a word-shaped headline ("Completed", "Expired") wrapped mid-word at the type
+  scale this session first shipped (`headlineSize()` now selects a smaller size for word-shaped
+  headlines; `maxLines = 1` everywhere ellipsizes cleanly instead). Found and fixed within the
+  same session it was introduced, on a real device.
+- Two lint warnings introduced earlier in the session: `UseKtx` (`Bitmap.createBitmap` → the KTX
+  extension) and `LocalContextResourcesRead` ×2 (`WidgetPreviewCard` now reads `LocalResources`
+  instead of `LocalContext.current.resources`).
+
+### Resolved (technical debt)
+- **TD-011** — corner radius is now per-style: four styles track
+  `android.R.dimen.system_app_widget_background_radius`, three (Glass, Rounded, Modern) keep a
+  deliberate fixed override. See `DECISIONS.md` D-045.
+- **TD-014** — widget-picker preview, above.
+- **TD-015** — unused vertical space, closed as a side effect of the per-style redesign rather
+  than a separate pass.
+
+### Known gaps (not fixed by design)
+- **BUG-011** remains open. The initial layout is now branded, but a Force-Stopped widget still
+  does not recover on its own — Android cancels scheduled work on Force Stop, and defeating that
+  was explicitly out of scope. Real resolution still needs Milestone 8's refresh infrastructure or
+  a "tap to retry" affordance.
+- Five of seven styles still share one background color (`(26, 27, 32)`, the ambient Material You
+  surface) by design — differentiation this session is layout/typography/progress-presentation,
+  not a seven-color palette. See `docs/WIDGET_DESIGN_REVIEW.md` for why this is the correct
+  design, not a residual gap.
+- Still one size only; 2×1/4×2 remain out of scope until the rest of Milestone 5 is approved.
+
+### Tests
+235 tests, 0 failures (up from 223) — `widget:engine` +1, `widget:glance` +11. `:core:domain`
+line coverage unchanged at 97.0%, gated at 95%. Lint: 0 errors, 17 warnings (10 pre-existing +
+7 new `HardcodedText`, both accepted and documented — the two new plain Android XML layouts this
+session added are inherently static preview/loading surfaces, not user-facing localizable text).
 
 ---
 

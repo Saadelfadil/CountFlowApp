@@ -853,3 +853,200 @@ tweak might want.
 testing API (`glance-testing`) exposes text/content-description matchers but no way to assert a
 composable's resolved `ColorProvider` value — noted as a testing-capability gap in
 `KNOWN_ISSUES.md` rather than worked around with new test infrastructure.
+
+---
+
+## D-045 — Widget corner radius is per-style: four styles track the system value, three override it
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5A
+
+`WidgetTheme.cornerRadiusDp` changes from `Int` to `Int?`. `null` means "track
+`android.R.dimen.system_app_widget_background_radius`" — the dimension Android itself uses to clip
+a widget's outer bounds, applied via Glance's `cornerRadius(Int resId)` overload (confirmed to
+accept a resource id directly, not just a resolved dp value). Minimal, Material, Progress, and OLED
+resolve to `null`; Glass (20dp), Rounded (28dp), and Modern (8dp) keep fixed overrides.
+
+**Reason.** TD-011 (open since Session 7) asked a binary question — "adopt the system value or
+don't" — that turned out to have a per-style answer instead. A style resolves to `null`
+specifically when it has no design reason to look rounder or squarer than whatever this launcher
+considers a normal widget; a style keeps a fixed override specifically when the override *is* part
+of what makes it that style — Rounded is not "Material with a bigger number," it is "rounder than
+default," which is meaningless if it tracks the same default it's defined against. Each of the
+seven `when` arms in `WidgetThemeResolver.resolve` carries an inline comment naming its specific
+reason, not a blanket policy applied uniformly.
+
+**Alternatives.** Adopt the system value everywhere, dropping the three fixed overrides —
+rejected: Rounded's entire premise (per this session's brief) is being visibly rounder than the
+system default, and Modern's editorial density was specifically designed around a crisper corner
+than the softer system default typically provides. A single new fixed default for all seven,
+replacing the old hand-picked 16dp — rejected for the same reason TD-011 was opened in the first
+place: any fixed number, however better-chosen, still risks visibly disagreeing with the real
+launcher's own outer clip mask on some device/theme combination the way the old 16dp did.
+
+**Tradeoffs.** Four styles' actual on-screen radius is no longer a value this codebase controls or
+can unit-test against a literal — it now depends on the launcher and Android version. Accepted:
+that is the entire point of tracking the system value, and the three styles with a real design
+reason to differ still assert one explicitly.
+
+---
+
+## D-046 — Countdown content hierarchy: a shared `WidgetHeadline` model, computed once, before any style renders
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5A
+
+`CountdownWidgetContent.resolveHeadline` computes one `WidgetHeadline` (`primary`, `unit`,
+`secondary`, `showIdentity`) per render, before dispatching to any of the seven per-style layouts.
+Every layout consumes this output verbatim — none re-derives what the headline or its supporting
+line should say.
+
+**Reason.** The brief named two redundancy bugs by example — "Tomorrow / Tomorrow" and "7 / Next
+week" shown for every in-range count rather than only when it adds information — and both are
+symptoms of the same missing rule: nothing previously decided, in one place, whether a second line
+was worth drawing. Computing `WidgetHeadline` once means that rule exists exactly once. A
+near-term countdown's `secondary` is the event's clock time or nothing, never the label word
+again. An ordinary day count's `secondary` is populated only for `CountdownLabel.NextWeek`
+specifically, because that is the one label carrying information (*which* calendar week) the
+headline number doesn't already state — every other in-range label restates the number and is
+correctly suppressed. Completed/expired events flip `primary` to the status word and demote the
+title into `secondary`, suppressing `showIdentity` so the title isn't drawn twice.
+
+**Alternatives.** Let each of the seven layouts decide its own hierarchy independently — rejected:
+this is exactly how the original redundancy bugs happened, and seven independent
+should-I-show-a-second-line decisions is seven places to get it wrong instead of one. A
+`WidgetRenderModel` field computed in `:widget:engine` instead of the Glance layer — rejected: the
+hierarchy decision is about *how to say something* (identical reasoning to
+`CountdownLabelFormatter`'s own module boundary), not *what is true*, and belongs with the other
+presentation-only decision already made in this file (`resolveColors`), not duplicated across the
+domain/engine boundary.
+
+**Tradeoffs.** None found. Unit-tested directly (`CountdownWidgetContentTest`), including two
+targeted regression tests for `WidgetHeadline.isNumeric` after BUG-R011 (below) showed a headline
+selection bug this model didn't originally guard against.
+
+---
+
+## D-047 — Determinate circular progress via a cached `Canvas`/`Bitmap` renderer, quantized to whole percent
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5A
+
+`CircularProgressRenderer` draws a ring to a `Bitmap` via `Canvas`/`Paint.Style.STROKE` with rounded
+caps, keyed on `(sizePx, percent, trackArgb, progressArgb, strokeWidthPx)` and cached in a 32-entry
+access-order `LinkedHashMap` (`removeEldestEntry` overridden as a simple LRU). `ProgressLayout`
+sizes the ring at 62% of the shorter cell dimension (clamped 64–120dp) from `LocalSize`.
+
+**Reason.** Glance's own `CircularProgressIndicator` is indeterminate-only in 1.1.1 (`LIM-001`,
+confirmed against the AAR since Session 1) — there is no library path to a determinate ring at
+all. `Canvas`-to-`Bitmap` is the documented workaround (`ARCHITECTURE.md` D-001's canonical-sample
+adoption already anticipated this pattern generally). Quantizing `percent` to a whole number
+(`WidgetProgress.percent` already existed as this exact shape, not derived from `fraction` at
+render time) bounds the cache to at most 101 entries per distinct
+size/color/stroke combination rather than regenerating a bitmap on every fractional-percent
+recomposition.
+
+**Alternatives.** An unbounded cache — rejected outright given `LIM-003`'s silent-drop failure
+mode; a host that exceeds the `6 × screenWidthPx × screenHeightPx` bitmap budget doesn't error, it
+just drops the widget, so an unbounded cache is not a "slow, but works" failure, it's a "widget
+disappears with no diagnostic" one. A size-unbounded cache trimmed by total bytes rather than entry
+count — rejected as more precise than this data needs: worst case at `MAX_CACHED = 32` is
+`225KB × 32 ≈ 7.2MB`, already comfortably under budget for any plausible screen size, so a simpler
+entry-count cap was preferred over byte-accounting complexity with no real payoff.
+
+**Tradeoffs.** The ring only renders for a numeric headline (`headline.isNumeric`) — a word-shaped
+headline ("Completed") falls back to the plain centered text every other centered style uses,
+rather than being crammed into an ~80dp circle. Accepted deliberately: a status word doesn't fit a
+ring gracefully at any font size, and the fallback reuses an already-correct pattern rather than
+inventing a second one.
+
+---
+
+## D-048 — `WidgetRenderModelProvider.preview()`: a pure, no-I/O render path for the configuration screen's live preview
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5A
+
+`WidgetRenderModelProvider` gains a third method, `preview(event: Event, binding: WidgetBinding):
+WidgetRenderModel`, alongside the existing `observe`/`get`. It runs the same
+`CountdownEngine.countdownAt` → `WidgetRenderMapper.map` pipeline as a real render, synchronously,
+against an `event`/`binding` pair the caller already holds — no repository read, no database
+write, safe to call on every keystroke.
+
+**Reason.** The brief required the configuration screen's preview to "react immediately" with no
+save required — every style change, toggle flip, or accent pick has to redraw a real, correctly
+computed preview before anything is persisted. `WidgetConfigurationViewModel`'s entire design since
+Milestone 4 rests on writing a binding **only** in direct response to `onConfirm()` — the "no
+orphan bindings" guarantee its own class doc describes. A naive "write speculatively so the
+preview matches the database" approach would have reopened exactly that risk to add a customize
+step; `preview()` instead gives the screen the same rendering logic a real widget uses, for data
+that may never be written at all.
+
+**Alternatives.** Re-derive a simplified approximation of the render logic directly in the
+configuration `ViewModel` or `WidgetPreviewCard` — rejected: this is precisely the kind of
+duplicated presentation rule `TODO.md`'s "Continuous" section already warns against (D-034's
+`showsMeaningfulDayCount`/`defaultEmoji` precedent), and a preview that could silently drift from
+what a real render produces would be worse than no live preview at all. Write a real binding on
+every change and delete it on cancel — rejected as reintroducing the orphan-binding risk Milestone
+4 was built specifically to close.
+
+**Tradeoffs.** `preview()` and `get()`/`observe()` now both live on the same class with
+meaningfully different contracts (one I/O-free and synchronous, two `Flow`/`suspend`-based) —
+judged a single cohesive responsibility ("produce a render model, in whatever shape the caller
+needs it") rather than two, consistent with `docs/WIDGET_REVIEW.md` §2's existing read on this
+same class's `observe`/`get` split.
+
+---
+
+## D-049 — The configuration screen's live preview is a simplified plain-Compose card, not a pixel-identical Glance reproduction
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5A
+
+`WidgetPreviewCard` draws a `WidgetRenderModel` with ordinary Compose Material 3 components
+(`Box`/`Column`/`Text`/`CircularProgressIndicator`/`LinearProgressIndicator`), varying alignment,
+background, corner radius, and ring-vs-bar by style through one composable — not seven independent
+reproductions of `CountdownWidgetLayouts.kt`'s seven Glance layouts.
+
+**Reason.** `WidgetConfigurationActivity` is a normal `ComponentActivity`; Glance has no supported
+way to render a live composition inline inside one (Glance widgets exist only as `RemoteViews`
+produced for a host, not embeddable Compose content). Building and maintaining seven true
+duplicate layouts in plain Compose — one per style, kept in lockstep with `CountdownWidgetLayouts.kt`
+by hand forever — was judged a maintenance liability disproportionate to what a *preview* needs to
+do: it reuses the exact same `resolveHeadline` decision the real renderer uses (so *what* it shows
+is never faked or re-derived, only *how* it's drawn is simplified), which is enough to make style,
+toggle, and accent choices meaningful before saving.
+
+**Alternatives.** Seven pixel-faithful plain-Compose reproductions — rejected as above. Rendering
+the real Glance composition off-screen and capturing it as a bitmap for the preview — rejected as
+substantially more engineering than this milestone's scope justified, with no confirmed Glance API
+for headless/off-screen composition capture at this library version.
+
+**Tradeoffs.** The preview is a genuine approximation, documented as such in the class's own KDoc
+so a future reader doesn't mistake it for authoritative. `docs/WIDGET_DESIGN_REVIEW.md` and
+`docs/SCREENSHOT_GUIDE.md`'s real on-device captures remain the source of truth for exact visual
+appearance, not this preview.
+
+---
+
+## D-050 — Accent color picker: Dynamic Material You plus eight curated presets, no free-form RGB picker
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5A
+
+`AccentColorPicker` (`core/designsystem`) offers one Dynamic swatch (an outlined circle with a
+plain "A" text glyph) and eight fixed preset colors, wired into both the create/edit form and the
+configuration screen's per-widget `accentColorOverride`.
+
+**Reason.** The brief asked for the picker deferred since Milestone 3, explicitly scoped away from
+"an unrestricted RGB picker for MVP unless already justified" — no such justification exists in
+this codebase. A curated set keeps every accent legible against both forced backgrounds
+(`ForcedBackgroundPalette`) and the dynamic scheme without a contrast-checking UI this milestone
+has no scope to build. `AccentColor.Dynamic`/`AccentColor.Fixed` were already the modeled shape
+(`WidgetThemeResolver.resolve` already branches on exactly this), so the picker fills in existing
+domain surface rather than adding new representation.
+
+**Alternatives.** A full HSV/RGB picker — rejected per the brief's explicit MVP scope note, and
+because an arbitrary user-chosen color has no guarantee of meeting D-041's contrast floor the way a
+curated set can be pre-verified to. `Icons.Filled.Palette` for the Dynamic swatch instead of a text
+glyph — rejected: `core/designsystem`'s `build.gradle.kts` deliberately excludes
+`material-icons-extended` for bundle size (a standing constraint, confirmed by grep against every
+other icon usage in the codebase, which draws only from `material-icons-core`), and this is not
+sufficient justification to add it back.
+
+**Tradeoffs.** Users cannot express an arbitrary brand color for an event — acceptable for MVP
+scope per the brief's own instruction; revisit only if user feedback specifically asks for it.

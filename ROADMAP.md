@@ -13,7 +13,7 @@ Living document. Update the status column as milestones move.
 | 4 | Widget engine | **Completed** | 5–6 |
 | 4.5 | Widget stabilization | **Completed** | 7 |
 | 4.9 | Real product validation | **Completed** | 8 |
-| 5 | Multiple widgets | Not Started | — |
+| 5 | Multiple widgets | **In Progress** (5A done — 2×2 visual redesign; sizes/multi-widget remain) | 9 |
 | 6 | Settings | Not Started | — |
 | 7 | Notifications | Not Started | — |
 | 8 | Optimization | Not Started | — |
@@ -213,13 +213,48 @@ fix-small-things scope.
 
 ---
 
-## Milestone 5 — Multiple widgets · Not Started
+## Milestone 5 — Multiple widgets · In Progress
 
 Unlimited independent widgets. Seven themes (Minimal, Material, Glass, OLED, Progress, Rounded,
 Modern). Sizes 2×1, 2×2, 4×2 with `SizeMode.Exact` and breakpoint ranges. The Canvas-drawn
 progress ring required by LIM-001, quantized to whole percent and cached.
 
 **Done when:** two widgets showing the same event in different styles update independently.
+
+### Milestone 5A — Visual redesign of the existing 2×2 widget · Completed (Session 9)
+
+Deliberately scoped narrower than the rest of Milestone 5: the brief was to make the **one 2×2
+widget that already exists** look professionally designed before adding any new size or capability
+— explicitly excluding 2×1/4×2, Live Updates, lockscreen, billing, AdMob, notifications, cloud
+sync, and Wear OS. Directly answers Session 8's `docs/PRODUCT_REVIEW.md` findings #3 (four styles
+pixel-identical) and #4 (no picker preview, called "mandatory" by name in this session's brief).
+
+**Delivered:** seven genuinely different per-style layouts (`CountdownWidgetLayouts.kt`) —
+different alignment, type scale, progress presentation, and corner radius per style, not a shared
+tree re-skinned with color (D-045 through D-050 cover the specific decisions); a shared
+`WidgetHeadline` content-hierarchy model closing both redundancy bugs the brief named by example
+("Tomorrow / Tomorrow," and "7 / Next week" shown even when it added no information) (D-046); the
+first working determinate circular progress ring in this project's history, closing `LIM-001`
+(D-047); TD-011 (system-tracked corner radius, per-style) resolved; TD-014 (mandatory widget-picker
+preview via `android:previewLayout`) resolved; TD-015 (unused vertical space) resolved as a side
+effect of the same redesign; a live-reactive configuration screen upgrade — event picker → a new
+customize step with style/progress/toggle/accent controls and an instant preview needing no save
+(D-048, D-049); the deferred accent-color picker (Dynamic + eight presets, D-050); BUG-011
+investigated and partially addressed (branded initial layout; the underlying force-stop recovery
+gap deliberately left open, per instruction not to defeat platform semantics); one real bug found
+and fixed within the session itself (a word-shaped headline wrapping mid-word, BUG-R011); and two
+new documents, `docs/WIDGET_DESIGN_GUIDE.md` (per-style design philosophy) and
+`docs/WIDGET_DESIGN_REVIEW.md` (before/after evidence and the session's Final Report).
+
+**Verdict, from `docs/WIDGET_DESIGN_REVIEW.md`'s Final Report:** YES, the seven widgets would now
+read as a professionally designed product beside Google's own widgets in the Pixel picker — with
+BUG-011 (still open), five styles sharing one background color (by design, not a residual gap —
+see the review's own table), and the still-single size stated plainly as what keeps this from being
+a flawless yes rather than left unsaid.
+
+**Not delivered, by explicit scope, not oversight:** 2×1/4×2 sizes, multiple independent widgets on
+different events at once, and everything else Milestone 5 still owns. Session 9 stopped at the
+brief's explicit instruction and awaits approval before continuing.
 
 ---
 

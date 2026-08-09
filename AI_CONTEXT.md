@@ -50,6 +50,9 @@ function names for data flow, render flow, refresh flow, and both lifecycles. Re
 `docs/PRODUCT_REVIEW.md` and `docs/SCREENSHOT_GUIDE.md` before assuming anything about the widget
 is production-verified — as of Session 8 there is finally real, on-device, screenshotted evidence
 (`docs/WIDGET_REVIEW.md`, Session 7, predates that and is largely superseded — see its own banner).
+For the widget's **visual design** specifically — why each of the seven styles looks the way it
+does, and the before/after evidence that they now look genuinely different — read
+`docs/WIDGET_DESIGN_GUIDE.md` and `docs/WIDGET_DESIGN_REVIEW.md` (Session 9).
 
 **If you need a device this session, check for a local one before assuming you need a remote
 one.** Sessions 5–7 fought a flaky remote device at `127.0.0.1:6555` and Session 7 wrongly
@@ -58,7 +61,7 @@ concluded no local emulator existed — that conclusion came from `which emulato
 works, alongside an existing `Pixel_9` AVD. `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`
 launched directly gave Session 8 a fully stable device for the whole session. Try this first.
 
-## What exists right now (Milestone 4.9 of 9, complete)
+## What exists right now (Milestone 5A of 9, complete — full Milestone 5 still open)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
@@ -66,21 +69,33 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
 - **Persistence**: Room (3 entities, cascading foreign keys, schema v1 committed), DataStore
   preferences, repository implementations — all integration-tested against real SQLite via
   Robolectric, not mocked.
-- **App UI**: home list with search/sort/filter, create/edit form with validation. No delete or
-  archive gesture yet (TD-008); no accent-colour picker; no widget preview.
-- **Widget**: one 2×2 `CountdownGlanceWidget`, finished to production quality within that scope
-  (accessibility content description, colors that resolve correctly against forced dark
-  backgrounds, no dead configuration fields — see D-039, D-040), a configuration activity with a
-  verified no-orphan-bindings guarantee, a theme resolver for all seven named styles, a progress
-  engine, and a Milestone-4-scoped refresh scheduler (app-alive only — the real alarm-based
-  strategy is Milestone 8, D-008).
-- **Now real, confirmed Session 8**: the widget has been placed through the actual system picker
-  and launcher, configured, updated live, survived an app update, and survived a full device
-  reboot — all screenshotted (`docs/SCREENSHOT_GUIDE.md`). This closed TD-010 after three
-  sessions of trouble. The same device access found a Critical bug invisible to every prior
-  session: the widget's real footprint was 3×2, not the 2×2 everyone assumed, because
-  `minWidth="180dp"` was the wrong value under Android's own cell-size formula — fixed (BUG-R009).
-  Still not measured on any device, by any session: update latency, memory, CPU, battery, or
+- **App UI**: home list with search/sort/filter, create/edit form with validation, and now an
+  accent-colour picker (Dynamic + eight presets, D-050). No delete or archive gesture yet
+  (TD-008).
+- **Widget**: one 2×2 `CountdownGlanceWidget`, now with seven **genuinely distinct** per-style
+  layouts (`CountdownWidgetLayouts.kt`) — different alignment, type scale, progress presentation
+  (none / linear bar / determinate circular ring), and corner radius per style, not the same tree
+  re-skinned with color (Session 9, `docs/WIDGET_DESIGN_GUIDE.md`). A shared `WidgetHeadline`
+  content-hierarchy model (D-046) decides once, before any style renders, what the headline and
+  its supporting line should say — closing the "Tomorrow / Tomorrow" and unnecessary "N days / In
+  N days" redundancies the pre-Session-9 renderer had. A configuration activity with a verified
+  no-orphan-bindings guarantee, now a two-step flow (pick event → customize style/progress/toggles/
+  accent) with a live, no-save-required preview (D-048, D-049). A widget-picker preview via
+  `android:previewLayout` (TD-014, resolved). A Milestone-4-scoped refresh scheduler (app-alive
+  only — the real alarm-based strategy is Milestone 8, D-008).
+- **Confirmed Session 8**: the widget has been placed through the actual system picker and
+  launcher, configured, updated live, survived an app update, and survived a full device reboot —
+  all screenshotted (`docs/SCREENSHOT_GUIDE.md`). This closed TD-010 after three sessions of
+  trouble. The same device access found a Critical bug invisible to every prior session: the
+  widget's real footprint was 3×2, not the 2×2 everyone assumed, because `minWidth="180dp"` was
+  the wrong value under Android's own cell-size formula — fixed (BUG-R009).
+- **Confirmed Session 9**: all seven styles verified genuinely distinct in real screenshots (not
+  just in code) — `docs/WIDGET_DESIGN_REVIEW.md`'s Final Report answers "would this look
+  professionally designed beside Google's own widgets" with **YES**, with the specific remaining
+  gaps (BUG-011 still open, one size only) stated plainly rather than hidden. One real bug — a
+  word-shaped headline wrapping mid-word — was introduced and fixed within the same session
+  (BUG-R011).
+- Still not measured on any device, by any session: update latency, memory, CPU, battery, or
   TalkBack output — see `docs/PRODUCT_REVIEW.md` for what was prioritized instead and why.
 
 `ROADMAP.md` has the milestone-by-milestone detail; `SESSION_SUMMARY.md` has what the *most
@@ -150,6 +165,13 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
   `RemoteViews` `TextView` ellipsizes by default anyway (Session 8). The API reading wasn't wrong;
   it was incomplete evidence being treated as sufficient. Verify a rendering claim against one
   real render before writing it down as fact.
+- **A font size tuned for one content shape doesn't generalize to another, and Glance cannot
+  autosize to catch the gap.** Session 9's headline sizes were tuned for a 1–3 digit day count;
+  the first real screenshot of a completed event showed "Completed" wrapped mid-word into
+  "Compl" / "eted" (BUG-R011). Found and fixed within the same session it was introduced, the same
+  way — a real screenshot, not code review, since nothing in the type system distinguishes a
+  numeric headline from a word-shaped one without an explicit check (`WidgetHeadline.isNumeric`).
+  Worth remembering for any future fixed-`sp` constant applied to more than one content shape.
 
 ## How to verify the project still works
 
@@ -157,7 +179,7 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
 ./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug
 ```
 
-Current baseline: 223 tests, 0 failures, 0 lint errors (10 accepted warnings, all documented in
+Current baseline: 235 tests, 0 failures, 0 lint errors (17 accepted warnings, all documented in
 `KNOWN_ISSUES.md`), `:core:domain` line coverage above 95% (currently ~97%).
 
 Build output is noisy — every module logs two deprecation warnings per compile, a side effect of
@@ -186,12 +208,14 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (44 as of Session 8) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (50 as of Session 9) with reason, alternatives, tradeoffs. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render/refresh flow, both lifecycles, Glance's sharp edges, forward compatibility. |
 | `docs/WIDGET_REVIEW.md` | The Milestone 4.5 audit (Session 7, no device — see its own banner; largely superseded by the two below). |
 | `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, real device evidence. |
-| `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots of every major widget state, with the recipe to reproduce each. |
+| `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots of every major widget state, with the recipe to reproduce each (Session 8 baseline). |
+| `docs/WIDGET_DESIGN_GUIDE.md` | Per-style design philosophy for all seven widget styles — why each layout exists, what differentiates it, when to choose it (Session 9). |
+| `docs/WIDGET_DESIGN_REVIEW.md` | Before/after evidence for the Milestone 5A redesign and the session's Final Report verdict (Session 9). |
 | `ROADMAP.md` | Milestone-by-milestone status and what each one delivered. |
-| `KNOWN_ISSUES.md` | Open bugs (none), technical debt, platform limitations, resolved defects. |
+| `KNOWN_ISSUES.md` | Open bugs, technical debt, platform limitations, resolved defects. |
 | `TODO.md` | Prioritised outstanding work, P0 first. |
 | `CHANGELOG.md` | Keep-a-Changelog-format release notes per milestone. |

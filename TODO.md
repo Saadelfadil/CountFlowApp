@@ -5,79 +5,44 @@ scheduled but not imminent.
 
 ---
 
-## P0 — Blocks Session 9
+## P0 — Blocks Session 10
 
-- [ ] **Use the local emulator, not the remote one.** Session 8 found a stable local AVD
-      (`Pixel_9`) and `emulator` binary already on this machine
-      (`~/Library/Android/sdk/emulator/emulator -avd Pixel_9`), launched it directly, and got a
-      fully stable device for the whole session — a first, after three sessions of trouble with a
-      remote device at `127.0.0.1:6555`. Check for the local binary explicitly
-      (`ls ~/Library/Android/sdk/emulator/emulator`), not just `which emulator` — that's exactly
-      the check Session 7 skipped, which is why it wrongly concluded no local emulator existed.
-- [ ] **Approve starting Milestone 5.** The widget has now been through a finishing pass
-      (Session 6), a stabilization audit (Session 7), and a real-device product validation
-      (Session 8) — read `docs/PRODUCT_REVIEW.md`'s ranked findings before deciding, since two of
-      its High-severity items (style differentiation, the missing picker preview) are exactly
-      what Milestone 5 already plans to build.
+- [ ] **Approve starting 2×1/4×2 size work (the rest of Milestone 5).** Milestone 5A (this
+      session, Session 9) was deliberately scoped to the existing 2×2 widget's visual quality
+      only — see `docs/WIDGET_DESIGN_REVIEW.md`'s Final Report for the YES verdict and its
+      explicit STOP before any size work began. Read that report before approving continuation.
 - [ ] **Decide on BUG-011** (widget sticks on a loading spinner after Force Stop until reopened).
-      Not fixed in Session 8 by design — closing it needs either Milestone 8's refresh
-      infrastructure or a deliberate new "tap to retry" affordance. Worth a product call on
-      whether it's worth a small, self-contained fix sooner.
+      Session 9 gave it a branded initial layout ("CountFlow / Tap to refresh") but deliberately
+      did not attempt to fix the underlying recovery gap, per instruction not to defeat Android's
+      force-stop semantics. Closing it for real still needs either Milestone 8's refresh
+      infrastructure or a deliberate new "tap to retry" affordance — worth a product call on
+      whether it's worth pulling forward.
 - [ ] **Confirm the countdown label policy** — carried over from Sessions 3 and 4, still
-      unanswered. One line in `CountdownConfig` today; two surfaces and their tests once
-      Milestone 5 adds more widget styles that render it.
+      unanswered. One line in `CountdownConfig` today; now rendered through seven distinct
+      layouts (Session 9), which makes the policy question more visible, not less.
 
 ---
 
-## P1 — Milestone 5: multiple widgets, themes, sizes
+## P1 — Rest of Milestone 5: additional sizes, multiple independent widgets
 
-- [ ] **Render all seven `WidgetStyle` values distinctly.** No longer just a theoretical gap —
-      Session 8 pixel-sampled real device screenshots and confirmed Minimal, Material, Progress,
-      and Modern are **exactly** RGB-identical in every state tested. Modern is marked
-      `isPremium = true`; a user paying for it currently gets pixels identical to the free
-      Minimal default. See `docs/PRODUCT_REVIEW.md` finding #3.
-- [ ] **TD-014 — add a widget-picker preview.** Confirmed on a real Pixel Launcher: CountFlow
-      shows a blank icon-only card while every other widget in the same picker shows real content.
-      `android:previewLayout` (a plain Android XML layout, not Glance) is the documented
-      mechanism. High first-impression impact — this is literally the first thing a browsing user
-      sees. See `docs/PRODUCT_REVIEW.md` finding #4.
-- [ ] **TD-015 — use the widget's vertical space deliberately.** Every screenshot in
-      `docs/SCREENSHOT_GUIDE.md` shows roughly a third of the card empty above the content and
-      more below. Worth deciding alongside the per-style layout work above, not separately.
-- [ ] **TD-011 — read the system's actual widget corner radius**
-      (`android.R.dimen.system_app_widget_background_radius` via Glance's `cornerRadius(Int resId)`
-      overload, confirmed to exist) instead of the hand-picked 16/20/28dp constants in
-      `WidgetThemeResolver`. Decide per-style whether to track the system value or keep an
-      intentional difference (ROUNDED's whole premise is being rounder than default).
-- [ ] Canvas-drawn circular progress ring for `ProgressStyle.CIRCULAR`, quantized to whole
-      percent and cached, budgeted against `6 × screenW × screenH` bytes (LIM-001, LIM-003).
-      `WidgetProgress.percent` is already the cache-key shape.
-- [ ] Sizes 2×1 and 4×2 alongside the existing (now genuinely correct) 2×2, with `SizeMode.Exact`
-      and breakpoint ranges — this also closes TD-012 (a launcher ignoring `resizeMode="none"`
-      today has no adaptive fallback to fall into).
+- [ ] Sizes 2×1 and 4×2 alongside the existing (now genuinely correct, and now genuinely
+      well-designed — Milestone 5A) 2×2, with `SizeMode.Exact` and breakpoint ranges — this also
+      closes TD-012 (a launcher ignoring `resizeMode="none"` today has no adaptive fallback to
+      fall into).
 - [ ] Verify two widgets on the same event can show different styles via
       `WidgetBinding.resolveWidgetStyle` — the mapper and domain model already support this
-      (tested), but no UI lets a user set an override yet.
-- [ ] Adopt Google's font-measurement utility from the original sample, but move it off the
-      render path, cache it, and replace the deprecated `scaledDensity` (LIM-004).
+      (tested), and the configuration screen's per-widget style override (Session 9) exercises
+      this path for the first time through real UI, but no test has placed two widgets on the same
+      event simultaneously.
 - [ ] Verify emoji rendering on a physical device — a real emulator now exists and is stable, but
       emoji glyph coverage is specifically a launcher/OEM font concern the emulator can't stand in
       for (LIM-006).
-- [ ] A settings/binding-editor surface for `showTitle` / `showEmoji` / `showTargetDate` /
-      `showPercentage` — all four are modelled, persisted, and fully wired to the renderer, but
-      nothing lets a user set any of them independently of the `WidgetBinding.inheriting()`
-      defaults yet.
-- [ ] Wire `WidgetRenderModel.target`/`.targetZone`/`.showDate` to an actual rendered date —
-      identified in Session 7 as the same *shape* of gap as `showPercentage` was (computed, never
-      read), but deliberately not fixed then: it needs new date-formatting logic (no
-      `DateTimeFormatter` usage exists anywhere in the codebase yet). Now that TD-015 (unused
-      vertical space) is confirmed, this is also a candidate for filling that space usefully.
-
-Deferred from Milestone 3, since both should preview a renderer that only now exists:
-- [ ] Accent-colour picker in the create/edit form. `AccentColor.Fixed` is already modelled,
-      persisted, mapped, and now flows correctly into `WidgetTheme` — only the picker UI is
-      missing.
-- [ ] Live widget preview in the form.
+- [ ] Live widget preview **in the create/edit form itself** — Session 9 built a live preview for
+      the widget *configuration* screen (`WidgetPreviewCard`, D-049), which is arguably the more
+      valuable surface since it previews the actual per-widget style/toggle/accent choices, but
+      the create/edit form (`CreateEventScreen`) still has no preview of its own. Lower priority
+      now that the configuration screen has one; revisit if user feedback specifically wants it
+      earlier in the flow.
 - [ ] Archive, complete, and delete gestures on the list (TD-008). The ViewModel methods exist
       and are tested; only the gesture is missing.
 
@@ -115,11 +80,6 @@ Deferred from Milestone 3, since both should preview a renderer that only now ex
 
 ## Technical debt
 
-- [ ] **TD-011 (Medium)** — widget corner radii don't track the system's actual clip radius.
-      Scheduled for the start of Milestone 5.
-- [ ] **TD-014 (Medium, new Session 8)** — no preview image in the widget picker.
-- [ ] **TD-015 (Medium, new Session 8)** — significant unused vertical space in every widget
-      state.
 - [ ] **TD-001 (High)** — migrate off `android.builtInKotlin=false` / `android.newDsl=false`
       before any AGP 10 upgrade. Budget a full session.
 - [ ] **TD-007 (Medium)** — localise the remaining UI strings. Scheduled for Milestone 6.
@@ -127,17 +87,22 @@ Deferred from Milestone 3, since both should preview a renderer that only now ex
       `:core:analytics`, `:core:billing`).
 - [ ] **TD-005 (Low)** — build output noise; disappears with TD-001.
 - [ ] **TD-006 (Low)** — title search is ASCII-case-insensitive only.
-- [ ] **TD-008 (Low)** — no archive/complete/delete gesture. Scheduled for Milestone 5.
+- [ ] **TD-008 (Low)** — no archive/complete/delete gesture. Scheduled for the rest of Milestone 5.
 - [ ] **TD-009 (Low)** — the date picker's UTC conversion is comment-guarded but untested.
 - [ ] **TD-012 (Low)** — no adaptive fallback if a launcher ignores `resizeMode="none"`. Closes
-      as a side effect of Milestone 5's multi-size work.
+      as a side effect of Milestone 5's remaining multi-size work.
+
+Resolved this session: TD-011 (system-tracked corner radius, D-045), TD-014 (mandatory widget-picker
+preview), TD-015 (unused vertical space, closed as a side effect of the per-style redesign) — see
+`KNOWN_ISSUES.md` Resolved section.
 
 ## Open bugs
 
-- [ ] **BUG-011 (High, open, new Session 8)** — the widget sticks on a loading spinner after
-      Force Stop until the app is reopened by any means. See P0 above and `KNOWN_ISSUES.md` for
-      the full, precisely-scoped account (confirmed against Force Stop specifically; the gentler
-      ordinary-process-death case could not be tested on this device's non-rootable system image).
+- [ ] **BUG-011 (High, open since Session 8)** — the widget sticks on a loading spinner after
+      Force Stop until the app is reopened by any means. Session 9 replaced the generic spinner
+      with a branded "Tap to refresh" prompt but deliberately did not attempt to fix the
+      underlying recovery gap (out of scope: defeating Android's force-stop semantics). See P0
+      above and `KNOWN_ISSUES.md` for the full, precisely-scoped account.
 
 ## Testing gaps
 
@@ -159,14 +124,20 @@ Deferred from Milestone 3, since both should preview a renderer that only now ex
       though Session 8 had a stable device — deliberately deprioritized in favor of lifecycle and
       visual verification, which had zero prior evidence at all. See `docs/PRODUCT_REVIEW.md`
       "Performance."
+- [ ] Glance's Robolectric-based testing API cannot observe actual text wrapping/ellipsis
+      behavior — BUG-R011 (word-shaped headline wrapping mid-word) was only regression-tested for
+      its classification logic (`WidgetHeadline.isNumeric`), not the visual wrapping itself, which
+      needs a real device screenshot to see at all. Same class of gap as the `ColorProvider`
+      testing hole found in Session 8 (BUG-R010).
 
 ---
 
 ## Continuous
 
 - [ ] Update all documents — including `AI_CONTEXT.md`, `docs/WIDGET_ARCHITECTURE.md`,
-      `docs/WIDGET_REVIEW.md`, `docs/PRODUCT_REVIEW.md`, and `docs/SCREENSHOT_GUIDE.md` — at the
-      end of every session.
+      `docs/WIDGET_REVIEW.md`, `docs/PRODUCT_REVIEW.md`, `docs/SCREENSHOT_GUIDE.md`,
+      `docs/WIDGET_DESIGN_GUIDE.md`, and `docs/WIDGET_DESIGN_REVIEW.md` — at the end of every
+      session.
 - [ ] Keep lint at 0 errors and `:core:domain` coverage above the 95% gate.
 - [ ] Never enable `fallbackToDestructiveMigration` (D-024).
 - [ ] Never call `Instant.now()` or `LocalDate.now()` outside the DI module — inject `Clock`.

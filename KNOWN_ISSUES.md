@@ -11,13 +11,25 @@ must design around · `WARN-nnn` accepted warnings
 ## Open bugs
 
 ### BUG-011 — Widget stays stuck on a loading spinner after Force Stop until the app reopens
-**Severity:** High · **Opened:** Session 8
+**Severity:** High · **Opened:** Session 8 · **Partially addressed Session 9 — see below**
 
 Confirmed directly on a real device: `adb shell am force-stop com.countflow`, then the widget
 shows `@layout/glance_default_loading_layout` — a generic spinner — and never clears on its own.
 Nothing currently running on the device retriggers a redraw; the widget stays stuck until the
 user reopens the app by any means (tapping it, tapping the widget's own "unconfigured" tap target,
 etc.), at which point `GlanceWidgetRefreshScheduler`'s startup subscription immediately fixes it.
+
+**Session 9 update — investigated per the Milestone 5A brief, deliberately not closed.** The brief
+asked whether the generic spinner could be replaced with something branded and whether the
+underlying gap could be fixed outright. Only the first is done:
+`res/layout/widget_initial_layout.xml` (a plain Android XML layout, "CountFlow" / "Tap to
+refresh") now replaces Glance's generic spinner as `android:initialLayout`, which is shown both
+before the first `provideGlance` completes and — confirmed by this session's own reasoning, not
+re-tested empirically — whatever a widget falls back to after Force Stop with no trigger to redraw
+it. This changes what the stuck state communicates; it does not make the widget self-heal. Android
+cancels an app's scheduled work on Force Stop by design, and defeating that was explicitly out of
+scope ("do not attempt to defeat Android's force-stop semantics"). Left open, severity unchanged —
+see `docs/WIDGET_DESIGN_GUIDE.md`'s "Force Stop / BUG-011" section for the full reasoning.
 
 **Scoped precisely.** This was tested against Force Stop specifically — Android documents this as
 more aggressive than an ordinary background process reclaim, since it also cancels the app's
@@ -182,33 +194,6 @@ should not sprout a swipe affordance that the widget cannot have. Scheduled for 
 
 ---
 
-### TD-011 — Widget corner radii are hand-picked constants, not tied to the system's actual clip radius
-**Severity:** Medium · **Opened:** Session 7
-
-`WidgetThemeResolver`'s corner radii (16dp default, 20dp Glass, 28dp Rounded) are fixed constants
-with no relationship to `android.R.dimen.system_app_widget_background_radius` — the dimension the
-system actually uses to clip a widget's outer bounds, which varies by device and Android version
-(notably themed from Android 12 onward). ARCHITECTURE.md D-001 explicitly flagged Google's
-`appWidgetInnerCornerRadius()` utility as a "keep — adopt close to verbatim" item from the
-canonical sample; it was never adopted.
-
-**Risk.** On a device whose system clip radius differs meaningfully from these constants, the
-widget's drawn background corners and the launcher's outer clip mask could visibly disagree —
-either straight corners peeking past a tighter clip, or the clip visibly cutting inside a larger
-drawn radius.
-
-**Why not fixed immediately.** Adopting it needs an Android `Context.resources` read, which
-belongs in `:widget:glance` (the resolver itself is intentionally pure Kotlin — D-033), plus a
-product decision about which styles should track the system value and which should keep an
-intentionally different one (ROUNDED's entire premise is being *more* rounded than default).
-Session 7 was explicitly scoped to stabilization, not this kind of design call.
-
-**Resolution path.** Read the system dimension in `:widget:glance` (Glance's `cornerRadius(Int)`
-overload accepts a resource id directly, confirmed via the AAR) and decide per-style whether to
-use it or the resolver's own constant. Good candidate for the start of Milestone 5.
-
----
-
 ### TD-012 — `resizeMode="none"` is not guaranteed to be honored by every launcher
 **Severity:** Low · **Opened:** Session 7
 
@@ -237,48 +222,6 @@ it went — there is still no explicit overflow parameter to set — but the und
 inspection could have caught. Left here, marked corrected rather than deleted, specifically as a
 reminder that reading a library's public API is not a substitute for one real render — see
 `AI_CONTEXT.md`'s defects list.
-
----
-
-### TD-014 — No preview image in the widget picker
-**Severity:** Medium · **Opened:** Session 8
-
-Confirmed in the real Pixel Launcher widget tray: CountFlow's entry shows its app icon centered
-on a blank white card, while every other widget in the same list (Clock, Contacts, Conversations)
-shows a live-styled content preview. Neither `android:previewLayout` (API 31+, a real Android XML
-layout Glance does not need to render — the launcher inflates it directly) nor the older
-`android:previewImage` is set in `countdown_widget_info.xml`.
-
-**Why not fixed this session.** Building a representative preview — whether a hand-authored XML
-layout or a static image asset — is asset/design work, not a small polish fix, and risks looking
-worse than no preview at all if rushed without the ability to iterate visually against real
-launcher rendering.
-
-**Resolution path.** Author a plain Android XML layout (not Glance) approximating the widget's
-2×2 minimal-style appearance, wire it via `android:previewLayout`, and verify against a real
-device. Good Milestone 5 candidate alongside the corner-radius fix (TD-011), since both need the
-same kind of real-launcher-verified, non-Glance Android layout work.
-
----
-
-### TD-015 — Significant unused vertical space in every widget state
-**Severity:** Medium · **Opened:** Session 8
-
-Confirmed across every screenshot in `docs/SCREENSHOT_GUIDE.md`: content renders as a compact,
-vertically-centered block inside a card visibly taller than the content needs, leaving roughly a
-third of the card blank above the content and a further gap below the progress bar. Not a defect —
-`CountdownWidgetContent`'s `Alignment.CenterVertically` does exactly what it says — but a real
-product-quality gap: competitor widgets in the same size class fill their cell far more
-deliberately, and the empty space reads as unfinished rather than minimalist.
-
-**Why not fixed this session.** Filling the space well is a design decision (larger type? more
-generous spacing tokens? an additional element using the freed-up room, e.g. the still-unwired
-target date?), not a mechanical one-line fix — exactly the kind of change this session's brief
-asked to be diagnosed, not improvised under time pressure.
-
-**Resolution path.** Worth deciding deliberately at the start of Milestone 5, alongside the
-per-style layout differentiation work already planned there (`TODO.md`) — both are about the
-widget's use of space, and solving them together is likely cheaper than solving them separately.
 
 ---
 
@@ -348,19 +291,80 @@ Milestones 4 and 5, not just the emulator.
 
 ## Accepted warnings
 
-Lint currently reports **0 errors and 11 warnings** on `:app:lintDebug` with
-`abortOnError = true` and `checkDependencies = true`. All eleven are expected:
+Lint currently reports **0 errors and 17 warnings** on `:app:lintDebug` with
+`abortOnError = true` and `checkDependencies = true` (10 pre-existing, corrected to their actual
+per-category counts below; 7 new this session). All seventeen are expected:
 
 | Warning | Count | Why it stands |
 |---|---|---|
-| `OldTargetApi` | 4 | targetSdk 36 with compileSdk 37 is deliberate (D-012). Play requires 36 from 31 Aug 2026; 37 is not required. |
-| `AndroidGradlePluginVersion` | 5 | A newer AGP exists. Upgrading is gated on TD-001. |
-| `NewerVersionAvailable` | 1 | Newer library versions exist. Version bumps are a deliberate, verified activity, not a default. |
+| `AndroidGradlePluginVersion` | 4 | A newer AGP exists. Upgrading is gated on TD-001. |
+| `NewerVersionAvailable` | 4 | Newer library versions exist. Version bumps are a deliberate, verified activity, not a default. |
+| `OldTargetApi` | 1 | targetSdk 36 with compileSdk 37 is deliberate (D-012). Play requires 36 from 31 Aug 2026; 37 is not required. |
 | `ObsoleteSdkInt` | 1 | The `-v26` mipmap qualifier is redundant at minSdk 31 but is the convention every Android tool generates and expects. Removing it triggered TD-004. |
+| `HardcodedText` | 7 · **new Session 9** | All seven are in `res/layout/widget_initial_layout.xml` (2) and `res/layout/widget_preview.xml` (5) — the two plain Android XML layouts added this session for `android:initialLayout` and `android:previewLayout`. Both are inherently static, non-localized display surfaces: the preview layout shows fixed example content ("Trip to Kyoto") the launcher renders before any real data exists, and the initial layout is a brief loading-state placeholder. Neither reads a user-facing string that would otherwise go through the app's normal string-resource path (`TD-007` tracks that path; these two files are outside it by nature, not by oversight). Extracting them to string resources would not add real localizability, since the content itself is a fixed mockup, not user data. |
+
+Two warnings introduced earlier this session were fixed rather than accepted: `UseKtx`
+(`CircularProgressRenderer.kt`, `Bitmap.createBitmap(...)` → the `createBitmap(...)` KTX
+extension) and `LocalContextResourcesRead` ×2 (`WidgetPreviewCard.kt`,
+`LocalContext.current.resources` → `LocalResources.current`, so the preview recomposes correctly
+if the device configuration changes while the screen is open).
 
 ---
 
 ## Resolved
+
+### BUG-R011 — A word-shaped headline ("Completed", "Expired") wrapped mid-word instead of ellipsizing *(found and fixed Session 9)*
+
+Introduced and fixed within the same session, not carried over. This session's headline type
+scales (`MINIMAL_HEADLINE_SIZE = 46.sp`, etc.) were tuned for a 1–3 digit day count; the first
+on-device screenshot of a completed event showed "Completed" wrapped mid-word into "Compl" /
+"eted" — Glance has no autosizing text (`LIM-004`), so a size tuned for digits does not shrink for
+a longer word automatically.
+
+Found by looking at a real device screenshot, the same way Session 8's BUG-R009/R010 were found —
+not by code review, which had no reason to flag a hardcoded `sp` constant as wrong. Fixed by adding
+`WidgetHeadline.isNumeric` and a `headlineSize()` selector in every one of the seven layouts,
+picking a smaller size for word-shaped headlines, plus `maxLines = 1` at every headline call site
+so anything still too long ellipsizes cleanly instead of wrapping — confirmed to actually ellipsize
+on-device (`widget_completed_fixed.png` / `widget_expired_fixed.png` in the Session 9 working
+scratchpad; curated versions in `docs/screenshots/after_completed.png` and `after_expired.png`),
+consistent with TD-013's finding that Glance's underlying `RemoteViews` `TextView` ellipsizes by
+default. Regression-tested for the testable half of the fix (`isNumeric`'s classification logic);
+the visual wrapping itself is not observable through Glance's Robolectric-based testing API, the
+same previously-documented gap BUG-R010 hit.
+
+### TD-011 — Widget corner radii were hand-picked constants, not tied to the system's actual clip radius *(resolved Session 9)*
+
+Open since Session 7. `WidgetTheme.cornerRadiusDp` is now nullable: `null` means "track
+`android.R.dimen.system_app_widget_background_radius`" (resolved via Glance's `cornerRadius(Int
+resId)` overload, confirmed to accept a resource id directly), applied in
+`CountdownWidgetContent.widgetCornerRadius()`. Four styles (Minimal, Material, Progress, OLED) now
+track the system value, each for a style-specific reason ("no opinion about shape," documented
+inline in `WidgetThemeResolver`); three (Glass 20dp, Rounded 28dp, Modern 8dp) intentionally
+override it, each because the override *is* part of that style's design, not an arbitrary
+leftover constant. See `DECISIONS.md` D-045 and `docs/WIDGET_DESIGN_GUIDE.md`'s corner-radius
+section for the full per-style reasoning.
+
+### TD-014 — No preview image in the widget picker *(resolved Session 9)*
+
+Open since Session 8, and the brief for this session called closing it "mandatory."
+`res/layout/widget_preview.xml` (a plain Android XML layout, not Glance) over
+`res/drawable/widget_preview_background.xml` now approximates the Material style with realistic
+content, wired via `countdown_widget_info.xml`'s `android:previewLayout` (API 31+) — the correct
+mechanism, since Glance cannot render a live composition into the picker itself. Confirmed on a
+real device: expanding CountFlow's entry in the Pixel Launcher widget tray now shows a styled
+"✈️ Trip to Kyoto / 7 days / Next week" card instead of a blank icon. See
+`docs/screenshots/after_widget_picker.png` and `docs/WIDGET_DESIGN_REVIEW.md`.
+
+### TD-015 — Significant unused vertical space in every widget state *(resolved Session 9)*
+
+Open since Session 8. Addressed as part of the same per-style redesign that closed the "styles
+look identical" finding, not as a separate pass — the two were always going to be cheaper solved
+together (`TODO.md` said so explicitly when this was opened). Every style now either uses
+significantly larger type (Minimal 46sp, OLED 50sp, versus the ~32sp shared scale before), adds a
+genuinely space-filling element (Progress's circular ring, Modern's dense multi-line stack), or
+both. No longer treated as open technical debt; if a future session finds a specific style's
+spacing wanting, it should be filed as a new, narrower finding rather than reopening this one.
 
 ### TD-010 — No widget had been placed through a real launcher flow *(resolved Session 8)*
 
