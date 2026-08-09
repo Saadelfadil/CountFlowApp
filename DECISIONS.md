@@ -1440,3 +1440,137 @@ common way to reach this state after the first session.
 **Tradeoffs.** A true first-time user and a returning user with nothing upcoming see identical
 copy. Accepted as the correct trade for this app's scale; revisit only if user feedback
 specifically asks for a distinct first-run welcome.
+
+---
+
+## D-062 — `nextTransitionAt` walks a bounded set of midnight candidates, not just "the next one"
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 8 (background refresh infrastructure pulled forward, Session 12)
+
+`CountdownEngine.nextTransitionAt(event, now, deviceZone)` — new pure function, `:core:domain` —
+answers "when does this event's displayed countdown next change" for exactly one event. For a
+still-future event it does not check only the immediate next local midnight; it walks every
+midnight candidate up to `min(daysUntilTarget, config.nearFutureDays + 14)` days out, plus the
+event's own start instant and (for timed events) the imminent-threshold instant, and returns the
+earliest candidate whose `CountdownLabel`/`CountdownStatus` genuinely differs from now. Same-day
+and past events always walk exactly one day forward.
+
+**Reason.** Found by testing, not designed in from the start: `CountdownLabel.NextWeek`'s window
+(`CountdownEngine.fallsInNextWeek`) re-anchors to a shifting `today` each day, so the label can
+stay literally unchanged across several consecutive local midnights even while
+`calendarDaysRemaining` visibly decreases underneath it. A scheduler that only checks the very
+next midnight would schedule a wakeup, find nothing changed, and have no way to know when the
+*real* next change is — silently degrading into either missed updates or, if it naively
+rescheduled one day at a time regardless, exactly the "blindly refresh every widget every minute"
+anti-pattern this session's brief explicitly ruled out, just at a coarser interval. Walking a
+bounded superset of candidates and checking each one against the current label/status is the only
+approach correct for every label transition this domain has, not just the ones a handful of
+hand-picked test dates happen to exercise.
+
+**Alternatives.** Check only the next local midnight (the initial implementation) — rejected once
+the `NextWeek` plateau was found; produces wrong answers for a whole class of events. Recompute
+unconditionally on a fixed interval (e.g. hourly) regardless of whether anything actually changed
+— rejected as exactly the polling shape the brief named and ruled out by name.
+
+**Tradeoffs.** The candidate list can be as long as `nearFutureDays + 14` entries for an event
+still outside that window — still a handful of cheap in-memory `countdownAt` calls, not an I/O or
+performance concern, but a real algorithm, not the one-line "next midnight" a first read of the
+requirement suggests.
+
+---
+
+## D-063 — Widget refresh scheduling splits across three modules, coalesces to one alarm, and uses `setAndAllowWhileIdle`
+
+**Date:** 2026-08-09 · **Status:** Accepted (implements D-008/D-036's planned seam) · **Milestone:** 8 (Session 12)
+
+Replaces D-036's app-alive-only scheduler with the real one D-008 always planned, split along the
+same module boundary D-004 established: `CountdownEngine.nextTransitionAt` (per-event transition
+math, `:core:domain`, D-062) → `WidgetRefreshPlanner` (coalesces every bound widget's event to one
+global `Instant`, deduplicated by event, `:widget:engine`) → `WidgetRefreshCoordinator`
+(orchestrates a refresh cycle behind two small seams, `AlarmScheduler`/`WidgetRedrawer`,
+`:widget:engine`) → `AndroidAlarmScheduler`/`GlanceWidgetRedrawer`/`WidgetRefreshReceiver` (the
+real `AlarmManager`/Glance mechanics, `:widget:glance`). Exactly one
+`AlarmManager.setAndAllowWhileIdle(RTC_WAKEUP, …)` alarm exists for the whole app at any time,
+targeting a fixed `PendingIntent` request code so a new schedule always replaces the old one
+rather than stacking. One `WidgetRefreshReceiver` handles both the alarm firing (`ACTION_REFRESH`,
+delivered only via an explicit `PendingIntent`, needing no manifest `<intent-filter>`) and the
+four genuine system recovery broadcasts (`BOOT_COMPLETED`, `TIMEZONE_CHANGED`, `TIME_SET`,
+`DATE_CHANGED`) — every one of them runs the identical
+`WidgetRefreshCoordinator.refreshAndReschedule()` cycle. A `WidgetRefreshSafetyNetWorker`
+(`WorkManager`, `KEEP` policy, ~6h/2h flex) is a defensive backstop, not the primary mechanism.
+
+**Reason.** `setAndAllowWhileIdle` over `setExactAndAllowWhileIdle`: needs no
+`SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM` permission, survives Doze, and is inexact by only a few
+minutes — the brief asked for the *next meaningful transition*, not millisecond precision, so
+trading a few minutes of slack for zero permission burden is the correct call, and it matches
+D-008's original plan exactly. One receiver for four actions, not four: a `BroadcastReceiver` can
+declare more than one `<intent-filter>` action, and every one of Boot/Timezone/Time/Date means
+exactly the same thing here — "the schedule might now be wrong, recompute it" — so one small class
+with one `runCatching` block is both correct and the minimum surface, versus four nearly-identical
+classes. Rescheduling on every `EventRepository.observeEventsWithWidgets()` emission (already
+wired in `GlanceWidgetRefreshScheduler` since D-036) already covers every one of the brief's
+"rescheduling triggers" — event created/edited/deleted/completed, widget added/removed/
+reconfigured — because every one of those is a write to a table that `Flow` already watches; no
+new receiver was needed for any of them, confirmed by real-device testing (editing an event
+through the real UI produced a correctly re-scheduled real `AlarmManager` alarm, verified via
+`dumpsys alarm`). `KEEP`, not `REPLACE`, on the safety-net worker: `GlanceWidgetRefreshScheduler
+.start()` runs on every process start, and `REPLACE` would reset its ~6h timer every time, turning
+"runs roughly every six hours" into "runs whenever the app last happened to start plus six hours"
+— defeating the point of a periodic backstop.
+
+**Alternatives.** A frequent periodic `WorkManager` job as the primary mechanism — rejected
+outright, explicitly by the brief ("do NOT introduce frequent periodic WorkManager jobs merely
+because they're easy") and on the same `LIM-002` grounds D-008 already rejected it on (15-minute
+floor, wrong shape for a countdown that might not need to wake for days). One `AlarmManager` alarm
+per widget — rejected; does not scale, and the brief explicitly required coalescing to one system
+wakeup regardless of widget count. `setExactAndAllowWhileIdle` — rejected: needs a restricted
+permission for no benefit this app's actual requirement (a meaningful label transition, not a
+wall-clock deadline) needs.
+
+**Tradeoffs.** A scheduled refresh can fire up to a few minutes late (the `setAndAllowWhileIdle`
+inexactness window) — accepted, since nothing this app displays needs to change at the literal
+millisecond a transition boundary crosses. The safety net worker means a genuinely-missed alarm
+(e.g., an OEM's aggressive alarm-clearing behavior) is recovered within 6–8 hours, not
+immediately — accepted as a backstop, not a promise of exactness.
+
+---
+
+## D-064 — `LiveDefaultZoneClock` replaces `Clock.systemDefaultZone()` — a `@Singleton` clock must not freeze the device's zone at construction
+
+**Date:** 2026-08-09 · **Status:** Accepted (regression fix, found by this session's own real-device testing) · **Milestone:** 8 (Session 12)
+
+`TimeModule.providesClock()` now returns a small custom `Clock` (`LiveDefaultZoneClock`) whose
+`getZone()` calls `ZoneId.systemDefault()` fresh on every read, instead of
+`Clock.systemDefaultZone()`, whose `getZone()` returns a `ZoneId` snapshotted once at
+construction. `WidgetRefreshReceiver` also calls `TimeZone.setDefault(null)` specifically on
+`ACTION_TIMEZONE_CHANGED`, busting the JVM-level cache `ZoneId.systemDefault()` itself reads
+through.
+
+**Reason.** Found live, not by inspection: this session's real-device timezone-change test
+(Africa/Casablanca → America/New_York, `adb shell cmd alarm set-timezone`) showed
+`WidgetRefreshReceiver` correctly receiving `ACTION_TIMEZONE_CHANGED` and correctly re-running a
+full refresh cycle — but the recomputed alarm landed on the exact same absolute instant as before
+the change, not the ~5-hour-shifted instant the new zone's "next local midnight" should have
+produced. Root cause: `Clock.systemDefaultZone()` is documented to snapshot `ZoneId.systemDefault()`
+once, into an immutable `Clock`; bound `@Singleton` (as every `Clock` in this app has been since
+D-026), that snapshot is taken once per process and never updates — every long-lived consumer of
+`clock.zone`, not just the refresh scheduler, silently kept computing against the zone the process
+happened to start in. A traveller landing in a new zone would see stale countdowns, in the app and
+in widgets alike, until the process happened to restart.
+
+**Alternatives.** Remove `@Singleton` from `providesClock()` so each injection site gets a fresh
+`Clock.systemDefaultZone()` — rejected: every real consumer (`WidgetRefreshCoordinator`, every
+ViewModel) is itself a long-lived object that stores its injected `Clock` in a `val` field at
+construction, so a non-singleton provider would only move the same staleness bug from "once per
+process" to "once per consumer's own lifetime" — no more correct, and loses the one real benefit
+of `@Singleton` (one shared, injectable, `Clock.fixed`-swappable instance for tests) for nothing.
+Read `ZoneId.systemDefault()` directly at every call site instead of through `Clock` — rejected:
+reintroduces exactly the "call the system clock directly, become untestable at time boundaries"
+problem D-026 exists to prevent.
+
+**Tradeoffs.** None found specific to the fix itself. This is a correctness fix to code this
+project has had since D-026 (Milestone 2) — the bug existed for nine sessions before this one's
+real-device timezone test was the first thing in this project's history to actually exercise a
+live timezone change against an already-running process. `LiveDefaultZoneClockTest.kt`
+(`:core:common`, new) is a permanent regression test, asserting directly against
+`TimeZone.setDefault(...)` rather than the device.

@@ -1,163 +1,179 @@
 # CountFlow
 
-## Session 11
+## Session 12
 
 Date: 2026-08-09
-Current Milestone: **Milestone 3 finishing pass — Event management polish (COMPLETE); Milestone 5B remains the most recent widget milestone**
+Current Milestone: **Background refresh infrastructure — Milestone 8 scope, pulled forward (COMPLETE, real-device verified); Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) unchanged**
 
-> **READ THIS FIRST:** This session closed the two gaps Milestone 3 (Session 4) had left open
-> since the event list and create/edit form first existed: no live widget preview in the form,
-> and no UI gesture for archive/complete/delete. Both had been waiting specifically for
-> infrastructure that now exists — a real widget renderer to preview against (built Milestone 4)
-> and a settled event-list design to add gestures to. Deliberately scoped smaller than Sessions 9
-> or 10: this is a product-polish session on an already-built screen, not new architecture, and
-> the brief was explicit that it "not begin Notifications, Billing, or Milestone 6."
+> **READ THIS FIRST:** This session's brief was explicit that Core Product (Event CRUD/UI,
+> responsive widgets) is done — this session is about *reliability*, not new functionality. The
+> temporary Milestone 4 scheduler only kept widgets current while the app process happened to be
+> alive; this session built the real one D-008 always planned: a coalesced, alarm-based background
+> refresh system, and proved it works with real-device evidence, not just architecture.
 >
-> **What changed:** the event list is now three tabs — Upcoming, Completed, Archived
-> (`EventLifecycleFilter`, D-058, replacing the old `includeArchived`/`includeCompleted`
-> inclusion-flag pair). Every row supports complete/archive/restore/delete two ways: a swipe
-> gesture on Upcoming rows, and an overflow menu present on every row, on every tab, that is the
-> one path every action — including delete, deliberately never a swipe target — always has
-> (D-060). Delete requires a worded confirmation naming the real event and the real cascade
-> behavior. The create/edit form now shows a live widget preview (`EventWidgetPreview`), reusing
-> the real `WidgetRenderModelProvider.preview()` pipeline through a new, deliberately narrow
-> `:feature:events → :widget:engine` dependency rather than the heavier `:widget:glance` module
-> (D-059).
+> **What changed:** a pure, zone-aware `CountdownEngine.nextTransitionAt` (`:core:domain`, D-062)
+> decides exactly when any event's countdown next meaningfully changes — correctly handling a real
+> bug found by testing (`CountdownLabel.NextWeek` can stay unchanged across several consecutive
+> local midnights, so "check the next midnight" is the wrong algorithm). `WidgetRefreshPlanner`
+> (`:widget:engine`) coalesces every placed widget's bound event to one global instant, deduplicated
+> by event. `WidgetRefreshCoordinator` orchestrates a full redraw-then-reschedule cycle behind two
+> Android-free seams. `:widget:glance` supplies the real mechanics: one `AlarmManager
+> .setAndAllowWhileIdle` alarm (never more than one — a fixed `PendingIntent` request code replaces
+> rather than stacks), one `BroadcastReceiver` for both the alarm firing and the four genuine system
+> recovery broadcasts (boot, timezone, time, date), and a `WorkManager` periodic safety net.
 >
-> **Verified on a real device, not just unit-tested:** the full lifecycle (create → edit →
-> complete → archive → restore → delete, plus cancel-delete); both swipe directions and the
-> menu's non-swipe alternative (confirmed against the real accessibility semantics tree — the
-> card's merged description and the overflow button's own independent description both appear as
-> separate TalkBack nodes); a real placed widget's behavior across completing, archiving, and
-> deleting its bound event, with **zero widget-specific code needed** — the existing render
-> pipeline and cascading foreign key already handled all three correctly; light/dark mode; and
-> 200% font scale, which found and fixed one real bug (the tab row didn't scroll like the
-> category row beside it).
+> **Verified on a real device, not just unit-tested:** a widget transitioned to "Expired" with the
+> app backgrounded and its process killed, with no manual reopen (`dumpsys alarm` showed a real
+> `1`-wakeup alarm fire; logcat showed the refresh cycle run; a screenshot showed the result). A
+> full device reboot correctly restored both placed widgets and re-armed a fresh alarm. A real
+> timezone change correctly recomputed the schedule — and the *first* attempt at that specific test
+> found a real, nine-session-old bug: a `@Singleton Clock` (`Clock.systemDefaultZone()`, present
+> since D-026 in Milestone 2) froze its resolved zone at construction, so an already-running
+> process silently kept computing against the *old* zone even after correctly receiving the
+> `TIMEZONE_CHANGED` broadcast. Fixed (`LiveDefaultZoneClock`, D-064, BUG-R013), regression-tested,
+> and re-verified on the same device the same session.
 >
 > Authoritative documents, in reading order: `AI_CONTEXT.md`, `ARCHITECTURE.md`,
-> `PROJECT_STATUS.md`, `DECISIONS.md` (61 entries — D-058 through D-061 are new this session),
-> then this file.
+> `docs/WIDGET_REFRESH_ARCHITECTURE.md` (new — the permanent reference for this session's system),
+> `PROJECT_STATUS.md`, `DECISIONS.md` (64 entries — D-062 through D-064 are new this session), then
+> this file.
 >
-> Two items are open for Session 12 — see "Requires approval" at the end.
+> One item is open for Session 13 — see "Requires approval" at the end.
 
 ----------------------------------
 
 ## Objective
 
-Finish the everyday event-management experience so that Event CRUD/UI can be considered 100%
-complete for V1. Per the brief: organize the event list into Upcoming/Completed/Archived without
-turning CountFlow into a project-management app; make complete/archive/delete reachable via
-intuitive swipe actions *and* an accessible non-swipe alternative, since swipe must never be the
-only way to reach a destructive or state-changing action; require real confirmation before
-delete, worded from the app's actual data behavior, not a guess; design intentional (not
-over-designed) empty states for first launch, no-upcoming, no-completed, and no-archived; add a
-live widget preview to the create/edit form reusing Session 9's existing
-`WidgetRenderModelProvider.preview()` infrastructure rather than building a second preview engine;
-verify the whole thing on a real device including dark/light mode and large font scale; and
-answer six specific closing questions, then stop before Notifications, Billing, or Milestone 6.
+Build the production background widget refresh system the architecture always planned (D-008),
+replacing the Milestone 4 scheduler that only worked while the app process was alive. Per the
+brief: for every active countdown with a placed widget, determine the *next* moment its displayed
+info meaningfully changes and schedule exactly one refresh for that moment — never blindly refresh
+every widget on a fixed interval; coalesce every placed widget to one system wakeup, not one per
+widget; keep the mechanism zone-aware and calendar-correct (no naive `+24h` midnight math); handle
+reboot, timezone change, and manual clock change without waking the device unnecessarily; do not
+attempt to defeat Android's Force Stop semantics (D-052 stands); exhaustively test the pure
+next-refresh calculator and the coalescing scheduler; verify on a real device that a widget updates
+with the app backgrounded and the process not in use, that reboot recovery works, and that
+timezone-change recovery works; document the battery/wake-frequency reasoning; and answer nine
+specific closing questions, then stop before Notifications or Billing.
 
 ----------------------------------
 
 ## Completed
 
-**Three lifecycle tabs replace the single unfiltered list**
+**`CountdownEngine.nextTransitionAt` — the pure next-refresh calculator**
 
-`EventLifecycleFilter` (`core:domain`, new) — `UPCOMING`/`COMPLETED`/`ARCHIVED`, exclusive —
-replaces `EventFilter`'s two independent `includeArchived`/`includeCompleted` flags, which could
-only ever express "don't hide X," never "show only X." `EventDao.observeEvents` picks exactly one
-bucket via three `CASE WHEN`-style `OR` arms in SQL, the same verified-query pattern the existing
-`sort` parameter already used (D-027). An event that is both completed and archived sorts into
-`ARCHIVED` — archiving is the more deliberate, final action, so it wins the tie; confirmed
-on-device via the real SQL, not just reasoned about (D-058).
+New function in `:core:domain`, `(Event, Instant, ZoneId) → Instant?`. Returns `null` for
+completed or expired (terminal) events. For a still-future event, walks a bounded superset of
+candidate instants — every local midnight up to `min(daysUntilTarget, nearFutureDays + 14)` days
+out, the event's own start instant, and (for timed events) the imminent-threshold instant — and
+returns the earliest one whose label or status actually differs from now. Same-day/past events
+walk exactly one day forward. The `+14`-day buffer exists specifically because of a real bug found
+mid-session: `CountdownLabel.NextWeek`'s window re-anchors to a shifting `today` each day, so the
+label can stay unchanged across several consecutive midnights even while the day count keeps
+decreasing — an initial "just check the next midnight" implementation produced the wrong instant
+for exactly this case, caught by a test that manually traced the label day-by-day. See D-062.
 
-**Complete, archive, restore, and delete — reachable two ways on every row**
+**`WidgetRefreshPlanner` — coalescing (`:widget:engine`)**
 
-`EventCard` wraps Upcoming rows in a `SwipeToDismissBox`: swipe one direction to complete, the
-other to archive. Every row, on every tab, also carries an overflow (⋮) menu with every action
-valid for that tab's bucket — Upcoming offers Mark complete/Archive/Delete; Completed offers Mark
-not complete/Archive/Delete; Archived offers Restore/Delete. Delete is **never** a swipe target
-on any tab — it always opens a worded `AlertDialog` (`Delete "<title>"? This countdown and its
-reminders will be deleted. Any widgets showing it will return to the unconfigured state. Cancel /
-Delete`), naming the real event and describing only what `EventRepository.deleteEvent`'s cascade
-actually does. This closes TD-008 (open since Session 4) with the accessible alternative the
-brief explicitly required — the menu is not a fallback for the swipe, it is the one path every
-action always has (D-060).
+`nextGlobalRefresh(boundWidgets, now, deviceZone)` reduces every placed widget to one global
+`Instant?` by calling `nextTransitionAt` once per *distinct event* (`distinctBy { it.event.id }`),
+then taking the minimum. N widgets sharing one event cost exactly what one widget would; an event
+with no widgets contributes nothing; no bound widgets at all returns `null`.
 
-**Four tab-and-filter-aware empty states**
+**`WidgetRefreshCoordinator` + two seams (`:widget:engine`)**
 
-`HomeUiState.emptyState` now distinguishes `NO_UPCOMING` ("Nothing coming up... Create a
-countdown for your next moment," with a "Create countdown" button beside the FAB), `NO_COMPLETED`
-("No completed countdowns yet"), `NO_ARCHIVED` ("No archived countdowns"), and `NO_MATCHES`
-(active search/filter, any tab — takes priority over the tab-specific copy). Deliberately does
-**not** distinguish genuine first-launch from "everything is done or archived" — both use the
-`NO_UPCOMING` copy, which reads correctly either way, per the brief's own "do not over-design
-these states" instruction and D-061's explicit reasoning for skipping the extra plumbing that
-distinction would need.
+`refreshAndReschedule()`: read every bound widget from Room, redraw all of them, compute the next
+global instant, then schedule or cancel the one alarm. `AlarmScheduler` and `WidgetRedrawer` are
+two small interfaces keeping this class free of `Context`/`AlarmManager`/Glance, so it is tested
+with plain fakes, not Robolectric. `RefreshOutcome(widgetsRefreshed, nextRefreshAt)` is what every
+real caller logs.
 
-**Live widget preview in the create/edit form**
+**Android mechanics (`:widget:glance`)**
 
-`EventWidgetPreview.kt` (new, `feature/events/.../edit/`) — a compact, single-line-per-fact card
-reusing `WidgetRenderModelProvider.preview()`, the exact pure, no-I/O render path the widget
-configuration screen's own preview already uses (D-048). `EditEventViewModel` gained a
-`refreshPreview()` call after every field mutator (title, emoji, category, date, time, all-day,
-accent color), building an ephemeral, never-persisted `Event`/`WidgetBinding` pair each time — the
-same discipline `onSave()` itself already follows for the real write, via a new shared `buildEvent`
-helper so the preview and the real save can never quietly diverge on what a save would produce.
-Requires `:feature:events` to depend on `:widget:engine` — a new, deliberately narrow edge (D-059)
-that does **not** extend to `:widget:glance`, keeping the heavier Glance/AppWidget runtime, the 21
-size×style layouts, and the `resolveHeadline` content-hierarchy split (D-046, `internal` to that
-module) unreused outside `:app`. Confirmed on-device: the preview updates live as title, category,
-and accent color change.
+- `AndroidAlarmScheduler` — the real `AlarmManager`, via `setAndAllowWhileIdle` (no exact-alarm
+  permission needed, survives Doze, inexact by at most a few minutes), always targeting the same
+  explicit `PendingIntent` (fixed request code) so a reschedule replaces rather than stacks.
+- `GlanceWidgetRedrawer` — `CountdownGlanceWidget().updateAll(context)`.
+- `WidgetRefreshReceiver` — one `@AndroidEntryPoint BroadcastReceiver` for both the alarm firing
+  (`ACTION_REFRESH`, delivered only via the explicit `PendingIntent` above — no manifest entry
+  needed) and the four genuine system recovery broadcasts (`BOOT_COMPLETED`, `TIMEZONE_CHANGED`,
+  `TIME_SET`, `DATE_CHANGED`, all manifest-registered). Every reason runs the identical
+  `refreshAndReschedule()` cycle via `goAsync()` + the app's `ApplicationScope`. Also calls
+  `TimeZone.setDefault(null)` specifically on `ACTION_TIMEZONE_CHANGED` (added mid-session — see
+  D-064 below).
+- `WidgetRefreshSafetyNetWorker` — a `WorkManager` periodic backstop (`Duration.ofHours(6)`
+  interval, 2h flex), enqueued with `ExistingPeriodicWorkPolicy.KEEP` so a process restart never
+  resets its timer.
+- `GlanceWidgetRefreshScheduler` rewritten: still prunes orphaned bindings at startup unchanged,
+  now subscribes to `observeEventsWithWidgets()` and calls `refreshCoordinator.refreshAndReschedule()`
+  on every emission (replacing the old direct `updateAll` call), and enqueues the safety net.
+- `WidgetGlanceModule` gains two `@Binds`: `AlarmScheduler → AndroidAlarmScheduler`,
+  `WidgetRedrawer → GlanceWidgetRedrawer`.
+- Manifest: `RECEIVE_BOOT_COMPLETED` permission, the new receiver's four-action `<intent-filter>`.
+- `widget/glance/build.gradle.kts`: `androidx.work.runtime.ktx`, `androidx.hilt.work`,
+  `ksp(androidx.hilt.compiler)` — previously only `:app` had these.
 
-**Accessibility fix to the card's own semantics**
+**BUG-R013 — a `@Singleton Clock` froze its zone at construction (found and fixed this session)**
 
-The card's descriptive content (emoji, title, category, countdown) keeps its single merged
-TalkBack sentence, but that merge is now scoped to just that content — the new overflow button
-sits outside it, confirmed via the real semantics tree (`uiautomator dump`) to carry its own
-independent "More actions for `<title>`" description rather than being swallowed by a card-wide
-`clearAndSetSemantics`.
+`TimeModule.providesClock()` had returned `Clock.systemDefaultZone()` since D-026 (Milestone 2).
+`Clock.systemDefaultZone()` snapshots `ZoneId.systemDefault()` once, at construction, into an
+immutable `Clock`; bound `@Singleton`, that snapshot never updates for the life of the process.
+Found live during real-device timezone testing (see "Real-device verification" below), not by
+inspection: a correctly-received `TIMEZONE_CHANGED` broadcast triggered a correctly-run refresh
+cycle that nonetheless recomputed the exact same absolute alarm instant as before the change — the
+new zone was never actually being read. Fixed with `LiveDefaultZoneClock` (`core/common/…/di/
+TimeModule.kt`), whose `getZone()` calls `ZoneId.systemDefault()` fresh on every read instead of
+caching it, plus `TimeZone.setDefault(null)` in `WidgetRefreshReceiver` on `ACTION_TIMEZONE_CHANGED`
+to bust the underlying JVM-level cache `ZoneId.systemDefault()` itself reads through. Rebuilt and
+reinstalled the APK, re-ran the exact same timezone test, and confirmed the recomputed alarm now
+correctly shifted by the full zone offset. See D-064.
 
-**Real-device verification sweep**
+**Real-device verification (`Pixel_9` AVD)**
 
-- Full lifecycle: create (with live preview reacting to title/category/accent) → edit (preview
-  pre-populated from the loaded event) → complete (swipe, confirmed via DB) → archive (menu,
-  confirmed the widget stayed unaffected — exactly per `Event.isArchived`'s own doc) → restore →
-  delete (confirmed via DB and the widget falling back to its unconfigured placeholder) → cancel
-  delete (confirmed non-destructive).
-- A real placed widget (reused from prior-session leftover state, re-bound via a direct
-  configuration-activity launch) confirmed correct across completing, archiving, and deleting its
-  bound event — no widget-specific code was needed for any of the three; the existing render
-  pipeline and cascading foreign key already did the right thing.
-- Both swipe directions on the Upcoming tab; the overflow menu's tab-specific item sets on all
-  three tabs; all four empty states (one, `NO_MATCHES`, found incidentally via a mis-tapped
-  category filter, which turned out to be a useful confirmation).
-- Light mode and dark mode.
-- 200% font scale — found and fixed one real bug (below).
+- **Background refresh, app not reopened.** Edited "QuickTest"'s target to `22:55:00` today
+  through the real UI; `dumpsys alarm` confirmed a real `RTC_WAKEUP` alarm at that exact instant.
+  Backgrounded the app (`KEYCODE_HOME`) and killed the process (`adb shell am kill` — the normal
+  low-memory-reclaim path, confirmed distinct from Force Stop, which would have cancelled the
+  alarm outright; an earlier attempt in this session that accidentally used `am force-stop`
+  demonstrated exactly that cancellation, `Reason=pi_cancelled` in `dumpsys alarm`, and had to be
+  redone). Confirmed the process dead via `pidof`, confirmed the alarm survived the kill, then
+  waited past the scheduled time. Logcat showed the alarm fire and the full cycle run
+  (`WidgetRefreshReceiver: reason=... widgetsRefreshed=2 nextRefreshAt=...`); `dumpsys alarm`'s
+  `Top Alarms` recorded `1 wakeups` for the refresh tag — a genuine device wake, not a coincidental
+  redraw. A home-screen screenshot confirmed the "QuickTest" widget had transitioned to "Expired"
+  on its own; the unrelated "Swiss Conference" widget was correctly left unchanged.
+- **Reboot recovery.** `adb reboot`; CountFlow was never manually reopened afterward. Both widgets
+  reappeared with correct data — process-start logs confirmed this happened through the widget-
+  restore/`BOOT_COMPLETED` path, not a manual launch. `dumpsys alarm` confirmed a fresh alarm was
+  scheduled post-boot — proof of real recovery, since `AlarmManager` state does not survive a
+  genuine reboot.
+- **Timezone-change recovery (found and fixed BUG-R013 in the process).** `adb shell cmd alarm
+  set-timezone America/New_York` (from `Africa/Casablanca`, a 5-hour shift). First attempt exposed
+  the stale-zone `Clock` bug above. After the fix, the identical test correctly produced a
+  ~5-hour-shifted alarm (confirmed via `dumpsys alarm`), with exactly one
+  `com.countflow.widget.action.REFRESH` entry — no stale old-zone alarm left behind
+  (`grep -c` = `1`).
 
-**Bug found and fixed within the session**
+**Documentation**
 
-The new `EventTabRow` didn't scroll horizontally like the existing `CategoryFilterRow` beside it.
-At 200% font scale, three fixed-width `FilterChip`s with no room to grow forced "Archived" to
-wrap one letter per line into a vertical stack instead of scrolling off-screen. Found via the
-session's own large-font-scale device check; fixed by adding the same `horizontalScroll` the
-category row already had. Verified fixed via re-screenshot; the full engineering gate was re-run
-after the fix.
-
-**New tests**
-
-`EditEventViewModelTest.kt` (new) — this ViewModel's first-ever unit tests, closing a gap
-`TODO.md` had named since the ViewModel existed: preview reactivity to every field change,
-preview clearing when the title goes blank, and confirmation that nothing the preview computes
-ever reaches the repository before `onSave()`. `EventDaoTest`/`EventRepositoryImplTest` gained
-tests for the new exclusive-bucket semantics, including one that reconstructs the full events
-table from all three bucket queries and asserts nothing is missing or duplicated.
-`EventsViewModelTest` gained tab-switching and per-tab empty-state tests.
+`docs/WIDGET_REFRESH_ARCHITECTURE.md` (new) — the permanent reference for this system: module
+split, `nextTransitionAt`'s algorithm and the plateau bug it handles, coalescing, the alarm and
+its exact-vs-inexact tradeoff, the receiver's four-actions-one-class design, the safety net,
+real-device evidence for every claim (§9), Force Stop's explicitly-unchanged behavior (§10),
+battery/wake-frequency reasoning (§11), and known limitations (§12). `docs/WIDGET_ARCHITECTURE.md`
+§5 rewritten as a summary pointing there; §2's file tables and §10's known-limitations updated.
+`DECISIONS.md` D-062 (the plateau-walk algorithm), D-063 (the module split, coalescing, and
+`AlarmManager`/receiver/safety-net mechanics), D-064 (the `LiveDefaultZoneClock` fix). `PROJECT_
+STATUS.md`, `ROADMAP.md` (new Milestone 8 "In Progress" section), `TODO.md`, `KNOWN_ISSUES.md`
+(BUG-R013 resolved entry, BUG-011 updated to confirm the new scheduler does not change its status,
+LIM-002 updated), `CHANGELOG.md`, `AI_CONTEXT.md` all updated per the standing working agreement.
 
 **Verification**
 
 - `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` — BUILD SUCCESSFUL (run
-  twice: once before the font-scale bugfix, once after, both green).
-- 259 tests, 0 failures (up from 245).
+  twice: once before the D-064 fix, once after, both green).
+- 299 tests, 0 failures (up from 259).
 - Lint: 0 errors, 17 warnings, unchanged since Session 9.
 - `:core:domain` coverage unchanged at 97.0%, gated at 95%.
 
@@ -166,8 +182,22 @@ table from all three bucket queries and asserts nothing is missing or duplicated
 ## Files Created
 
 ```
-feature/events/…/edit/EventWidgetPreview.kt                          (new)
-feature/events/src/test/kotlin/…/edit/EditEventViewModelTest.kt      (new)
+docs/WIDGET_REFRESH_ARCHITECTURE.md                                          (new)
+core/domain/src/test/kotlin/…/countdown/CountdownEngineNextTransitionTest.kt (new, 20 tests)
+core/common/src/test/kotlin/…/di/LiveDefaultZoneClockTest.kt                 (new — first test
+                                                                                source set for
+                                                                                :core:common)
+widget/engine/…/refresh/AlarmScheduler.kt                                    (new)
+widget/engine/…/refresh/WidgetRedrawer.kt                                    (new)
+widget/engine/…/refresh/RefreshOutcome.kt                                    (new)
+widget/engine/…/refresh/WidgetRefreshPlanner.kt                              (new)
+widget/engine/…/refresh/WidgetRefreshCoordinator.kt                          (new)
+widget/engine/src/test/kotlin/…/refresh/WidgetRefreshPlannerTest.kt          (new, 7 tests)
+widget/engine/src/test/kotlin/…/refresh/WidgetRefreshCoordinatorTest.kt      (new, 9 tests)
+widget/glance/…/refresh/AndroidAlarmScheduler.kt                             (new)
+widget/glance/…/refresh/GlanceWidgetRedrawer.kt                              (new)
+widget/glance/…/refresh/WidgetRefreshReceiver.kt                             (new)
+widget/glance/…/refresh/WidgetRefreshSafetyNetWorker.kt                      (new)
 ```
 
 ----------------------------------
@@ -175,80 +205,76 @@ feature/events/src/test/kotlin/…/edit/EditEventViewModelTest.kt      (new)
 ## Files Modified
 
 ```
-core/domain/…/repository/EventRepository.kt          (EventLifecycleFilter enum, EventFilter.lifecycle)
-core/domain/src/test/…/repository/RepositoryContractTest.kt  (updated for the new field)
-core/database/…/dao/EventDao.kt                       (observeEvents query rewritten for lifecycle bucket)
-core/database/src/test/…/dao/EventDaoTest.kt           (bucket tests, mutual-exclusivity test)
-core/data/…/repository/EventRepositoryImpl.kt          (passes filter.lifecycle.name)
-core/data/src/test/…/repository/EventRepositoryImplTest.kt (+1 lifecycle test)
-feature/events/build.gradle.kts                        (+implementation(project(":widget:engine")))
-feature/events/…/home/EventsViewModel.kt                (onTabChange, ListOptions.tab)
-feature/events/…/home/HomeUiState.kt                    (tab field, 4-way emptyState)
-feature/events/…/home/HomeScreen.kt                      (EventTabRow, empty-state copy, wiring)
-feature/events/…/home/EventCard.kt                       (full rewrite — swipe, overflow menu, delete dialog)
-feature/events/…/edit/EditEventUiState.kt                (previewModel field)
-feature/events/…/edit/EditEventViewModel.kt               (refreshPreview(), buildEvent() shared helper)
-feature/events/…/edit/CreateEventScreen.kt                (renders EventWidgetPreview when present)
-feature/events/src/test/…/home/EventsViewModelTest.kt     (tab tests, updated empty-state tests)
-AI_CONTEXT.md, CHANGELOG.md, DECISIONS.md, KNOWN_ISSUES.md, PROJECT_STATUS.md, ROADMAP.md, TODO.md
+core/common/…/di/TimeModule.kt                          (LiveDefaultZoneClock, D-064)
+core/domain/…/countdown/CountdownEngine.kt               (nextTransitionAt + KDoc, D-062)
+widget/glance/build.gradle.kts                           (+WorkManager, +hilt-work)
+widget/glance/src/main/AndroidManifest.xml                (RECEIVE_BOOT_COMPLETED, new receiver)
+widget/glance/…/di/WidgetGlanceModule.kt                  (+2 @Binds: AlarmScheduler, WidgetRedrawer)
+widget/glance/…/refresh/GlanceWidgetRefreshScheduler.kt   (uses coordinator, enqueues safety net)
+AI_CONTEXT.md, CHANGELOG.md, DECISIONS.md, KNOWN_ISSUES.md, PROJECT_STATUS.md, ROADMAP.md, TODO.md,
+docs/WIDGET_ARCHITECTURE.md
 ```
 
 ----------------------------------
 
 ## Architecture Decisions
 
-Four new entries, D-058 through D-061, detailed in `DECISIONS.md`:
+Three new entries, D-062 through D-064, detailed in `DECISIONS.md`:
 
-- **D-058** — `EventLifecycleFilter` replaces `includeArchived`/`includeCompleted` on
-  `EventFilter`, giving three mutually exclusive buckets instead of two inclusion flags.
-- **D-059** — The create/edit form's live preview depends on `:widget:engine`, not
-  `:widget:glance` — reuses the real render pipeline, deliberately does not reuse
-  `WidgetPreviewCard` or `resolveHeadline` (both `internal` to the heavier module).
-- **D-060** — Delete is never a swipe target; the overflow menu is the one action surface every
-  tab and every action always has.
-- **D-061** — The empty Upcoming tab does not distinguish genuine first launch from "everything
-  is done or archived" — a deliberate scope reduction per the brief's own instruction.
+- **D-062** — `nextTransitionAt` walks a bounded set of midnight candidates, not just "the next
+  one" — the fix for the `NextWeek` plateau bug.
+- **D-063** — Widget refresh scheduling splits across `:core:domain`/`:widget:engine`/
+  `:widget:glance`, coalesces to one alarm, and uses `setAndAllowWhileIdle` — the full production
+  scheduler design, module split, and Android mechanics.
+- **D-064** — `LiveDefaultZoneClock` replaces `Clock.systemDefaultZone()` — a `@Singleton` clock
+  must not freeze the device's zone at construction. The BUG-R013 fix.
 
 ----------------------------------
 
 ## Current Project Structure
 
-One new dependency edge: `:feature:events → :widget:engine` (D-059), added to
-`feature/events/build.gradle.kts` on top of the `countflow.android.feature` convention plugin's
-baseline. No new modules. `:widget:engine` remains pure Kotlin/JVM (D-033), so this adds no
-Android or Glance dependency weight to the events feature. See `PROJECT_STATUS.md` for the full,
-updated module graph.
+No new modules, and no new *internal* dependency edges — `:widget:glance` already depended on
+`:widget:engine` and `:core:common`, which is where every new class in this session's system
+lives. One new *external* dependency edge: `widget/glance/build.gradle.kts` now applies
+`androidx.hilt.work`'s KSP processor and depends on `androidx.work.runtime.ktx` and
+`androidx.hilt.work` — both already present in the version catalog (previously used only by
+`:app`), now applied to a second module for `WidgetRefreshSafetyNetWorker`'s `@HiltWorker`. See
+`PROJECT_STATUS.md` for the full, unchanged module graph.
 
 ----------------------------------
 
 ## Dependencies Added
 
-None external. The one new dependency is internal to the project (`:widget:engine`, above).
+Two, both already in `gradle/libs.versions.toml` before this session (used only by `:app` until
+now): `androidx.work.runtime.ktx` and `androidx.hilt.work` (plus its KSP compiler), newly applied
+to `widget/glance/build.gradle.kts`. No new external libraries introduced to the version catalog.
 
 ----------------------------------
 
 ## Current Features Working
 
-Everything from Session 10, plus: a three-tab event list (Upcoming/Completed/Archived) with full
-complete/archive/restore/delete support via both swipe and an always-present accessible menu;
-worded delete confirmation; four tab-aware empty states; a live widget preview in the create/edit
-form. Event CRUD/UI is now considered complete for V1 — see this session's Final Report, below and
-in the closing message, for the precise verdict and what would still change before Google Play.
+Everything from Session 11, plus: widgets now refresh reliably in the background — a widget
+updates on its own, with the app not open and its process not running, at the exact next moment
+its countdown display would meaningfully change, confirmed on a real device across normal
+background use, a full reboot, and a real timezone change. Exactly one system alarm exists for the
+whole app at any time, regardless of widget count. Force Stop recovery remains explicitly out of
+scope, by standing decision (D-052) — this session's scheduler makes *normal* background operation
+reliable, not a workaround for Android's own Force Stop semantics.
 
 ----------------------------------
 
 ## Pending Work
 
-**P0 — blocks Session 12**
-1. **Approve Milestone 6, or further Milestone 5 work**, now that Event CRUD/UI is at 100% for V1.
+**P0 — blocks Session 13**
+1. **Approve Notifications (Milestone 7), or further Milestone 5/8 work**, now that background
+   refresh infrastructure is delivered and real-device verified.
 2. **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — carried
-   over unchanged from Session 10; not attempted this session, which was explicitly scoped to
-   event management, not widget sizing.
+   over unchanged from Session 10; not attempted this session either, which was explicitly scoped
+   to background refresh, not widget sizing.
 
-**P1 — rest of Milestone 5:** same-event-two-different-styles real-UI verification; emoji
-rendering on a physical device (LIM-006); re-measure `WidgetSizeClass` thresholds on a physical
-device and a second launcher (TD-016); migrate `EventCard`'s swipe gesture off the deprecated
-`confirmValueChange` parameter (TD-018, low priority, still functions correctly).
+**P3 — remaining Milestone 8 scope:** the launcher-ticked `Chronometer` half of D-008 (final-24-
+hours second-level ticking); R8 keep rules, Baseline Profiles, macrobenchmarks, a full
+accessibility pass; the first profiler-measured (not reasoned) battery/memory/CPU numbers.
 
 ----------------------------------
 
@@ -256,14 +282,18 @@ device and a second launcher (TD-016); migrate `EventCard`'s swipe gesture off t
 
 Full detail in `KNOWN_ISSUES.md`.
 
-**Resolved this session:** TD-008 (archive/complete/delete gesture, open since Session 4, closed
-with a full accessible-menu alternative per the brief's explicit requirement).
+**Resolved this session:** BUG-R013 (a `@Singleton Clock` froze its resolved timezone at
+construction, silently going stale after a real device timezone change — found and fixed the same
+session, D-064).
 
-**New this session:** TD-018 (`EventCard`'s swipe gesture uses a deprecated Material 3 parameter;
-functions correctly, no drop-in replacement exists).
+**Confirmed unchanged this session, with new evidence:** BUG-011 (Force Stop recovery) — the new
+alarm-based scheduler was confirmed, by design, not to change this: Force Stop cancels this app's
+`AlarmManager` alarms and `WorkManager` work exactly as it cancels everything else the app
+scheduled. No further engineering time went toward it, per the standing D-052 decision.
 
-**Open, unchanged:** TD-001, TD-002, TD-005, TD-006, TD-007, TD-009, TD-016, TD-017. BUG-011
-(decision final per D-052, not revisited this session). LIM-002, LIM-003, LIM-005, LIM-006.
+**Open, unchanged:** TD-001, TD-002, TD-005, TD-006, TD-007, TD-009, TD-016, TD-017, TD-018.
+LIM-003, LIM-004, LIM-005, LIM-006. LIM-002 updated to note the coalesced-alarm half of its
+resolution is now real.
 
 **Lint:** 0 errors, 17 accepted warnings, unchanged since Session 9.
 
@@ -271,13 +301,15 @@ functions correctly, no drop-in replacement exists).
 
 ## Next Session Plan
 
-1. Get explicit approval before starting Milestone 6, or before resuming Milestone 5's remaining
-   widget-sizing work — this session's brief was explicit that it stops before both.
-2. If a real (ideally physical) device is available: prioritize the real 4×2 (`WIDE`) placement
-   and screenshot Session 10 could not complete — the one gap actively blocking Milestone 5's
-   completion.
-3. If approved to continue Milestone 5 instead: same-event multi-style real-UI verification, a
-   second-launcher `WidgetSizeClass` re-measurement.
+1. Get explicit approval before starting Notifications (Milestone 7) — the natural next step now
+   that both Event CRUD/UI and reliable background refresh are done — or before resuming Milestone
+   5's remaining widget-sizing loose ends, or the rest of Milestone 8 (Chronometer ticking, R8,
+   Baseline Profiles, the full a11y pass).
+2. If Notifications is approved: reuse this session's coalesced-alarm infrastructure
+   (`AlarmScheduler`'s pattern) rather than adding a second wakeup source — the brief for
+   Milestone 7 already expects this, per `TODO.md`.
+3. If a real (ideally physical) device is available and Milestone 5 is prioritized instead:
+   the real 4×2 (`WIDE`) placement and screenshot Session 10 could not complete.
 4. Verify `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug`, then update all
    documents per the standing working agreement.
 
@@ -287,16 +319,17 @@ functions correctly, no drop-in replacement exists).
 
 **✅ Builds Successfully**
 
-Verified this session (twice — before and after the font-scale bugfix, both green):
+Verified this session (twice — before and after the D-064 fix, both green):
 - `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` → BUILD SUCCESSFUL
-- 259 tests, 0 failures (up from 245)
+- 299 tests, 0 failures (up from 259)
 - Coverage gate passed: `:core:domain` 97.0% lines, unchanged
 - Lint: 0 errors, 17 warnings, unchanged since Session 9
-- Runtime: the same stable local emulator established in Session 8 (`Pixel_9`), reused
-  successfully for the full verification sweep, including direct-launching the widget
-  configuration activity for a widget id already placed on the home screen from prior-session
-  leftover state, and reading the app's own SQLite database directly (`run-as` + a local
-  `sqlite3`) to confirm state transitions independent of what the UI claimed
+- Runtime: the same stable local emulator established in Session 8 (`Pixel_9`), used for the full
+  background-refresh/reboot/timezone verification sweep — including a genuine `adb reboot` and a
+  real `adb shell cmd alarm set-timezone` zone change, both firsts for this project. `dumpsys
+  alarm` was this session's primary verification technique (more reliable than logcat alone, since
+  `AndroidLogger.debug()` is gated behind `Log.isLoggable`, a pre-existing, unrelated behavior
+  worked around via `adb shell setprop log.tag.<TAG> DEBUG` once diagnosed).
 
 Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed. For device work,
 launch `~/Library/Android/sdk/emulator/emulator -avd Pixel_9` directly (GUI mode).
@@ -305,88 +338,98 @@ launch `~/Library/Android/sdk/emulator/emulator -avd Pixel_9` directly (GUI mode
 
 ## Tests
 
-**259 written, 259 passing, 0 failing — up from 245.**
+**299 written, 299 passing, 0 failing — up from 259.**
 
 | Module | Tests | Change this session |
 |---|---|---|
-| `:core:domain` | 91 | Unchanged (2 existing tests updated for the new field, no new tests) |
-| `:core:database` | 40 | +2 (lifecycle-bucket queries, replacing 2 old include-flag tests) |
-| `:core:data` | 32 | +1 (lifecycle filter selects the archived bucket) |
-| `:feature:events` | 33 | +11 (tab switching, per-tab empty states, and `EditEventViewModelTest.kt`'s first-ever coverage of this ViewModel) |
-| `:widget:engine` | 34 | Unchanged |
-| `:widget:glance` | 29 | Unchanged |
+| `:core:domain` | 111 | +20 (`CountdownEngineNextTransitionTest.kt`) |
+| `:core:common` | 4 | +4 (`LiveDefaultZoneClockTest.kt` — this module's first-ever test source set) |
+| `:core:data` | 32 | Unchanged |
+| `:core:database` | 40 | Unchanged |
+| `:feature:events` | 33 | Unchanged |
+| `:widget:engine` | 50 | +16 (`WidgetRefreshPlannerTest.kt` +7, `WidgetRefreshCoordinatorTest.kt` +9) |
+| `:widget:glance` | 29 | Unchanged (the new Android-side classes — `AndroidAlarmScheduler`, `WidgetRefreshReceiver`, `WidgetRefreshSafetyNetWorker`, `GlanceWidgetRedrawer` — are thin platform wrappers verified on-device this session rather than by unit test; see Developer Notes) |
 
-**Coverage** — `:core:domain` 97.0% lines, unchanged (the new `EventLifecycleFilter` enum needed
-no dedicated test of its own; its behavior is exercised through `EventDaoTest`/
-`EventRepositoryImplTest`). The full event lifecycle's real-device behavior (swipe gestures, menu
-actions, widget-binding side effects) is verified on-device per this session's own sweep, not by
-automated test — Compose UI tests for the app's own screens remain a standing gap (`TODO.md`
-Testing gaps), unchanged this session.
+**Coverage** — `:core:domain` 97.0% lines, unchanged (`nextTransitionAt` is fully exercised by its
+own 20-test file, so the module's aggregate percentage held rather than moved). The Android-side
+alarm/receiver/worker mechanics are verified by real-device evidence (§9 of the new architecture
+doc), not automated test — consistent with this project's standing practice for classes that are
+thin platform wrappers around `AlarmManager`/`WorkManager`/`BroadcastReceiver` with no business
+logic of their own to unit-test.
 
 ----------------------------------
 
 ## Git Status
 
 Not yet committed as of writing this summary — commit follows immediately after. Working tree
-before that commit: 20 modified files, 2 new files, building on `main` at `23e6cab` (Session 10's
-final commit). No remote configured.
+before that commit: 6 modified production files, 8 new production files, 3 new test files, 8
+modified documentation files, 1 new documentation file, building on `main` at `5d6179a` (Session
+11's final commit). No remote configured.
 
 ----------------------------------
 
 ## Developer Notes
 
-- **A boolean pair that can only express "don't hide X" cannot express "show only X."** The old
-  `EventFilter.includeArchived`/`includeCompleted` had worked fine for a single unfiltered list
-  with an archived-events toggle, but building three genuinely exclusive tabs needed a different
-  shape entirely (D-058). Worth recognizing early when a feature's shape changes from "narrow a
-  list" to "partition a list" — the two need different filter representations, not the same one
-  stretched further.
-- **A pure, no-I/O preview function is exactly the kind of thing worth depending across a module
-  boundary for, even from a module that otherwise has nothing to do with widgets.**
-  `WidgetRenderModelProvider.preview()`'s entire value in D-048 was staying reusable without
-  reopening the orphan-binding risk it was built to avoid; Session 11 found its second real
-  consumer (`:feature:events`, not just `:widget:glance`) and the pure-Kotlin module boundary
-  D-033/D-004 established two milestones earlier is exactly what made adding that consumer a
-  one-line `build.gradle.kts` change rather than a redesign.
-- **`internal` visibility is a real signal about who should — and shouldn't — reuse something,
-  not just a compiler nag.** `WidgetPreviewCard` and `resolveHeadline` being `internal` to
-  `:widget:glance` (D-042's narrowing, D-046) was the concrete reason this session built a second,
-  independently simplified preview drawing (`EventWidgetPreview`) rather than widening that
-  module's public surface for one new consumer — and the resulting preview is smaller and simpler
-  *because* it wasn't trying to reproduce a decision (the primary/secondary hierarchy split) built
-  for a problem (multi-line widget redundancy) the compact form preview was never at risk of.
-- **A layout pattern copied from a sibling needs its whole behavior copied too, not just its
-  static appearance.** `EventTabRow` visually matched `CategoryFilterRow` but omitted
-  `horizontalScroll`, invisible until 200% font scale forced a wrap bug neither test suite nor a
-  100%-scale screenshot would ever catch. Same shape of gap as BUG-R011 (Session 9): a constant or
-  a pattern tuned for/copied under one condition, applied unconditionally to another.
-- **Reading the app's own SQLite database directly (`run-as com.countflow cat databases/...`)
-  settled two ambiguous on-device results this session that screenshots alone could not.** Once
-  when a tap landed on "Archive" instead of "Mark complete" (the widget correctly not updating
-  turned out to be *correct* behavior, not a bug, once the DB confirmed which action actually
-  fired) and once to confirm exact tap coordinates needed scaling from the screenshot's
-  display-pixel size to the device's real pixel size consistently. Worth remembering as a standing
-  technique: when a UI screenshot's story doesn't match what should have happened, the database is
-  a faster ground truth than re-guessing the tap.
+- **"Check only the next midnight" is a plausible-looking algorithm that is provably wrong for a
+  real label this domain already has.** `CountdownLabel.NextWeek`'s window re-anchors to a
+  shifting `today`, so the label can stay unchanged across several consecutive local midnights.
+  The bug was caught by manually tracing a label day-by-day across a real date range with Python,
+  not by intuition — worth remembering that "the next boundary" and "the next thing that actually
+  changes" are different questions whenever a label's own window can shift under it.
+- **A `@Singleton` built from a "read the live system value" API is not guaranteed to stay live.**
+  `Clock.systemDefaultZone()` looks like exactly the right tool for "the device's current zone,"
+  and reads correctly on every call to `.instant()` — but its `.zone` is captured once, at
+  construction, and a `@Singleton` binding means "once" means "once per process," not "once per
+  call." This bug (D-026, present since Milestone 2) was invisible for nine sessions specifically
+  because nothing before this session's real-device timezone test exercised a live zone change
+  against an already-running process — a category of bug that architecture review and unit tests
+  alike are structurally unable to catch, since both operate within one (implicitly static) process
+  lifetime. Worth checking any other `@Singleton`-scoped "current system value" the same way.
+- **`am force-stop` and `am kill` are not the same test, and confusing them cost real time this
+  session.** An early attempt to background the app for the "process not in use" verification used
+  `am force-stop`, which — correctly, per D-052's own reasoning — cancelled the pending alarm
+  outright (`dumpsys alarm` showed `Reason=pi_cancelled`). That is exactly the intended Force Stop
+  behavior, but it is a different test than "the process was reclaimed while backgrounded," which
+  needed `am kill` instead (a normal low-memory-style reclaim that leaves scheduled alarms intact).
+  Worth remembering as a standing distinction for any future device verification that needs to
+  simulate "app not in use" without accidentally simulating Force Stop instead.
+- **`dumpsys alarm` is a more reliable verification technique than logcat for confirming scheduled
+  system work exists,** independent of the codebase's own logging configuration. This session's
+  new debug logs didn't appear in logcat at first — not a code bug, but `AndroidLogger.debug()`'s
+  pre-existing `Log.isLoggable` gate, which silently suppresses debug logs unless the tag is
+  explicitly enabled (`adb shell setprop log.tag.<TAG> DEBUG`). `dumpsys alarm` needed no such
+  configuration and gave a direct, unambiguous answer throughout — including the moment that first
+  revealed BUG-R013, well before the logging gate was even diagnosed.
+- **A background/orchestration class with real business logic (deciding *when*, deciding *which*)
+  belongs behind an interface a fake can implement — a background class that's just a thin call
+  into a platform API does not need the same treatment.** `WidgetRefreshCoordinator`'s logic (what
+  order to redraw/compute/reschedule in) is fully unit-tested via `AlarmScheduler`/`WidgetRedrawer`
+  fakes; `AndroidAlarmScheduler` and `WidgetRefreshReceiver` themselves have no decision logic of
+  their own to fake around, and were verified correct the only way that's meaningful for them: on
+  a real device, against the real `AlarmManager`.
 - Commands: `./gradlew assembleDebug` · `./gradlew test` · `./gradlew :core:domain:koverVerify` ·
   `./gradlew :app:lintDebug`. Device: `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`.
+  Useful this session specifically: `adb shell dumpsys alarm`, `adb reboot` +
+  `adb wait-for-device` + polling `getprop sys.boot_completed`, `adb shell cmd alarm
+  set-timezone <tz>`, `adb shell am kill <package>` (not `am force-stop`, unless Force Stop
+  itself is what's being tested).
 
 ----------------------------------
 
-## Requires approval before Session 12
+## Requires approval before Session 13
 
-1. **Milestone 6, or the rest of Milestone 5** — Event CRUD/UI is now at 100% for V1; the natural
-   next step is either Settings (Milestone 6) or finishing Milestone 5's widget-sizing loose ends
-   (real `WIDE` confirmation, same-event multi-style verification).
-2. **Priority of the real 4×2 (`WIDE`) device measurement** (TD-016, TD-017), carried over
-   unchanged from Session 10 — still the one concrete gap blocking Milestone 5's own completion.
+1. **Notifications (Milestone 7), or further Milestone 5/8 work** — background refresh
+   infrastructure is now delivered and real-device verified; the natural next step is either
+   Notifications (which can now share this session's coalesced-alarm mechanism) or finishing
+   Milestone 5's widget-sizing loose ends (real `WIDE` confirmation) or the rest of Milestone 8
+   (Chronometer ticking, R8, Baseline Profiles, the full a11y pass).
 
 ----------------------------------
 
 ## Estimated Progress
 
 ```
-Overall Progress            57%
+Overall Progress            59%
 
 Research & Architecture    100%
 Project Setup              100%
@@ -396,6 +439,8 @@ Event CRUD / UI             100%   (Session 11: lifecycle tabs, gestures, live p
 Widget Engine                98%   (validated on a real device — docs/PRODUCT_REVIEW.md)
 Widget Themes & Sizes        70%   (responsive 2×1/2×2/4×2 delivered — Milestone 5B;
                                      real WIDE confirmation and multi-widget polish remain)
+Background Refresh           90%   (Session 12: coalesced alarm scheduler delivered and
+                                     device-verified; Chronometer ticking still open)
 Notifications                 0%
 Billing                       0%
 Testing                      80%   (domain, DAO, repository, ViewModel, widget engine, Glance UI)

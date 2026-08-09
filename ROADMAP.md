@@ -16,7 +16,7 @@ Living document. Update the status column as milestones move.
 | 5 | Multiple widgets | **In Progress** (5A, 5B done — visual redesign + responsive sizes; multi-widget polish remains) | 9–10 |
 | 6 | Settings | Not Started | — |
 | 7 | Notifications | Not Started | — |
-| 8 | Optimization | Not Started | — |
+| 8 | Optimization | **In Progress** (background refresh infrastructure pulled forward and delivered; R8, Baseline Profiles, macrobenchmarks, full a11y pass remain) | 12 |
 | 9 | Play Store ready | Not Started | — |
 
 ---
@@ -371,13 +371,57 @@ infrastructure from D-008 rather than adding a second wakeup source.
 
 ---
 
-## Milestone 8 — Optimization · Not Started
+## Milestone 8 — Optimization · In Progress
 
-Implement the full D-008 refresh strategy: the launcher-ticked `Chronometer` for the final 24
-hours, one coalesced alarm for the whole app, and event-driven invalidation. Enable R8 and write
-the keep rules deferred in D-016. Baseline Profiles and macrobenchmarks against the sub-700 ms
-cold start and sub-100 ms widget update budgets. Full accessibility pass: TalkBack, large fonts,
-high contrast, dynamic scaling.
+Full scope: implement the rest of D-008's refresh strategy, enable R8 and write the keep rules
+deferred in D-016, Baseline Profiles and macrobenchmarks against the sub-700 ms cold start and
+sub-100 ms widget update budgets, and a full accessibility pass (TalkBack, large fonts, high
+contrast, dynamic scaling).
+
+### Background refresh infrastructure · Delivered (Session 12)
+
+Pulled forward from this milestone's original scope, ahead of R8/Baseline Profiles/the a11y pass,
+because reliable background widget refresh was judged independently valuable and independently
+completable — not a redefinition of the milestone, a partial delivery of it. Full detail:
+`docs/WIDGET_REFRESH_ARCHITECTURE.md`.
+
+**Delivered:** a pure, zone-aware `CountdownEngine.nextTransitionAt` calculator (`:core:domain`,
+D-062) answering "when does this event's countdown next meaningfully change," correctly handling
+a real plateau bug (`CountdownLabel.NextWeek` can stay unchanged across several consecutive local
+midnights) a naive "check the next midnight" implementation would have missed; `WidgetRefreshPlanner`
+(`:widget:engine`) coalescing every placed widget to one global instant, deduplicated by event, so
+widget count never multiplies wakeups; `WidgetRefreshCoordinator` orchestrating a full
+redraw-then-reschedule cycle behind two Android-free seams; the real Android mechanics
+(`:widget:glance`) — one `AlarmManager.setAndAllowWhileIdle` alarm, replaced rather than stacked on
+every reschedule; one `BroadcastReceiver` handling both the alarm firing and the four genuine
+system recovery broadcasts (boot, timezone, time, date); a `WorkManager` periodic safety net
+(D-063).
+
+**Verified on a real device, not just architecture:** a widget transitioned on its own with the
+app backgrounded and its process killed, confirmed via `dumpsys alarm` (the alarm firing, `1`
+wakeup recorded) and logcat (the refresh cycle running), then a home-screen screenshot; a full
+device reboot correctly restored both placed widgets and re-armed a fresh alarm, with the app
+never manually reopened; a real timezone change (`Africa/Casablanca` → `America/New_York`, via
+`adb shell cmd alarm set-timezone`) correctly recomputed the schedule to the new zone's actual next
+transition. That last test found a real, nine-session-old bug on its first attempt — a `@Singleton
+Clock` (`Clock.systemDefaultZone()`, present since D-026 in Milestone 2) froze its resolved zone at
+construction, so an already-running process silently kept computing against the *old* zone even
+after correctly receiving and handling the `TIMEZONE_CHANGED` broadcast. Fixed
+(`LiveDefaultZoneClock`, D-064), regression-tested, and re-verified on the same device the same
+session.
+
+**Not delivered, by explicit scope:** the launcher-ticked `Chronometer` for final-24-hours
+second-level ticking (the other half of D-008); R8/keep rules; Baseline Profiles and
+macrobenchmarks; the full accessibility pass; any profiler-measured battery, memory, or CPU
+number (this session's battery answer is reasoned from the alarm design and confirmed alarm
+*counts*, not an instrumented measurement — `docs/WIDGET_REFRESH_ARCHITECTURE.md` §11). Force
+Stop recovery was explicitly not attempted, per the standing D-052 decision — this session's
+scheduler makes *normal* background operation reliable, not a workaround for Android's own
+Force Stop semantics.
+
+299 tests, 0 failures (up from 259) — 20 new in `:core:domain`, 16 new in `:widget:engine`, 4 new
+in `:core:common`. `:core:domain` line coverage unchanged at 97.0%, gated at 95%. Lint: 0 errors,
+17 warnings, unchanged since Session 9.
 
 ---
 

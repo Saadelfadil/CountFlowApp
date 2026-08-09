@@ -5,20 +5,23 @@ scheduled but not imminent.
 
 ---
 
-## P0 — Blocks Session 12
+## P0 — Blocks Session 13
 
-- [ ] **Approve Milestone 6, or further Milestone 5 work, after Session 11's Core Product
-      completion report.** Event CRUD/UI is now considered 100% for V1 (Session 11's own Final
-      Report answers this explicitly) — confirm before starting Notifications or Settings.
+- [ ] **Approve Notifications (Milestone 7), or further Milestone 5/8 work, after Session 12's
+      background-refresh completion report.** Widgets now refresh reliably in the background with
+      real-device evidence (`docs/WIDGET_REFRESH_ARCHITECTURE.md`) — confirm before starting
+      Notifications, since the brief explicitly stopped short of it pending this approval.
 - [ ] **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — still
-      the one significant Milestone 5 gap, carried over from Session 10. Not attempted again this
-      session, which was explicitly scoped to event management, not widget sizing.
+      the one significant Milestone 5 gap, carried over from Session 10. Not attempted this
+      session either, which was explicitly scoped to background refresh, not widget sizing.
 
 Resolved in prior sessions (kept here only as a pointer, not re-litigated): 2×1/4×2 size work
-approved and delivered (Session 10); BUG-011 decided — no further work until Milestone 8 (D-052);
-the countdown label policy confirmed permanent (D-051); archive/complete/delete gestures delivered
-with a full accessible menu alternative (Session 11, TD-008 resolved); create/edit live widget
-preview delivered (Session 11).
+approved and delivered (Session 10); the countdown label policy confirmed permanent (D-051);
+archive/complete/delete gestures delivered with a full accessible menu alternative (Session 11,
+TD-008 resolved); create/edit live widget preview delivered (Session 11); the coalesced-alarm
+background refresh scheduler D-008 always planned, delivered and real-device verified (Session 12,
+D-062/D-063). BUG-011 (Force Stop recovery) remains open by explicit decision — see below; the new
+scheduler does not change that decision.
 
 ---
 
@@ -56,17 +59,18 @@ preview delivered (Session 11).
 ## P3 — Milestones 7 to 9
 
 - [ ] Notifications. `Reminder.scheduledTime` already computes fire times by calendar rather
-      than millisecond offset, so DST will not drift them.
-- [ ] The full D-008 refresh strategy: launcher-ticked `Chronometer` for the final 24 hours
-      (`CountdownStatus.needsLiveTicking` already marks these), one coalesced alarm, and
-      event-driven invalidation — replacing `GlanceWidgetRefreshScheduler`'s Milestone 4
-      live-observation approach. Would also naturally resolve BUG-011 (stuck loading spinner after
-      Force Stop) as a side effect.
+      than millisecond offset, so DST will not drift them. Session 12's coalesced-alarm
+      infrastructure (`AlarmScheduler`, `WidgetRefreshReceiver`'s pattern) is the mechanism the
+      brief already expects this to share rather than adding a second wakeup source — see
+      `docs/WIDGET_REFRESH_ARCHITECTURE.md`.
+- [ ] The remaining half of D-008: a launcher-ticked `Chronometer` for the final 24 hours
+      (`CountdownStatus.needsLiveTicking` already marks these), giving second-level ticking on top
+      of the coalesced-alarm scheduler delivered in Session 12 (`docs/WIDGET_REFRESH_ARCHITECTURE.md`).
 - [ ] R8 keep rules, Baseline Profiles, macrobenchmarks, accessibility pass. **This is also where
       real widget performance/memory/battery numbers finally get measured** — still zero
-      measurements from any session as of Session 8, which had a stable device but spent it on
-      lifecycle/visual verification instead, deliberately (see `docs/PRODUCT_REVIEW.md`). Pull a
-      first rough measurement forward if a stable device is available before Milestone 8.
+      profiler-measured numbers from any session; Session 12 gives a reasoned (alarm-count-based)
+      battery answer, not an instrumented one (`docs/WIDGET_REFRESH_ARCHITECTURE.md` §11). Pull a
+      first rough measurement forward if a stable device is available before this work starts.
 - [ ] Firebase, AdMob, Play Billing behind the existing interfaces.
 
 ---
@@ -99,9 +103,13 @@ for full detail.
 - [ ] **BUG-011 (High, open since Session 8, decision final per D-052)** — the widget sticks on a
       loading spinner after Force Stop until the app is reopened by any means. Session 9 replaced
       the generic spinner with a branded "Tap to refresh" prompt; the owner has since directly
-      confirmed (Session 10, D-052) that no further engineering time goes toward this until
-      Milestone 8's refresh infrastructure exists as a matter of course. Not a "pending decision"
-      anymore — see `KNOWN_ISSUES.md` for the full, precisely-scoped account.
+      confirmed (Session 10, D-052) that no further engineering time goes toward this. Session 12
+      built Milestone 8's real alarm-based refresh infrastructure and confirmed, by design and per
+      D-052's own standing instruction, that it does **not** change this: Force Stop cancels this
+      app's `AlarmManager` alarms and `WorkManager` work exactly as it cancels everything else the
+      app scheduled, so the new scheduler is not a fix for this bug and was never meant to be one.
+      Still open, unchanged severity — see `KNOWN_ISSUES.md` for the full, precisely-scoped
+      account.
 
 ## Testing gaps
 
@@ -162,3 +170,10 @@ for full detail.
       picture of what the underlying `RemoteViews` actually does. Verify claims about rendering
       behavior against one real render before writing them down as fact, not just against
       `javap` output.
+- [ ] **A `@Singleton` built from a "live system value" API can still freeze that value at
+      construction.** `Clock.systemDefaultZone()` reads the system's current default zone once,
+      when the `Clock` is built, not on every call — a real, nine-session-old bug (D-064) that only
+      a genuine, running-process timezone change could surface, which is exactly why it went
+      unnoticed until Session 12's first real device timezone test. Worth checking any other
+      `@Singleton`-scoped value sourced from "the current X" (not just time/zone) for the same
+      construction-time-freeze risk before assuming a live system read stays live.

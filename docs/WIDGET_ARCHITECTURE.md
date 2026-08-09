@@ -45,7 +45,8 @@ only module in the widget system allowed to know Android exists.
 | `mapper/WidgetRenderMapper.kt` | `(Event, WidgetBinding, CountdownResult, ZoneId) → WidgetRenderModel`. |
 | `provider/WidgetRenderModelProvider.kt` | Orchestrates repository + `CountdownEngine` + mapper into one `observe`/`get` API. |
 | `lifecycle/WidgetLifecycleCoordinator.kt` | What happens to bindings when widgets are removed or found orphaned. |
-| `refresh/WidgetRefreshScheduler.kt` | An interface only — the seam Milestone 8 will implement fully. |
+| `refresh/WidgetRefreshScheduler.kt` | The interface the production scheduler implements (Session 12). |
+| `refresh/WidgetRefreshPlanner.kt`, `refresh/WidgetRefreshCoordinator.kt`, `refresh/AlarmScheduler.kt`, `refresh/WidgetRedrawer.kt`, `refresh/RefreshOutcome.kt` | The real background-refresh system. See `docs/WIDGET_REFRESH_ARCHITECTURE.md` — its own permanent reference, not repeated here. |
 
 Nothing in this list touches `Context`, `Bitmap`, `RemoteViews`, `GlanceId`, or any Glance type.
 Every file above is tested with plain JUnit — no Robolectric, no Android runtime — which is the
@@ -60,7 +61,8 @@ broken by an Android SDK upgrade.
 | `CountdownWidgetContent.kt` | The renderer. A `@Composable` function, nothing else. |
 | `CountdownGlanceWidgetReceiver.kt` | `GlanceAppWidgetReceiver`; delegates `onDeleted` to the lifecycle coordinator. |
 | `configuration/WidgetConfigurationActivity.kt`, `WidgetConfigurationViewModel.kt`, `WidgetConfigurationUiState.kt` | Pick-an-event flow, standard Activity/ViewModel/UiState split. |
-| `refresh/GlanceWidgetRefreshScheduler.kt` | Milestone 4's `WidgetRefreshScheduler` implementation. |
+| `refresh/GlanceWidgetRefreshScheduler.kt` | The `WidgetRefreshScheduler` implementation — wires the reactive database subscription, the real `AlarmManager`, and the periodic safety net together. |
+| `refresh/AndroidAlarmScheduler.kt`, `refresh/GlanceWidgetRedrawer.kt`, `refresh/WidgetRefreshReceiver.kt`, `refresh/WidgetRefreshSafetyNetWorker.kt` | The Android-specific mechanics — `AlarmManager`, `updateAll`, the one four-action `BroadcastReceiver`, the `WorkManager` backstop. See `docs/WIDGET_REFRESH_ARCHITECTURE.md`. |
 | `action/WidgetActions.kt` | Click targets, as `ActionCallback`s. |
 | `di/WidgetEntryPoint.kt`, `di/WidgetGlanceModule.kt` | The one Hilt bridge point Glance needs. |
 
@@ -188,43 +190,54 @@ AAR rather than assumed.
 
 ## 5. Refresh flow — how a widget finds out something changed
 
+**Full detail lives in `docs/WIDGET_REFRESH_ARCHITECTURE.md` (Session 12) — this section is a
+summary, not the source of truth.** The system described there replaces the Milestone 4 version
+that used to be documented in this section (app-alive-only, no background wakeup — see that
+document's own history note).
+
 ```
-Event edited in the app
+Event edited in the app                              System reboot / timezone / time / date change
+        │  Room write                                          │
+        ▼                                                       ▼
+EventRepository.observeEventsWithWidgets()          WidgetRefreshReceiver (4 system broadcasts,
+        │  Flow, re-emits on the joined                one manifest-registered receiver)
+        │  tables changing                                      │
+        ▼                                                       │
+GlanceWidgetRefreshScheduler  ◄───────────────────────────────────┘
         │
-        │  Room write
+        │  WidgetRefreshCoordinator.refreshAndReschedule()
         ▼
-EventRepository.observeEventsWithWidgets()   ← Flow, re-emits on the joined tables changing
+  1. redraw every placed widget from Room's current state (CountdownGlanceWidget().updateAll)
+  2. CountdownEngine.nextTransitionAt(...) per bound event, coalesced to one global Instant
+        (WidgetRefreshPlanner — dedupes by event, so N widgets on one event cost one computation)
+  3. schedule exactly one AlarmManager.setAndAllowWhileIdle(RTC_WAKEUP, ...) for that instant
+        (AndroidAlarmScheduler — a fixed PendingIntent request code, so this always replaces
+        any previously-scheduled alarm rather than stacking a second one)
         │
-        │  GlanceWidgetRefreshScheduler (started once, from CountFlowApplication.onCreate)
         ▼
-CountdownGlanceWidget().updateAll(context)
-        │
-        ▼
-provideGlance runs again for every placed instance → new WidgetRenderModel → new frame
+  alarm fires (WidgetRefreshReceiver, ACTION_REFRESH via an explicit PendingIntent) → back to
+  WidgetRefreshCoordinator.refreshAndReschedule() → the loop repeats
 ```
 
-`GlanceWidgetRefreshScheduler` (`:widget:glance/refresh/GlanceWidgetRefreshScheduler.kt`) is the
-Milestone 4 implementation of the `WidgetRefreshScheduler` interface (`:widget:engine`), bound to
-it via `WidgetGlanceModule`. It does two things, both started once from
-`CountFlowApplication.onCreate()`:
+Every real trigger — an event edited while the app is open, the alarm itself firing, a reboot, a
+timezone/time/date change, or the periodic `WidgetRefreshSafetyNetWorker` backstop — funnels
+through the identical `WidgetRefreshCoordinator.refreshAndReschedule()` call. That is what makes
+"recalculate the schedule when relevant state changes" (the brief's own list of triggers — event
+created/edited/deleted/completed, widget added/removed/reconfigured) need **zero new receivers**
+for any of those triggers: `observeEventsWithWidgets()` already re-emits on every one of those
+writes, exactly as it did in the Milestone 4 version of this section, and each emission now runs a
+full reschedule cycle instead of only a redraw.
 
-1. Subscribes to `EventRepository.observeEventsWithWidgets()` and calls
-   `CountdownGlanceWidget().updateAll(context)` on every emission — "editing an event updates its
-   widgets," the actual success criterion this milestone was built against.
-2. Runs `pruneOrphanedBindings()` once at startup: reads the launcher's live widget ids via
-   `AppWidgetManager.getAppWidgetIds(provider)` and calls
-   `WidgetLifecycleCoordinator.pruneOrphans(liveIds)`, which discards any stored binding not in
-   that set.
+`GlanceWidgetRefreshScheduler` (`:widget:glance/refresh/GlanceWidgetRefreshScheduler.kt`), started
+once from `CountFlowApplication.onCreate()`, still does the same `pruneOrphanedBindings()` this
+section described since Milestone 4, unchanged.
 
-**This is explicitly not the final refresh strategy.** It says nothing about the final day's
-second-level ticking and nothing about staying current once the app process is killed — both are
-Milestone 8's job (the launcher-ticked `Chronometer` + one coalesced `AlarmManager` alarm
-described in ARCHITECTURE.md §4.2 / D-008). The reason this gap is acceptable *for now*, not a
-shortcut being hidden: Room is always the single source of truth (D-002), so a widget under this
-scheme is never showing wrong data — only stale data, for as long as the app process happens to
-be dead. Closing that staleness window without waking the device more than necessary is precisely
-what the Milestone 8 scheduler exists to do; building it now would have meant building alarm
-infrastructure before there was more than one widget style to prove it against.
+Room remains the single source of truth throughout (D-002): a widget under this system is never
+showing data it computed itself — every redraw reads Room fresh, and every scheduling decision is
+computed from the same read. See `docs/WIDGET_REFRESH_ARCHITECTURE.md` for the next-transition
+calculation itself (including a real plateau bug it was built to handle correctly, D-062),
+coalescing (§4 there), the alarm mechanics (§6–7), reboot/timezone real-device evidence (§9), and
+Force Stop's explicitly-unchanged behavior (§10, D-052).
 
 ---
 
@@ -404,8 +417,12 @@ open is narrower and newer.
 - **Emoji rendering is unverified on real hardware.** Glance `Text` renders through a
   `RemoteViews` `TextView` in the *launcher's* process, so glyph coverage and sizing vary by
   launcher and OEM — the emulator cannot stand in for this. (LIM-006.)
-- **The refresh scheduler only covers the app-alive case.** No update while the process is dead,
-  no second-level ticking for the final day. See §5.
+- **No second-level ticking for the final day.** The launcher-ticked `Chronometer` piece of D-008
+  was never built; only the coalesced-alarm half was (Session 12). A widget in its final hours
+  updates at its next computed transition, not once per second. See
+  `docs/WIDGET_REFRESH_ARCHITECTURE.md` §12 for this system's own, narrower known limitations
+  (the safety net's real-world necessity is unverified, `setAndAllowWhileIdle`'s worst-case
+  Doze deferral was not specifically forced, only one emulator/launcher was tested).
 - **No Compose UI test for `WidgetConfigurationViewModel` directly.** Its cancel/confirm/no-orphan
   behavior was verified on-device (which is how BUG-R005 was actually found), not by a unit test
   that would catch a regression automatically. Worth adding now that the exact behavior is

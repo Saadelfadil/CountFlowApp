@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | 5 of 9: Event CRUD/UI now considered 100% for V1 (Session 11); widget sizing/multi-widget polish remain the rest of Milestone 5 |
-| **Last session** | Session 11 — 2026-08-09 |
+| **Current milestone** | Background refresh infrastructure (Milestone 8 scope, pulled forward, Session 12) now **complete and real-device verified**; Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) still open |
+| **Last session** | Session 12 — 2026-08-09 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9, all documented) |
-| **Tests** | 259 passing, 0 failing (up from 245). `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 11: the event list is now organized into three lifecycle tabs (Upcoming/Completed/Archived) with full complete/archive/delete/restore support** — a swipe gesture on Upcoming rows plus an overflow menu present on every row, on every tab, as the one path every action (including delete, deliberately never swipeable) always has. The create/edit form now shows a live, size-agnostic widget preview reusing the real `WidgetRenderModelProvider.preview()` pipeline, confirmed on-device reacting to title, category, and accent-color changes in real time. Real-device work found and fixed one bug: the new tab row didn't scroll like the category row beside it, so 200% font scale wrapped "Archived" into a vertical letter stack. Widget behavior on complete/archive/delete confirmed correct against a real placed widget with no widget-specific code changes needed — the existing render pipeline and cascading-delete design already handled all three correctly |
-| **Overall progress** | ~57% |
+| **Tests** | 299 passing, 0 failing (up from 259). `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ **Session 12: widgets now refresh reliably in the background, with real-device evidence, not just architecture.** A pure `CountdownEngine.nextTransitionAt` calculator (D-062) decides the exact next instant any bound event's countdown changes; `WidgetRefreshPlanner` coalesces every placed widget to one global `Instant`; `WidgetRefreshCoordinator` + a real `AlarmManager.setAndAllowWhileIdle` alarm (D-063) do the rest — confirmed on-device to fire and redraw a widget with the app backgrounded and its process killed, with no manual reopen. Reboot recovery and timezone-change recovery both confirmed via `dumpsys alarm`; the timezone test found and fixed a real, nine-session-old bug (D-064: a `@Singleton Clock` froze its zone at construction, so a traveller's countdowns would silently stay wrong until the app process restarted). Force Stop remains explicitly unrecovered, per the standing D-052 decision. See `docs/WIDGET_REFRESH_ARCHITECTURE.md` |
+| **Overall progress** | ~59% |
 
 ---
 
@@ -36,6 +36,7 @@ Read in this order when picking the project up cold:
 | `SESSION_SUMMARY.md` | What the most recent session did and what to do next. |
 | `ARCHITECTURE.md` | The authoritative design. Wins over every other document on conflict. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system specifically: data/render/refresh flow, binding and configuration lifecycles, Glance sharp edges, forward compatibility. Read this before changing anything under `widget/`. |
+| `docs/WIDGET_REFRESH_ARCHITECTURE.md` | The production background refresh system: next-transition calculation, coalescing, alarm lifecycle, system receivers, timezone/reboot/Force Stop behavior, battery reasoning, real-device evidence (Session 12). Read this before changing anything under `refresh/`. |
 | `docs/WIDGET_REVIEW.md` | The Milestone 4.5 stabilization audit (Session 7, no device — largely superseded by the two below). |
 | `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, all backed by real device evidence. |
 | `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots (`docs/screenshots/`) of every major widget state, with the exact recipe to reproduce each (Session 8 baseline). |
@@ -112,14 +113,14 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
 | Module | State |
 |---|---|
 | `:app` | Application, MainActivity, NavHost, starts the widget refresh scheduler |
-| `:core:common` | Dispatchers, application scope, logging facade, `Clock` provision |
+| `:core:common` | Dispatchers, application scope, logging facade, `Clock` provision (now zone-live, D-064) |
 | `:core:designsystem` | Theme, typography, shapes, token-to-text formatting |
 | `:core:domain` | Model, countdown engine, validation, repository contracts |
 | `:core:database` | Room: 3 entities, 3 DAOs, converters, schema v1 |
 | `:core:data` | Repository implementations, mappers, DataStore preferences |
 | `:feature:events` | Home list (three lifecycle tabs, swipe + menu actions), create/edit form (live widget preview), two ViewModels, UI mapper |
-| `:widget:engine` | **Render model, theme resolver, progress engine, mapper, provider, lifecycle coordinator** |
-| `:widget:glance` | **First widget, configuration activity, refresh scheduler** |
+| `:widget:engine` | **Render model, theme resolver, progress engine, mapper, provider, lifecycle coordinator, refresh coalescing/orchestration** |
+| `:widget:glance` | **First widget, configuration activity, production alarm-based refresh scheduler** |
 | `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
 | `:core:notifications` `:core:analytics` `:core:billing` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
 
@@ -178,20 +179,39 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
   the form's preview can never show something a real widget wouldn't, without depending on the
   heavier `:widget:glance` module (D-059). Updates live as title, category, and accent color
   change; confirmed on-device.
+- **Widgets now refresh reliably in the background, with real-device evidence.** Session 12 built
+  the production scheduler D-008 always planned: a pure, zone-aware `nextTransitionAt` calculator
+  (`:core:domain`, D-062) decides exactly when any bound event's countdown will next change,
+  correctly handling a genuine plateau bug (`CountdownLabel.NextWeek` can stay unchanged across
+  several consecutive midnights) that a naive "check the next midnight" implementation would have
+  gotten wrong; `WidgetRefreshPlanner` (`:widget:engine`) coalesces every placed widget to one
+  global instant, deduplicated by event, so widget count never multiplies wakeups; one real
+  `AlarmManager.setAndAllowWhileIdle` alarm (D-063) fires it. Confirmed on-device: a widget
+  transitioned to "Expired" with the app backgrounded and its process killed, with no manual
+  reopen; a full reboot correctly restored both widgets and re-armed a fresh alarm; a real
+  timezone change (`Africa/Casablanca` → `America/New_York`) correctly recomputed the schedule —
+  the first attempt at that test found a real, nine-session-old bug (a `@Singleton Clock` that
+  froze its zone at construction, D-064), fixed and re-verified the same session. Force Stop
+  remains explicitly unrecovered (D-052, BUG-011 unchanged). See
+  `docs/WIDGET_REFRESH_ARCHITECTURE.md`.
 
 ## What does not exist yet
 
 No notifications, no settings, no billing. Within widgets: the same-event-two-different-styles
 case is unit-tested but not verified through real UI, and the 4×2 (WIDE) size has no real-device
 visual confirmation at all — Robolectric only (TD-017); the `WidgetSizeClass` thresholds are
-confirmed against exactly one emulator/launcher combination (TD-016). No D-008 alarm-based
-refresh. One open bug: the widget sticks on a loading spinner after Force Stop until the app
-reopens — now at least a branded prompt rather than a generic spinner, but does not recover on its
-own, and per D-052 this stays open by design until Milestone 8 (BUG-011). Several UI strings are
-not localised (TD-007). No widget performance, memory, or battery number has ever been measured on
-a device, in any session — the device-heavy sessions so far (8, 9, 10, 11) prioritised lifecycle,
-visual, and product-completeness verification, which had zero or near-zero prior evidence, over
-performance numbers.
+confirmed against exactly one emulator/launcher combination (TD-016). Background refresh now
+exists (Session 12), but the launcher-ticked `Chronometer` half of D-008 (second-level ticking for
+the final 24 hours) does not — a widget in its final hours updates at its next computed
+transition, not every second. One open bug: the widget sticks on a loading spinner after Force
+Stop until the app reopens — now at least a branded prompt rather than a generic spinner, but does
+not recover on its own, and per D-052 this stays open by design (BUG-011); the real alarm-based
+scheduler now exists but, per that same decision, is deliberately not used to defeat Force Stop's
+own semantics. Several UI strings are not localised (TD-007). No widget performance, memory, or
+battery *measurement* (numbers from a profiler) has ever been taken on a device — Session 12 gives
+the first *reasoned* battery/wake-frequency answer (`docs/WIDGET_REFRESH_ARCHITECTURE.md` §11),
+not an instrumented one; the device-heavy sessions so far (8, 9, 10, 11, 12) have each prioritised
+a different kind of verification with zero or near-zero prior evidence over profiler numbers.
 
 ## Where the important logic lives
 
@@ -219,13 +239,17 @@ performance numbers.
 | Which of the three lifecycle tabs does an event belong to? | `core/domain/…/repository/EventRepository.kt` `EventLifecycleFilter`, or DECISIONS.md D-058 |
 | How does the create/edit form preview a widget without depending on `:widget:glance`? | `feature/events/…/edit/EditEventViewModel.kt` `refreshPreview`, or DECISIONS.md D-059 |
 | Why is delete never a swipe gesture? | `feature/events/…/home/EventCard.kt`, or DECISIONS.md D-060 |
+| When does a widget's countdown next need to change? | `core/domain/…/countdown/CountdownEngine.kt` `nextTransitionAt`, or `docs/WIDGET_REFRESH_ARCHITECTURE.md` §3 |
+| How do N widgets on one event coalesce into one alarm? | `widget/engine/…/refresh/WidgetRefreshPlanner.kt`, or `docs/WIDGET_REFRESH_ARCHITECTURE.md` §4 |
+| How does a background refresh actually happen, end to end? | `widget/engine/…/refresh/WidgetRefreshCoordinator.kt`, or `docs/WIDGET_REFRESH_ARCHITECTURE.md` §5–8 |
+| Why does the injected `Clock`'s zone stay correct across a real timezone change? | `core/common/…/di/TimeModule.kt` `LiveDefaultZoneClock`, or DECISIONS.md D-064 |
 
 ---
 
 ## Progress
 
 ```
-Overall                      57%
+Overall                      59%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
@@ -236,7 +260,9 @@ Widget engine                98%   Milestone 4.9 (validated on a real device —
 Widget themes & sizes        70%   Milestone 5B of 5 (responsive 2×1/2×2/4×2 delivered; multi-widget polish remains)
 Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
-Optimization & a11y           0%   Milestone 8
+Optimization & a11y           25%  Milestone 8 (Session 12: background refresh infrastructure delivered and
+                                     device-verified — Chronometer ticking, R8, Baseline Profiles, full a11y
+                                     pass, and real performance numbers all remain)
 Play Store                    0%   Milestone 9
 Testing                      80%   domain, DAO, repository, ViewModel, widget engine, Glance UI
 ```
@@ -249,8 +275,11 @@ Testing                      80%   domain, DAO, repository, ViewModel, widget en
   target API 36 or higher. Already satisfied.
 - **Performance budgets.** Cold start under 700 ms; widget update under 100 ms. Neither is
   measured yet — benchmarks land in Milestone 8.
-- **Battery.** `updatePeriodMillis` is never used. The refresh strategy is a launcher-ticked
-  `Chronometer` for the final 24 hours plus one coalesced alarm for the whole app (D-008).
+- **Battery.** `updatePeriodMillis` is never used. Exactly one coalesced `AlarmManager` alarm
+  exists for the whole app at any time, scheduled for the next real countdown transition rather
+  than a fixed interval (D-063, `docs/WIDGET_REFRESH_ARCHITECTURE.md` §11) — confirmed via
+  `dumpsys alarm` throughout Session 12, not just designed. The launcher-ticked `Chronometer` half
+  of D-008 (final-24-hours second-level ticking) is not yet built.
 - **Working agreement.** Architecture is approved before production code, work proceeds one
   milestone at a time with explicit approval to continue, and every session ends by updating
   all seven documents.

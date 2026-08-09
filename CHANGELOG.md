@@ -10,8 +10,90 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. The rest of Milestone 5 (real WIDE device confirmation, same-event multi-style
-verification) begins next, pending approval — see `TODO.md` P0.
+Nothing yet. Notifications (Milestone 7), or further Milestone 5/8 work, begins next, pending
+approval — see `TODO.md` P0.
+
+---
+
+## [0.4.7] — 2026-08-09 — Milestone 8: background refresh infrastructure
+
+Session 12. Pulled forward from Milestone 8's original scope: the coalesced-alarm half of D-008,
+ahead of R8/Baseline Profiles/the accessibility pass. Widgets now refresh reliably while the app
+is not open, with real-device evidence — not just architecture. Full detail:
+`docs/WIDGET_REFRESH_ARCHITECTURE.md` (new).
+
+### Added
+- **`CountdownEngine.nextTransitionAt`** (`:core:domain`) — a pure, zone-aware function answering
+  "when does this event's countdown next meaningfully change." Correctly handles a real plateau
+  bug found by testing: `CountdownLabel.NextWeek`'s window re-anchors to a shifting `today` each
+  day, so the label can stay unchanged across several consecutive local midnights even while the
+  underlying day count keeps decreasing — a naive "check the next midnight" algorithm gets this
+  wrong (D-062).
+- **`WidgetRefreshPlanner`** (`:widget:engine`) — coalesces every placed widget's bound event to
+  one global `Instant`, deduplicated by event, so N widgets on one event cost exactly what one
+  widget would, and wake frequency is a function of distinct upcoming transitions, not widget
+  count.
+- **`WidgetRefreshCoordinator`, `AlarmScheduler`, `WidgetRedrawer`, `RefreshOutcome`**
+  (`:widget:engine`) — the orchestration for one full refresh cycle (read Room, redraw, compute
+  the next global instant, reschedule), kept Android-free and fake-testable via two small seams.
+- **`AndroidAlarmScheduler`** (`:widget:glance`) — the real `AlarmManager`, via
+  `setAndAllowWhileIdle` (no exact-alarm permission needed, survives Doze, inexact by at most a
+  few minutes) targeting a fixed `PendingIntent` request code, so a reschedule always replaces the
+  existing alarm rather than stacking a second one.
+- **`WidgetRefreshReceiver`** (`:widget:glance`) — one `BroadcastReceiver` for both the alarm
+  firing (`ACTION_REFRESH`, via an explicit `PendingIntent`, no manifest entry needed) and the
+  four genuine system recovery broadcasts (`BOOT_COMPLETED`, `TIMEZONE_CHANGED`, `TIME_SET`,
+  `DATE_CHANGED`) — every one runs the identical refresh-and-reschedule cycle.
+- **`WidgetRefreshSafetyNetWorker`** (`:widget:glance`) — a `WorkManager` periodic backstop
+  (~6h/2h flex, `KEEP` policy so a process restart never resets its timer), not the primary
+  mechanism.
+- **`LiveDefaultZoneClock`** (`:core:common`) — see Fixed, below.
+- `docs/WIDGET_REFRESH_ARCHITECTURE.md` — the permanent reference for this system: scheduling
+  policy, next-refresh calculation, alarm lifecycle, coalescing, system receivers, timezone/
+  reboot/Force Stop behavior, battery reasoning, and the real-device evidence behind every claim.
+
+### Fixed
+- **A `@Singleton Clock` froze its resolved timezone at construction** (BUG-R013) — present since
+  D-026 (Milestone 2), unnoticed for nine sessions because nothing before this session's real
+  timezone-change test exercised a live device zone change against an already-running process.
+  `Clock.systemDefaultZone()` snapshots `ZoneId.systemDefault()` once; every long-lived consumer
+  (not just the refresh scheduler — every ViewModel too) silently kept computing against the zone
+  the process started in. A traveller landing in a new zone would see stale countdowns until the
+  app restarted. Fixed by `LiveDefaultZoneClock`, whose `getZone()` re-reads
+  `ZoneId.systemDefault()` on every call, plus `TimeZone.setDefault(null)` in
+  `WidgetRefreshReceiver` on `ACTION_TIMEZONE_CHANGED` to bust the underlying JVM-level cache
+  (D-064). Regression-tested (`LiveDefaultZoneClockTest.kt`, new).
+
+### Confirmed on a real device
+A widget transitioned to "Expired" with the app backgrounded and its process killed, with no
+manual reopen — confirmed via `dumpsys alarm` (the alarm scheduled, then a real `1`-wakeup
+recorded), logcat (the refresh cycle running), and a home-screen screenshot. A full device reboot
+correctly restored both placed widgets and re-armed a fresh alarm with the app never manually
+reopened. A real timezone change (`Africa/Casablanca` → `America/New_York`) correctly recomputed
+the schedule to the new zone's actual next transition — the test that found and confirmed the fix
+for BUG-R013 above. Exactly one `com.countflow.widget.action.REFRESH` alarm existed at every
+`dumpsys alarm` check throughout the session, including immediately after edits, timezone changes,
+and reboots — no stacking, no stale duplicates.
+
+### Known gaps (not fixed by design)
+- The launcher-ticked `Chronometer` half of D-008 (final-24-hours second-level ticking) was not
+  built this session — only the coalesced-alarm half.
+- **BUG-011 stays open, confirmed unchanged by this session's own new scheduler**: Force Stop
+  cancels this app's `AlarmManager` alarms and `WorkManager` work exactly as it cancels everything
+  else the app scheduled, so the new scheduler was never going to be — and is not — a Force Stop
+  workaround. No attempt was made to defeat that platform semantics, per the standing D-052
+  decision.
+- No profiler-measured battery/memory/CPU number exists yet — this session's battery answer is
+  reasoned from the alarm design and confirmed alarm *counts*, not an instrumented measurement.
+- TD-016/TD-017 (widget-sizing gaps) are unchanged; this session was explicitly scoped to
+  background refresh, not widget sizing.
+
+### Tests
+299 tests, 0 failures (up from 259) — `:core:domain` +20 (`CountdownEngineNextTransitionTest`),
+`:widget:engine` +16 (`WidgetRefreshPlannerTest` +7, `WidgetRefreshCoordinatorTest` +9),
+`:core:common` +4 (`LiveDefaultZoneClockTest`, its first-ever test source set). `:core:domain`
+line coverage unchanged at 97.0%, gated at 95%. Lint: 0 errors, 17 warnings, unchanged since
+Session 9.
 
 ---
 

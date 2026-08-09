@@ -11,7 +11,7 @@ must design around · `WARN-nnn` accepted warnings
 ## Open bugs
 
 ### BUG-011 — Widget stays stuck on a loading spinner after Force Stop until the app reopens
-**Severity:** High · **Opened:** Session 8 · **Partially addressed Session 9 — see below**
+**Severity:** High · **Opened:** Session 8 · **Partially addressed Session 9 — see below · Confirmed unchanged by Session 12's new scheduler**
 
 Confirmed directly on a real device: `adb shell am force-stop com.countflow`, then the widget
 shows `@layout/glance_default_loading_layout` — a generic spinner — and never clears on its own.
@@ -50,8 +50,21 @@ event-driven trigger would also naturally recover from this. Alternatively, a li
 refresh" hint in the loading state would be a self-contained Milestone 5-scale fix if this proves
 important enough to prioritize sooner.
 
-Two other defects were found and fixed this session (BUG-R009, BUG-R010), and one prior session's
-finding (TD-013) turned out to be incorrect on real device evidence — see Resolved, below.
+**Session 12 update — the alarm-based scheduler now exists, and confirms this is still open by
+design, not by gap.** `docs/WIDGET_REFRESH_ARCHITECTURE.md` §10 states explicitly: Force Stop
+cancels this app's `AlarmManager` alarms and `WorkManager` work exactly as it cancels everything
+else the app scheduled, so the new scheduler is not a "periodic or event-driven trigger" that
+recovers from Force Stop the way the resolution path above once speculated it might — Android
+does not distinguish this app's wakeup sources from one another when it cancels scheduled work on
+Force Stop. This was a deliberate design constraint, not an oversight: D-052 already decided no
+further engineering time goes toward defeating Force Stop specifically, and Session 12 built
+within that boundary rather than revisiting it. The resolution path narrows to the "tap to retry"
+affordance alone.
+
+Two other defects were found and fixed in Session 8 (BUG-R009, BUG-R010), one prior session's
+finding (TD-013) turned out to be incorrect on real device evidence, and a fourth, unrelated
+defect was found and fixed in Session 12 (BUG-R013, a stale-timezone `Clock`) — see Resolved,
+below.
 
 ---
 
@@ -305,7 +318,10 @@ deliberately absent at `COMPACT`, where no diameter above the ring's own legibil
 
 ### LIM-002 — `PeriodicWorkRequest` has a 15-minute minimum interval
 **Consequence.** Minute-level countdown refresh is impossible with periodic work. Addressed by
-D-008: the final 24 hours use a launcher-ticked `Chronometer` with zero app wakeups.
+D-008 in two halves: the coalesced-alarm half (one `AlarmManager` wakeup at the next real
+transition, not a periodic poll) is now real, delivered and real-device verified in Session 12 —
+see `docs/WIDGET_REFRESH_ARCHITECTURE.md`. The launcher-ticked `Chronometer` half, for the final 24
+hours specifically, is not yet built.
 
 ---
 
@@ -362,6 +378,32 @@ if the device configuration changes while the screen is open).
 ---
 
 ## Resolved
+
+### BUG-R013 — A `@Singleton Clock` froze its resolved timezone at construction, silently going stale after a real device timezone change *(found and fixed Session 12)*
+
+`TimeModule.providesClock()` had returned `Clock.systemDefaultZone()` since D-026 (Milestone 2) —
+nine sessions, entirely unnoticed, because nothing before Session 12 exercised a genuine device
+timezone change against an already-running app process. `Clock.systemDefaultZone()` is documented
+to snapshot `ZoneId.systemDefault()` once, at construction, into an immutable `Clock`; bound
+`@Singleton`, that snapshot happens once per process and never updates again.
+
+Found live, not by inspection, during Session 12's real-device timezone validation: changing the
+emulator's zone (`adb shell cmd alarm set-timezone`, `Africa/Casablanca` → `America/New_York`)
+correctly triggered `WidgetRefreshReceiver`'s `ACTION_TIMEZONE_CHANGED` handling and a full refresh
+cycle, confirmed via logcat — but the recomputed alarm landed on the exact same absolute instant as
+before the change, not the ~5-hour-shifted instant the new zone's "next local midnight" should
+have produced. Every long-lived consumer of the injected `Clock` — not just the refresh scheduler,
+every ViewModel too — had the same latent bug: a traveller landing in a new timezone would see
+stale countdowns, in the app and in widgets alike, until the process happened to restart.
+
+Fixed by replacing `Clock.systemDefaultZone()` with `LiveDefaultZoneClock`
+(`core/common/…/di/TimeModule.kt`), a small custom `Clock` whose `getZone()` re-reads
+`ZoneId.systemDefault()` on every call instead of caching it, plus `TimeZone.setDefault(null)` in
+`WidgetRefreshReceiver` specifically on `ACTION_TIMEZONE_CHANGED`, busting the JVM-level cache
+`ZoneId.systemDefault()` itself reads through. Re-verified on the same device, same test: the
+recomputed alarm correctly shifted to the new zone's real next transition, confirmed via
+`dumpsys alarm`. Regression-tested directly (`LiveDefaultZoneClockTest.kt`, `:core:common`, new, 4
+tests) against `TimeZone.setDefault(...)`, not the device. See DECISIONS.md D-064.
 
 ### TD-008 — Archive, complete, and delete had no UI gesture *(resolved Session 11)*
 
