@@ -14,6 +14,57 @@ Nothing yet. Milestone 5 begins multiple widgets, themes, and sizes.
 
 ---
 
+## [0.4.3] — 2026-08-09 — Milestone 4.9: real product validation
+
+Session 8. The first session with a stable, self-controlled real device — a locally-launched
+emulator, not a remote or pooled one. Closed TD-010 (real widget placement) after three sessions,
+found and fixed one Critical and one Medium defect neither reasoning nor any prior session's
+partial device access could have caught, and produced the first real screenshot evidence and
+product-quality assessment this project has had.
+
+### Fixed
+- **BUG-R009 (Critical)** — the widget's actual footprint was 3×2, not the 2×2 every document
+  since Milestone 4 assumed. `minWidth="180dp"` was the 3-cell value under Android's own cell-size
+  formula (`dp = 70×cells − 30`); corrected to `110dp`. Verified empirically: the real widget
+  picker's own size label changed from "3 × 2" to "2 × 2" with no other change.
+- **BUG-R010** — completed/expired events showed a full-strength accent-colored progress bar next
+  to an already muted label. The bar now reuses the same muted color the label already computes.
+
+### Added
+- `docs/PRODUCT_REVIEW.md` — a critical, ranked "would you ship this" assessment: strengths,
+  weaknesses (ranked Critical/High/Medium/Low), UX, visual quality, accessibility, performance,
+  battery, and store/launch readiness.
+- `docs/SCREENSHOT_GUIDE.md` — thirteen real, on-device, curated screenshots (cropped, committed
+  to `docs/screenshots/`) covering Home Screen, Widget Added, Widget Empty, Widget Loading, Widget
+  Config, Completed, Expired, Tomorrow, Next Week, Dark Mode, Light Mode, OLED, Material, and
+  Glass, plus the reproducible SQL/adb recipe used to reach each state.
+
+### Corrected
+- **TD-013** — Session 7 concluded from Glance's API surface that long titles clip with no
+  ellipsis. A real render showed otherwise: the underlying `RemoteViews` `TextView` ellipsizes by
+  default. Marked corrected, not deleted, as a reminder that API-surface reading isn't a
+  substitute for one real render.
+
+### Known gaps (new this session, not fixed by design)
+- **BUG-011 (High, open)** — after Force Stop, the widget sticks on a loading spinner until the
+  app is reopened by any means. Scoped precisely: confirmed against Force Stop specifically
+  (more aggressive than ordinary process reclaim); this device's Play-Store system image could not
+  be rooted to test the gentler case for comparison.
+- **TD-014** — no preview image in the widget picker; every other widget in the same picker shows
+  one.
+- **TD-015** — every widget state shows significant unused vertical space.
+- Pixel-verified (not just suspected): four of seven named styles are visually identical
+  (Minimal, Material, Progress, Modern) — strengthens the case for Milestone 5's already-planned
+  per-style layout work.
+
+### Tests
+No new automated tests this session — both fixes are verified visually and empirically on-device
+(`docs/SCREENSHOT_GUIDE.md`) rather than by unit test: BUG-R009 is a manifest XML value with no
+JVM-testable surface, and BUG-R010 hits the same Glance-testing color-assertion gap noted above.
+223 tests total, unchanged from Session 7, 0 failures. `:core:domain` unchanged at 97.0%.
+
+---
+
 ## [0.4.2] — 2026-08-09 — Milestone 4.5: widget stabilization
 
 Session 7. A stabilization/audit pass, not a feature session — the brief asked whether this

@@ -12,6 +12,7 @@ Living document. Update the status column as milestones move.
 | 3 | Event CRUD | **Completed** | 4 |
 | 4 | Widget engine | **Completed** | 5–6 |
 | 4.5 | Widget stabilization | **Completed** | 7 |
+| 4.9 | Real product validation | **Completed** | 8 |
 | 5 | Multiple widgets | Not Started | — |
 | 6 | Settings | Not Started | — |
 | 7 | Notifications | Not Started | — |
@@ -174,6 +175,41 @@ scenarios the brief listed, widget update/creation/refresh latency, memory usage
 TalkBack's actual output, and testing across more than one launcher. `docs/WIDGET_REVIEW.md` §10
 and §12 map every one of these to the strongest evidence that does exist (mostly Session 5's
 device work, mostly one milestone old) rather than claiming coverage that isn't there.
+
+---
+
+## Milestone 4.9 — Real product validation · Completed (Session 8)
+
+The brief: pretend CountFlow ships to Google Play tomorrow, and find every reason not to.
+Explicitly a validation sprint, not a coding sprint — "no new features, only fixes required for
+production quality."
+
+**The headline change from every prior session: a real, stable, self-controlled device.** Sessions
+5–7 depended on remote or pooled emulators of varying (mostly poor) reliability; Session 8 found a
+local AVD (`Pixel_9`) and the `emulator` binary already present on this machine and launched it
+directly, producing the first fully stable test device in this project's history. First priority
+per the brief — device stability, verified before any code work — held for the entire session.
+
+**Delivered:** the first real widget placement through an actual system picker and launcher
+(closing TD-010 after three sessions); the first-ever confirmation that the widget survives a full
+device reboot; confirmed survival of app update, force-stop-then-reopen, and dark/light theme
+switching; a genuinely Critical defect found and fixed — the widget's real footprint had been 3×2,
+not the 2×2 every session since Milestone 4 assumed, invisible until this session reached a real
+widget picker (BUG-R009); a second, smaller visual-consistency defect found and fixed (BUG-R010,
+completed/expired progress bar not de-emphasized); pixel-level verification (not eyeballing) of
+all seven widget styles, which found four of them visually identical — real, quantified evidence
+for work already planned in Milestone 5; a corrected prior finding (TD-013's "no ellipsis" claim
+was wrong on a real render); and two new documents, `docs/PRODUCT_REVIEW.md` and
+`docs/SCREENSHOT_GUIDE.md` (the latter with real, curated on-device screenshots committed to the
+repo, cropped and pixel-sampled, not just described).
+
+**Not delivered:** on-device performance/memory/CPU numbers — the session's device time went
+toward lifecycle and visual verification, which had zero prior evidence, ahead of performance
+numbers, which had zero prior evidence but lower severity. One real open defect was found and
+*not* fixed this session, by design: after Force Stop, the widget sticks on a loading spinner
+until the app reopens (BUG-011) — closing it needs either Milestone 8's eventual refresh
+infrastructure or a deliberate new "tap to retry" affordance, both bigger than this session's
+fix-small-things scope.
 
 ---
 

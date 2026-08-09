@@ -47,11 +47,18 @@ Android library or the app module. Full detail: `PROJECT_STATUS.md` § Module gr
 For anything inside `widget/`, read `docs/WIDGET_ARCHITECTURE.md` before touching code — it is
 the single-file version of this document, scoped to the widget system, with real file paths and
 function names for data flow, render flow, refresh flow, and both lifecycles. Read
-`docs/WIDGET_REVIEW.md` alongside it before assuming anything about the widget is
-production-verified — it's the honest record of what has and hasn't actually been confirmed on a
-device, versus reasoned about from code.
+`docs/PRODUCT_REVIEW.md` and `docs/SCREENSHOT_GUIDE.md` before assuming anything about the widget
+is production-verified — as of Session 8 there is finally real, on-device, screenshotted evidence
+(`docs/WIDGET_REVIEW.md`, Session 7, predates that and is largely superseded — see its own banner).
 
-## What exists right now (Milestone 4.5 of 9, complete)
+**If you need a device this session, check for a local one before assuming you need a remote
+one.** Sessions 5–7 fought a flaky remote device at `127.0.0.1:6555` and Session 7 wrongly
+concluded no local emulator existed — that conclusion came from `which emulator` failing (not on
+`PATH`), not from checking `~/Library/Android/sdk/emulator/emulator` directly, which exists and
+works, alongside an existing `Pixel_9` AVD. `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`
+launched directly gave Session 8 a fully stable device for the whole session. Try this first.
+
+## What exists right now (Milestone 4.9 of 9, complete)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
@@ -67,14 +74,14 @@ device, versus reasoned about from code.
   verified no-orphan-bindings guarantee, a theme resolver for all seven named styles, a progress
   engine, and a Milestone-4-scoped refresh scheduler (app-alive only — the real alarm-based
   strategy is Milestone 8, D-008).
-- **Not yet real**: a widget has never been placed through an actual launcher/`AppWidgetHost`
-  flow. Verified instead by launching the configuration activity directly and inspecting the
-  database. Session 6 got closer — a real GUI launcher was reached and widget-bind permission
-  succeeded — but the test device was unstable and disappeared mid-verification; Session 7 had no
-  device reachable at all. See `KNOWN_ISSUES.md` TD-010 before trusting that a real placement
-  definitely works, and see `docs/WIDGET_REVIEW.md` §12 for the full list of what no session has
-  yet verified on a device (update latency, memory, battery, TalkBack output, multi-launcher
-  behavior).
+- **Now real, confirmed Session 8**: the widget has been placed through the actual system picker
+  and launcher, configured, updated live, survived an app update, and survived a full device
+  reboot — all screenshotted (`docs/SCREENSHOT_GUIDE.md`). This closed TD-010 after three
+  sessions of trouble. The same device access found a Critical bug invisible to every prior
+  session: the widget's real footprint was 3×2, not the 2×2 everyone assumed, because
+  `minWidth="180dp"` was the wrong value under Android's own cell-size formula — fixed (BUG-R009).
+  Still not measured on any device, by any session: update latency, memory, CPU, battery, or
+  TalkBack output — see `docs/PRODUCT_REVIEW.md` for what was prioritized instead and why.
 
 `ROADMAP.md` has the milestone-by-milestone detail; `SESSION_SUMMARY.md` has what the *most
 recent* session specifically did.
@@ -129,6 +136,20 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
   its worst case reasoned through explicitly — "it looked fine in the emulator" was never even
   available to check this, but wouldn't have been sufficient evidence anyway, since the emulator's
   one wallpaper isn't the worst case.
+- **The widget's actual size was wrong for its entire history, and no amount of reading the code
+  could have caught it.** `minWidth="180dp"` looked reasonable next to `targetCellWidth="2"` —
+  until a real launcher's own widget picker reported the footprint as "3 × 2" (BUG-R009,
+  Session 8). Android's own formula (`dp = 70×cells − 30`) makes `180dp` unambiguously the 3-cell
+  value, but nothing in the code, the tests, or three sessions of documentation ever checked a dp
+  value against that formula. The lesson: a manifest/XML value asserted to mean something specific
+  (a cell count, a size class) needs checking against the platform's actual formula for it, not
+  just against what a comment claims.
+- **A library's public API surface is not the same as its runtime behavior.** Session 7 read
+  Glance 1.1.1's `Text` API via `javap` and correctly found no overflow/ellipsis parameter, and
+  concluded long titles clip with no ellipsis (TD-013). A real render showed the underlying
+  `RemoteViews` `TextView` ellipsizes by default anyway (Session 8). The API reading wasn't wrong;
+  it was incomplete evidence being treated as sufficient. Verify a rendering claim against one
+  real render before writing it down as fact.
 
 ## How to verify the project still works
 
@@ -165,9 +186,11 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (42 as of Session 7) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (44 as of Session 8) with reason, alternatives, tradeoffs. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render/refresh flow, both lifecycles, Glance's sharp edges, forward compatibility. |
-| `docs/WIDGET_REVIEW.md` | The Milestone 4.5 audit: what's verified, what's reasoned-about, what's genuinely unknown, ranked. |
+| `docs/WIDGET_REVIEW.md` | The Milestone 4.5 audit (Session 7, no device — see its own banner; largely superseded by the two below). |
+| `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, real device evidence. |
+| `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots of every major widget state, with the recipe to reproduce each. |
 | `ROADMAP.md` | Milestone-by-milestone status and what each one delivered. |
 | `KNOWN_ISSUES.md` | Open bugs (none), technical debt, platform limitations, resolved defects. |
 | `TODO.md` | Prioritised outstanding work, P0 first. |

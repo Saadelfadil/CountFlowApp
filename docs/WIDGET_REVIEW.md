@@ -1,5 +1,20 @@
 # CountFlow — Widget Review (Milestone 4.5: Widget Stabilization)
 
+> **Superseded in part by Session 8 — read `docs/PRODUCT_REVIEW.md` and `docs/SCREENSHOT_GUIDE.md`
+> first.** This document is a faithful record of what Session 7 could establish with **no working
+> device at all**; every "not verifiable this session" statement below was true when written.
+> Session 8 got a stable, self-controlled local emulator for the first time in this project's
+> history and closed most of what this document lists as unconfirmed: real widget placement
+> (TD-010, now resolved), the eleven-scenario lifecycle table in §10 (create, update, delete,
+> reconfigure, app update, and reboot all now have direct device evidence — reboot survival in
+> particular had never been attempted before), and it corrected one finding outright (§4's title
+> truncation claim — TD-013 — turned out to be wrong on a real render). Session 8 also found and
+> fixed a real, previously invisible defect this document's own reasoning could not have caught:
+> the widget's actual footprint was 3×2, not the 2×2 this document (and every document before it)
+> assumed throughout. Kept below unedited as the historical record of Session 7's reasoning-only
+> pass; do not treat its device-dependent conclusions as current without cross-checking
+> `docs/PRODUCT_REVIEW.md`.
+
 **Session 7.** Scope: stabilize and audit the widget shipped in Milestone 4/4.5 as if it were
 going into production tomorrow. No new features — see `TODO.md`'s explicit exclusion list
 (2×1/4×2 sizes, multiple layouts, the circular progress renderer, Live Updates, lockscreen,

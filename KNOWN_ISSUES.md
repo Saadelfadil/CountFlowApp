@@ -10,7 +10,36 @@ must design around · `WARN-nnn` accepted warnings
 
 ## Open bugs
 
-None. No runtime defects are known as of Session 7.
+### BUG-011 — Widget stays stuck on a loading spinner after Force Stop until the app reopens
+**Severity:** High · **Opened:** Session 8
+
+Confirmed directly on a real device: `adb shell am force-stop com.countflow`, then the widget
+shows `@layout/glance_default_loading_layout` — a generic spinner — and never clears on its own.
+Nothing currently running on the device retriggers a redraw; the widget stays stuck until the
+user reopens the app by any means (tapping it, tapping the widget's own "unconfigured" tap target,
+etc.), at which point `GlanceWidgetRefreshScheduler`'s startup subscription immediately fixes it.
+
+**Scoped precisely.** This was tested against Force Stop specifically — Android documents this as
+more aggressive than an ordinary background process reclaim, since it also cancels the app's
+scheduled work. This device's Play-Store system image could not be rooted (`adb root` refused:
+"cannot run as root in production builds"), so an ordinary low-memory-style kill could not be
+tested for comparison; RemoteViews are documented to be cached by the host independent of the
+app's process for that gentler case, so this may be Force-Stop-specific rather than a general
+process-death problem. Force Stop is nonetheless a real, common, user-reachable action (Settings →
+Apps → Force Stop; some battery/storage-management flows trigger it too).
+
+**Why not fixed this session.** No mechanism currently exists to self-heal without either a new
+background trigger (which belongs with the Milestone 8 refresh-strategy work, not a same-session
+polish fix) or a "tap to retry" affordance layered onto the existing render states (a real UI
+addition, not the kind of small fix this session's brief scoped to allow).
+
+**Resolution path.** Revisit once Milestone 8's alarm-based scheduler exists — a periodic or
+event-driven trigger would also naturally recover from this. Alternatively, a lightweight "tap to
+refresh" hint in the loading state would be a self-contained Milestone 5-scale fix if this proves
+important enough to prioritize sooner.
+
+Two other defects were found and fixed this session (BUG-R009, BUG-R010), and one prior session's
+finding (TD-013) turned out to be incorrect on real device evidence — see Resolved, below.
 
 ---
 
@@ -196,70 +225,60 @@ completion.
 
 ---
 
-### TD-013 — Title truncation has no ellipsis
-**Severity:** Low · **Opened:** Session 7
+### TD-013 — CORRECTED Session 8, was never a real gap
 
-`Event.MAX_TITLE_LENGTH` is 120 code points; the widget's title `Text` uses `maxLines = 1`, but
-Glance 1.1.1's `Text` composable has no overflow/ellipsis parameter at all (confirmed via `javap`
-on the `glance` 1.1.1 AAR — only text, modifier, style, and maxLines exist). A title near the
-length ceiling clips mid-character with no "…", standard RemoteViews `TextView` behavior absent an
-explicit `android:ellipsize` Glance provides no way to set.
-
-**Resolution path.** No clean fix exists within Glance's plain `Text` API. Worth revisiting if a
-future Glance release adds overflow support, or by dropping to `AndroidRemoteViews` interop
-specifically for the title — the latter is more machinery than this single cosmetic issue
-currently justifies.
+Session 7 concluded, from reading Glance 1.1.1's `Text` API surface (`javap` on the AAR showed
+only text, modifier, style, and `maxLines` — no overflow parameter), that a long widget title
+would clip mid-character with no ellipsis. Session 8's first real device render disproved this
+directly: a 61-character title rendered as "A Genuinely Very Lon…" with a genuine ellipsis,
+screenshotted in `docs/SCREENSHOT_GUIDE.md`. The Kotlin API surface reading was accurate as far as
+it went — there is still no explicit overflow parameter to set — but the underlying `RemoteViews`
+`TextView` apparently applies ellipsis by default regardless, something no amount of API-surface
+inspection could have caught. Left here, marked corrected rather than deleted, specifically as a
+reminder that reading a library's public API is not a substitute for one real render — see
+`AI_CONTEXT.md`'s defects list.
 
 ---
 
-### TD-010 — No widget has been placed through a real launcher flow
-**Severity:** Medium (unchanged from Session 6 — no device was reachable this session at all) · **Opened:** Session 5 · **Progress:** Session 6
+### TD-014 — No preview image in the widget picker
+**Severity:** Medium · **Opened:** Session 8
 
-Every other piece of Milestone 4 was verified on a real emulator: the configuration Activity's
-event picker, the no-orphan-bindings cancel path, the confirm path writing the correct Room row,
-and the startup pruning mechanism discarding a binding not backed by a live widget. What was
-**still not** verified by the end of Session 6 is a widget placed through the actual
-`AppWidgetHost`/launcher flow — dragged onto a real home screen and rendering real `RemoteViews`
-there.
+Confirmed in the real Pixel Launcher widget tray: CountFlow's entry shows its app icon centered
+on a blank white card, while every other widget in the same list (Clock, Contacts, Conversations)
+shows a live-styled content preview. Neither `android:previewLayout` (API 31+, a real Android XML
+layout Glance does not need to render — the launcher inflates it directly) nor the older
+`android:previewImage` is set in `countdown_widget_info.xml`.
 
-**Session 5 finding.** `adb shell appwidget grantbind` failed on a headless (`-no-window`) test
-AVD with `IllegalStateException: User -2 must be unlocked for widgets to be available`, confirmed
-by process/PID to originate from the shell command binary itself, not from CountFlow.
+**Why not fixed this session.** Building a representative preview — whether a hand-authored XML
+layout or a static image asset — is asset/design work, not a small polish fix, and risks looking
+worse than no preview at all if rushed without the ability to iterate visually against real
+launcher rendering.
 
-**Session 6 progress, and why it stopped short.** A different test device this session was a
-genuine GUI-mode emulator — a real launcher was visible and screenshotted (wallpaper, search bar,
-app icons, navigation bar), and `adb shell dumpsys user` reported `RUNNING_UNLOCKED`, unlike
-Session 5's `-2` failure. `adb shell appwidget grantbind --package com.countflow --user 0`
-**succeeded** (exit 0) — a materially different, more promising signal than Session 5's outright
-failure. The app installed successfully. However, the device connection was unstable throughout
-(required reconnecting between nearly every command) and the device's own reported identity
-changed mid-session (`model:Pixel_8` → `model:Pixel_9`), and unrelated application data was
-observed on it (a "Reminders" app with auto-generated entries CountFlow never created) —
-consistent with an ephemeral or pooled test device that can be reclaimed without notice, not a
-dedicated stable target. The device became fully unreachable (`Connection refused`) partway
-through attempting the home-screen long-press → widget picker → drag flow, before it could be
-completed and before a screenshot of a placed widget could be captured.
+**Resolution path.** Author a plain Android XML layout (not Glance) approximating the widget's
+2×2 minimal-style appearance, wire it via `android:previewLayout`, and verify against a real
+device. Good Milestone 5 candidate alongside the corner-radius fix (TD-011), since both need the
+same kind of real-launcher-verified, non-Glance Android layout work.
 
-**What remains unverified as a result.** Real `RemoteViews` rendering on an actual home screen
-surface; the system's genuine `ACTION_APPWIDGET_DELETED` broadcast reaching
-`CountdownGlanceWidgetReceiver.onDeleted` (a protected broadcast the shell cannot send directly,
-so this was only exercised via unit test); and the widget picker correctly listing CountFlow's
-provider. The underlying code path (`CountdownGlanceWidget.provideGlance`,
-`WidgetRenderModelProvider`, `CountdownWidgetContent`) continues to be exercised end-to-end by
-`CountdownWidgetContentTest` using Glance's own unit-test framework, which does not depend on a
-real widget host — this has not changed.
+---
 
-**Session 7.** No device was reachable at all — the Session 6 emulator (`127.0.0.1:6555`)
-returned `Connection refused` on every attempt, including after an `adb kill-server`/`start-server`
-cycle, and no local `emulator` binary or AVD exists to start a replacement. No new evidence either
-way this session; the Session 6 finding stands as the most recent signal (permission problem
-resolved, stability problem still open).
+### TD-015 — Significant unused vertical space in every widget state
+**Severity:** Medium · **Opened:** Session 8
 
-**Resolution path.** Retry on a *stable* GUI-mode emulator or a physical device, ideally one
-whose connection persists for the full session. Session 6 shows the remaining blocker is very
-likely environment stability rather than the widget-bind permission problem Session 5 hit — worth
-opening with a direct `appwidget grantbind` + `dumpsys user` check before attempting the full
-manual placement, to confirm the device is usable before investing time in it.
+Confirmed across every screenshot in `docs/SCREENSHOT_GUIDE.md`: content renders as a compact,
+vertically-centered block inside a card visibly taller than the content needs, leaving roughly a
+third of the card blank above the content and a further gap below the progress bar. Not a defect —
+`CountdownWidgetContent`'s `Alignment.CenterVertically` does exactly what it says — but a real
+product-quality gap: competitor widgets in the same size class fill their cell far more
+deliberately, and the empty space reads as unfinished rather than minimalist.
+
+**Why not fixed this session.** Filling the space well is a design decision (larger type? more
+generous spacing tokens? an additional element using the freed-up room, e.g. the still-unwired
+target date?), not a mechanical one-line fix — exactly the kind of change this session's brief
+asked to be diagnosed, not improvised under time pressure.
+
+**Resolution path.** Worth deciding deliberately at the start of Milestone 5, alongside the
+per-style layout differentiation work already planned there (`TODO.md`) — both are about the
+widget's use of space, and solving them together is likely cheaper than solving them separately.
 
 ---
 
@@ -342,6 +361,53 @@ Lint currently reports **0 errors and 11 warnings** on `:app:lintDebug` with
 ---
 
 ## Resolved
+
+### TD-010 — No widget had been placed through a real launcher flow *(resolved Session 8)*
+
+Open since Session 5. Session 8 had the first stable, self-controlled device in this project's
+history — a locally-launched emulator (AVD `Pixel_9`, Android 16, real Pixel Launcher), not a
+remote or pooled one. Every remaining piece was verified directly: the widget listed correctly in
+the real system widget picker; drag-to-place worked and produced a rendered, then configured,
+widget on a real home screen; the widget updated live across eleven rebind cycles; it survived an
+app reinstall (update) and a **full device reboot** with no manual intervention (Android's
+platform-default post-boot widget refresh fired correctly, confirming the reasoning in
+`docs/WIDGET_ARCHITECTURE.md` §10 without a custom `ACTION_BOOT_COMPLETED` receiver); reconfiguring
+to a different event worked through the real system configuration flow; and removing a placed
+widget's binding was confirmed via `WidgetLifecycleCoordinatorTest` (the literal drag-to-remove
+launcher gesture could not be scripted via `adb input` — a tooling limitation, not new evidence
+either way). Screenshots for every state are in `docs/SCREENSHOT_GUIDE.md`. This same device access
+is what surfaced BUG-R009 below — the widget had never actually been the 2×2 every prior session
+believed it was.
+
+**What remains genuinely unverified**, now scoped much more narrowly: the exact system
+`ACTION_APPWIDGET_DELETED` broadcast reaching `onDeleted` (still unit-test-only), and rendering on
+any launcher other than stock Pixel Launcher (Samsung One UI, other OEMs — never attempted, no
+access to one).
+
+### BUG-R009 — The widget occupied a 3×2 footprint, not the 2×2 every session had assumed *(found and fixed Session 8)*
+
+`countdown_widget_info.xml` declared `minWidth="180dp"` alongside `targetCellWidth="2"`. Android's
+documented cell-size formula (`dp = 70×cells − 30`) makes `180dp` the *3-cell* value, not 2-cell
+(`110dp`) — a real launcher's own widget picker confirmed this directly, labeling the widget
+"3 × 2" before the fix. Every design decision in Sessions 6 and 7 (typography, spacing, the
+vertical-whitespace finding in `docs/PRODUCT_REVIEW.md`) was made against a 2×2 assumption that had
+never actually been true, and could not have been caught before this session because no earlier
+session reached a real widget picker to see the size label at all. Fixed by changing `minWidth` to
+`110dp`; verified empirically — the same launcher's picker relabeled the widget "2 × 2" with no
+other change. See DECISIONS.md D-043.
+
+### BUG-R010 — Completed/expired events showed a full-strength progress bar next to a muted label *(found and fixed Session 8)*
+
+The countdown label correctly dims to a muted color once an event is completed or expired
+(`CountdownWidgetContent`'s `labelColor` logic, present since Milestone 4), but the progress bar
+beside it kept drawing at full accent-color strength regardless — found by looking at a real
+on-device screenshot, not by inspection. Fixed by having the bar reuse `labelColor` instead of the
+unconditional `accent`. See DECISIONS.md D-044.
+
+**Testing gap.** No automated regression test — Glance 1.1.1's `glance-testing` library exposes
+text/content-description/testTag matchers but nothing to assert a composable's resolved
+`ColorProvider` value, so this fix is verified visually (`docs/SCREENSHOT_GUIDE.md`) rather than
+by an automated test.
 
 ### BUG-R008 — GLASS's translucent background could fail contrast over a light wallpaper *(found and fixed Session 7)*
 

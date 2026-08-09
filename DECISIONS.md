@@ -800,3 +800,56 @@ a wider surface is a standing invitation for a future caller in `:widget:glance`
 
 **Tradeoffs.** None found. This is a pure visibility narrowing with no behavioral change,
 confirmed by the full test suite passing unchanged before and after.
+
+---
+
+## D-043 — Widget `minWidth` corrected from 180dp to 110dp to actually match the declared 2×2 size
+
+**Date:** 2026-08-09 · **Status:** Accepted (corrects a real defect, not a design change) · **Milestone:** 4.9
+
+`countdown_widget_info.xml`'s `minWidth` moves from `180dp` to `110dp`, so it agrees with
+`minHeight="110dp"` and `targetCellWidth="2"`/`targetCellHeight="2"`.
+
+**Reason.** Android's documented widget cell-size formula is `dp = 70 × cells − 30`. Solved the
+other way, `180dp` is exactly the 3-cell value (`70×3−30=180`), while `110dp` is the 2-cell value
+(`70×2−30=110`). Every session since Milestone 4 documented this widget as "2×2," but `minWidth`
+had been declaring a 3-cell-wide footprint the entire time — invisible until Session 8 became the
+first session to reach a real widget picker on a real launcher, which reported the widget's size
+as "3 × 2" before this fix and "2 × 2" immediately after, with no other change made. See
+KNOWN_ISSUES.md BUG-R009.
+
+**Alternatives.** Update every document to say "3×2" instead — rejected: the entire visual design
+done in Sessions 6–7 (typography, spacing, contrast) was built and reasoned about against a 2×2
+assumption throughout `ARCHITECTURE.md` and every session brief since Milestone 4; the footprint
+was the error, not the design intent.
+
+**Tradeoffs.** None found. Verified empirically, not just by formula: the real launcher's own
+widget-picker label changed from "3 × 2" to "2 × 2" after this one-line change, confirmed by
+screenshot (`docs/SCREENSHOT_GUIDE.md`).
+
+---
+
+## D-044 — Completed/expired progress bar uses the same muted color as the label
+
+**Date:** 2026-08-09 · **Status:** Accepted (visual-consistency fix) · **Milestone:** 4.9
+
+`CountdownWidgetContent`'s `LinearProgressIndicator` now takes `color = labelColor` (the same
+value already computed for the label text — muted for completed/expired, accent otherwise)
+instead of unconditionally `color = accent`.
+
+**Reason.** Found on a real device, not by inspection: a completed or expired event showed a
+label correctly de-emphasized to a muted gray, sitting directly above a progress bar still drawn
+in the full, vivid accent color at 100% fill. The two elements disagreed about whether this
+event still mattered visually. Reusing the already-computed `labelColor` fixes both cases with no
+new state and no new branch — the condition already existed for the label.
+
+**Alternatives.** A separate `progressColor` field on `WidgetRenderModel` — rejected as
+unnecessary: the renderer already has every fact it needs (`isCompleted`, `isExpired`) via the
+model, and the mapper's job is producing facts, not every possible derived color a future renderer
+tweak might want.
+
+**Tradeoffs.** None found. Verified visually on-device before and after
+(`docs/SCREENSHOT_GUIDE.md`); no automated regression test was added, since Glance 1.1.1's
+testing API (`glance-testing`) exposes text/content-description matchers but no way to assert a
+composable's resolved `ColorProvider` value — noted as a testing-capability gap in
+`KNOWN_ISSUES.md` rather than worked around with new test infrastructure.
