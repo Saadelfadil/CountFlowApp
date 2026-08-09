@@ -10,8 +10,75 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. The rest of Milestone 5 (2×1/4×2 sizes, multiple independent widgets) begins next,
-pending approval — see `TODO.md` P0.
+Nothing yet. The rest of Milestone 5 (real WIDE device confirmation, same-event multi-style
+verification, remaining polish) begins next, pending approval — see `TODO.md` P0.
+
+---
+
+## [0.4.5] — 2026-08-09 — Milestone 5B: responsive widget system
+
+Session 10. Turned the 2×2 visual language from Milestone 5A into one coherent responsive system
+across 2×1, 2×2, and 4×2 — 21 total Style × Size combinations, each with its own information
+hierarchy rather than a mechanically stretched or shrunk copy of another size. Also closed two
+pending product decisions: the countdown label hierarchy is now permanent, and BUG-011 stays open
+by design until Milestone 8, with no further engineering time against Force Stop semantics.
+
+### Added
+- Migration to `SizeMode.Exact` (`CountdownGlanceWidget`), reading real `LocalSize` per
+  composition instead of assuming one fixed footprint.
+- `WidgetSizeClass` (`COMPACT`/`STANDARD`/`WIDE`) — a size classifier with breakpoints derived
+  from real measured device dimensions (see Fixed, below).
+- 14 new per-style layout composables (`*LayoutCompact`, `*LayoutWide` for all seven styles),
+  bringing the total to 21 genuinely distinct compositions. See `docs/WIDGET_SIZE_MATRIX.md` for
+  the full field-by-field matrix (Primary/Secondary/Progress/Alignment/Hidden fields/Typography).
+- A content-fit type-scaling system (`contentFitScale()`) handling 4+ digit day counts and longer
+  titles gracefully, engineered to introduce zero visual change for content already verified in
+  Session 9's range.
+- A responsive circular progress ring (shared `ProgressRing` helper) with 8px bitmap-size
+  quantization and the LRU cache bumped 32→40 entries, bounding memory growth under
+  `SizeMode.Exact`'s continuous size reporting.
+- Manifest changes enabling real resizing: `resizeMode="horizontal|vertical"`,
+  `maxResizeWidth="250dp"`, `maxResizeHeight="110dp"`.
+- A size-aware configuration-screen preview, reading the widget's actual current
+  `AppWidgetManager` size via `getAppWidgetOptions` rather than always rendering Standard.
+- `docs/WIDGET_SIZE_MATRIX.md` and `docs/RESPONSIVE_WIDGET_REVIEW.md`.
+
+### Fixed
+- **The `WidgetSizeClass` dp thresholds did not match real device measurements.** First derived
+  from Android's `dp = 70×cells − 30` cell-size formula, the same formula BUG-R009 (Session 8)
+  used correctly — but this session's real launcher rendered roughly 2× the formula's prediction
+  on both axes. Recalibrated against real measurements (172×104dp compact, 172×224dp standard).
+  Documented explicitly as a second instance of BUG-R009's exact mistake — see `DECISIONS.md`
+  D-055.
+- **`MaterialLayoutCompact` rendered its headline invisible.** `StartIdentity`'s
+  `.fillMaxWidth()`, safe at every other call site (all `Column` children), silently consumed the
+  entire `Row` in the new compact layout, crowding out the sibling headline `Text`. Fixed by
+  adding a `modifier` parameter (default unchanged); audited all 16 call sites.
+- A duplicate headline rendered twice in `ProgressLayoutWide` (once beside the ring, once inside
+  it) — found by a failing Robolectric test, fixed with a `showHeadline` parameter on the shared
+  ring helper.
+- Every pre-Session-10 Glance unit test had silently been exercising `WIDE` layouts, not
+  `STANDARD` — Robolectric's default test size (349×455dp) classifies as `WIDE`. Every test now
+  sets its size explicitly via `setAppWidgetSize`.
+
+### Resolved (technical debt)
+- **TD-012** — `resizeMode="none"` risk, moot now that resizing is fully supported (D-053/D-056).
+
+### Known gaps (not fixed by design, or not reachable this session)
+- **TD-016** — `WidgetSizeClass` thresholds are confirmed against exactly one emulator/launcher
+  combination; nothing guarantees a different host agrees.
+- **TD-017** — the 4×2 (`WIDE`) size has no real-device visual confirmation, Robolectric only.
+  Three device-automation attempts to force a real WIDE placement did not succeed this session;
+  `WIDE_MIN_WIDTH_DP` is a reasoned extrapolation, not a measured value.
+- **BUG-011** stays open by explicit decision (D-052) — no further recovery engineering against
+  Force Stop until Milestone 8's refresh infrastructure exists as a matter of course.
+- The same-event-two-different-styles multi-widget case remains unit-tested only; this session
+  confirmed the different-events case, on two different size classes simultaneously, on a real
+  device.
+
+### Tests
+245 tests, 0 failures (up from 235). `:core:domain` line coverage unchanged at 97.0%, gated at
+95%. Lint: 0 errors, 17 warnings, unchanged from Session 9.
 
 ---
 

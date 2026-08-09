@@ -9,6 +9,15 @@ say the same thing, and code review should treat a mismatch as a bug in one of t
 This is the only widget size in scope. No 2×1, no 4×2 — see `docs/WIDGET_DESIGN_REVIEW.md`'s
 Final Report for why that boundary held for the whole session.
 
+> **Session 10 update.** The boundary above held for exactly the one session it describes — 2×1
+> and 4×2 shipped the next session (Milestone 5B). Every design philosophy below is still the
+> *first* thing each style was designed for, and remains accurate for `WidgetSizeClass.STANDARD`
+> specifically (this document was written before the size-class concept existed, so it never uses
+> that name, but everything it describes is what the `Standard` size means in
+> `docs/WIDGET_SIZE_MATRIX.md`'s terms). For how each style adapts — or deliberately doesn't —
+> at 2×1 and 4×2, read `docs/WIDGET_SIZE_MATRIX.md` alongside this document, and
+> `docs/RESPONSIVE_WIDGET_REVIEW.md` for the real-device evidence behind it.
+
 ---
 
 ## The problem this session solved

@@ -1050,3 +1050,245 @@ sufficient justification to add it back.
 
 **Tradeoffs.** Users cannot express an arbitrary brand color for an event — acceptable for MVP
 scope per the brief's own instruction; revisit only if user feedback specifically asks for it.
+
+---
+
+## D-051 — Countdown label policy: the Session 9 hierarchy is permanent product policy
+
+**Date:** 2026-08-09 · **Status:** Accepted (owner decision) · **Milestone:** 5A → ratified 5B
+
+The content hierarchy `WidgetHeadline`/`resolveHeadline` already computed (D-046) is now the
+**permanent, owner-approved** countdown label policy, closing the open question carried since
+Session 3. Stated explicitly, as the owner specified it, so future sessions don't need to
+re-derive it from code:
+
+| Case | Primary | Secondary |
+|---|---|---|
+| Ordinary count | `218 days` | — (never `In 218 days`) |
+| Falls in next calendar week | `8 days` | `Next week` (adds real information the number doesn't) |
+| Near-term, timed | `Tomorrow` | `8:00 AM` |
+| Near-term, all-day | `Tomorrow` | — |
+| Completed | `Completed` | `<Event Title>` |
+| Expired | `Expired` | `<Event Title>` |
+
+**Reason.** This is exactly what `resolveHeadline` already produces — Session 9 built the
+mechanism to solve the "Tomorrow / Tomorrow" and "7 / Next week" redundancy bugs the brief named
+by example, and the owner has now reviewed and approved that output as correct, not merely
+"good enough to close a bug." No code changes accompany this entry; it is a ratification, not a
+new decision about behavior. Recorded here specifically so no future session second-guesses or
+redesigns the hierarchy without a new, deliberate reason to.
+
+**Alternatives.** None newly considered — this entry exists to close the standing open question,
+not to reopen it. Any future change to this hierarchy should be a new, numbered decision with its
+own reason, not a silent drift.
+
+**Tradeoffs.** None. Removed from every "pending approval" / "requires approval" list this entry
+appears on (`TODO.md`, `SESSION_SUMMARY.md`).
+
+---
+
+## D-052 — BUG-011 (Force Stop recovery): no further engineering time until Milestone 8
+
+**Date:** 2026-08-09 · **Status:** Accepted (owner decision) · **Milestone:** 5B
+
+No further attempt will be made to recover a widget from Android's Force Stop state before
+Milestone 8's alarm-based refresh infrastructure exists. The Session 9 fix (a branded
+`android:initialLayout`, "CountFlow / Tap to refresh") is the final state of this bug for the
+foreseeable milestones — not a placeholder awaiting a follow-up patch.
+
+**Reason.** Force Stop cancels an app's scheduled work by Android's own design; any workaround
+that "recovers" from it would mean fighting platform semantics rather than working within them —
+explicitly out of bounds per this project's own standing instruction (`SESSION_SUMMARY.md`
+Session 9, "do not attempt to defeat Android's force-stop semantics"). The owner has now reviewed
+that reasoning directly and confirmed it: further time is better spent on Milestone 5B's
+responsive-system work than on a problem whose real fix already has a scheduled home
+(Milestone 8's refresh infrastructure would resolve it as a side effect, per `TODO.md`).
+
+**Alternatives.** A "tap to retry" affordance sooner than Milestone 8 — considered and explicitly
+declined by the owner for this phase, not because it wouldn't work, but because it isn't worth
+displacing responsive-system work to build now. A custom periodic trigger to force redraws —
+rejected outright; this is precisely the kind of new wakeup-source engineering `docs/WIDGET_REVIEW.md`
+§7's battery reasoning and `D-008`'s alarm-strategy already own, and duplicating it ad hoc here
+would fragment that design.
+
+**Tradeoffs.** BUG-011 remains open and user-visible (a Force-Stopped widget still does not
+recover on its own) until Milestone 8. Accepted explicitly, in writing, rather than left
+ambiguous.
+
+---
+
+## D-053 — Responsive sizing uses `SizeMode.Exact` plus an app-owned classifier, not `SizeMode.Responsive`
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5B
+
+`CountdownGlanceWidget.sizeMode` is `SizeMode.Exact`. `CountdownWidgetContent` reads the resulting
+`LocalSize` every recomposition and buckets it into a `WidgetSizeClass` (`COMPACT`/`STANDARD`/
+`WIDE`) itself, via `classifyWidgetSize` (`WidgetSizeClass.kt`).
+
+**Reason.** Glance offers two responsive modes: `Responsive(sizes: Set<DpSize>)`, which snaps
+`LocalSize` to the nearest of a fixed set the app declares, and `Exact`, which reports the widget's
+real current size continuously. This app already declares its supported footprints as cell counts
+in `countdown_widget_info.xml` (`minWidth`/`minHeight`/`maxResizeWidth`/`maxResizeHeight`, D-056) —
+the same values Android's own tooling uses to compute how a launcher's grid maps onto this widget.
+Duplicating those as a literal `Set<DpSize>` for `Responsive` would mean keeping two representations
+of "what sizes this widget supports" in sync by hand, one in XML cell terms and one in Compose
+`DpSize` terms — and, as D-055 found out, the two are not simply related by Android's documented
+formula. `Exact` sidesteps the duplication entirely: the app already needs its own size→layout
+classification logic regardless (021 style×size combinations, not one), so building that logic
+against the widget's genuine current size is strictly more information than building it against a
+value Glance already snapped to the nearest guess.
+
+**Alternatives.** `SizeMode.Responsive` with a hand-maintained `Set<DpSize>` — rejected for the
+duplication reason above, and because `Responsive`'s snapping is designed for a small number of
+curated exact layouts, which is a worse fit for a widget whose supported range (2×1 through 4×2)
+spans a continuum a real host can place anywhere within, not just at the declared extremes.
+
+**Tradeoffs.** `Exact` recomposes on every real size change, not just at declared breakpoints — a
+user dragging a resize handle triggers more recompositions than `Responsive` would. Not a measured
+concern at this milestone's scope (no jank reported in device testing this session); worth
+revisiting if a future session measures resize-drag performance specifically.
+
+---
+
+## D-054 — `ProgressLayoutCompact` and `ProgressLayoutWide` never duplicate the headline inside and outside the ring
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5B
+
+Two decisions, one rule: at `WidgetSizeClass.COMPACT`, `ProgressLayoutCompact` draws no ring at
+all (falls back to the same bare-headline treatment `MinimalLayoutCompact` uses); at
+`WidgetSizeClass.WIDE`, `ProgressLayoutWide`'s ring is a pure visual with `showHeadline = false`
+(`CircularProgressRenderer`'s consuming `ProgressRing` helper), since the layout's left column
+already draws the headline as text.
+
+**Reason.** The `COMPACT` half: `MIN_RING_DP` (64f) is a floor below which a ring reads as a smudge
+rather than a progress indicator; `COMPACT`'s real measured height (104dp, D-055) minus padding
+leaves less room than that floor even before considering the headline text inside it needs room
+too. Forcing the ring anyway would either overflow the card or force the ring dp below its own
+documented legibility floor — both worse than a fallback that reuses an already-correct pattern.
+The `WIDE` half is a bug this session found in its own new code, not a defect inherited from
+elsewhere: an early version of `ProgressLayoutWide` drew the headline as text in its left column
+*and* again inside the ring in its right column, caught by
+`every style renders the headline exactly once at every size class` failing with "found '2' node(s)
+matching... '12'" once a `WIDE`-sized test existed to catch it. Fixed by making the ring text
+optional and turning it off specifically for this call site.
+
+**Alternatives.** For `COMPACT`: shrink the ring below `MIN_RING_DP` anyway — rejected, since the
+floor exists precisely because a ring that small stops communicating "progress" at all. For `WIDE`:
+keep the headline inside the ring and drop the left column's text version instead — rejected,
+since the left-column text is what makes the composition read as "LEFT countdown / RIGHT
+visualization" (two distinct facts) rather than "one fact, illustrated twice"; the ring is more
+useful as pure visual reinforcement of a reading already given in text than as the sole place to
+read the number from in a layout that has room to state it plainly elsewhere.
+
+**Tradeoffs.** A user who specifically chose Progress for its ring sees no ring at all if they
+resize down to `COMPACT` — named explicitly as this session's weakest style×size combination in
+`docs/RESPONSIVE_WIDGET_REVIEW.md`'s Final Report, not hidden.
+
+---
+
+## D-055 — Widget size thresholds are calibrated from real on-device measurements, not Android's cell-size formula
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5B
+
+`WidgetSizeClass.kt`'s `COMPACT_MAX_HEIGHT_DP` (164f) and `WIDE_MIN_WIDTH_DP` (300f) replace an
+earlier version of the same two constants (75f, 180f) that were derived from Android's documented
+`dp = 70×cells − 30` cell-size formula.
+
+**Reason.** This is a second instance of exactly the mistake BUG-R009 (Session 8) named and
+recorded a lesson about: trusting a documented formula's numbers as a stand-in for what a real
+device actually renders, without checking. A real 2×2 CountFlow widget on this session's Pixel
+Launcher measured 172×224dp via its own resolved `LocalSize` — not the formula's 110×110dp. The
+same widget resized to a real, launcher-confirmed 2×1 (confirmed both by the launcher's own
+resize-handle affordance and by `AppWidgetManager`'s options bundle reporting "2×1") measured
+172×104dp — not 110×40dp. Both axes were wrong by roughly 2×. The practical consequence, found on
+the same real device: the original 75dp `COMPACT_MAX_HEIGHT_DP` sat so far below the real 104dp
+compact height that a genuine 2×1 resize still classified as `STANDARD`, silently drawing the
+wrong layout in a shrunk card rather than the dedicated compact one (`docs/RESPONSIVE_WIDGET_REVIEW.md`
+has the before/after screenshots). Recalibrated to the midpoint of the two real height measurements
+(104 and 224 → 164dp); re-verified correct on the same real widget after the fix.
+
+**Alternatives.** Keep the formula-derived thresholds and treat the misclassification as acceptable
+drift — rejected outright once found, for the same reason BUG-R009 wasn't left as "close enough":
+a widget silently rendering the wrong composition for its actual size is a real, user-visible
+defect, not a rounding error. Read the launcher's *declared* grid cell size via some other Android
+API instead of hardcoding a measured constant — investigated briefly; no public, launcher-agnostic
+API exists for "how many dp is one grid row on this specific launcher," which is exactly why
+`SizeMode.Exact` (D-053) and an app-owned empirical threshold are the mechanism Android widgets
+actually have available for this problem.
+
+**Tradeoffs.** `WIDE_MIN_WIDTH_DP` is reasoned (extrapolated from the one real width measurement),
+not measured — a real 4×2 resize was not obtained this session despite three genuine automation
+attempts (`docs/RESPONSIVE_WIDGET_REVIEW.md` has the full account). Both thresholds are also
+specific to this one emulator's one launcher configuration; a different launcher's grid could
+render at different real dp values again, the same way this session's numbers already disagreed
+with the formula. No general fix exists for that within this milestone's scope — noted as residual
+risk in `KNOWN_ISSUES.md`, not silently assumed away.
+
+---
+
+## D-056 — Widget manifest declares a resizable 2×1-to-4×2 range, not three separate size declarations
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5B
+
+`countdown_widget_info.xml` moves from a single fixed `minWidth="110dp" minHeight="110dp"
+resizeMode="none"` declaration to `minWidth="110dp" minHeight="40dp" maxResizeWidth="250dp"
+maxResizeHeight="110dp" resizeMode="horizontal|vertical"`, with `targetCellWidth`/`targetCellHeight`
+unchanged at 2×2.
+
+**Reason.** One widget provider that resizes between three footprints, not three separate
+`<appwidget-provider>` declarations or three separate providers, matches how every other resizable
+system/OEM widget in this session's own `dumpsys appwidget` inspection is declared (Clock's "World"
+widget, Calendar, Contacts' favorites widget — all single providers with a min/max range). `minWidth`/
+`minHeight` are the smallest footprint's dimensions on each axis (2×1's width, 2×1's height) — not
+2×2's height reused for both, which would silently forbid ever resizing down to 2×1 despite
+`resizeMode` claiming to allow it, a mistake this session caught in its own draft before shipping it.
+`targetCellWidth`/`targetCellHeight` stay at 2×2 so the picker preview (TD-014, Session 9) and
+default placement experience keep showing the size all seven styles were originally designed for.
+
+**Alternatives.** Three separate declared sizes with no resize between them (add new picker
+entries for "Countdown Compact" / "Countdown Wide") — rejected: this is a genuinely different
+product shape (three widgets, not one resizable one) that the brief's own "one coherent responsive
+design system" framing argues against; a user resizing their existing widget is a materially
+better experience than needing to delete and re-add a differently-named one to get a different
+size.
+
+**Tradeoffs.** None found specific to this decision; the real, substantive tradeoff (whether the
+declared min/max dp values correspond to anything a real launcher's grid will actually offer) is
+D-055's finding, not a cost of this declaration shape itself.
+
+---
+
+## D-057 — The configuration screen's preview reads the placed widget's real size from `AppWidgetManager`, not a guess
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5B
+
+`WidgetConfigurationActivity.currentWidgetSizeClass()` reads `OPTION_APPWIDGET_MIN_WIDTH`/
+`OPTION_APPWIDGET_MIN_HEIGHT` from `AppWidgetManager.getAppWidgetOptions(appWidgetId)` for the
+specific widget being reconfigured, classifies it via the same `classifyWidgetSize` the real
+renderer uses, and shapes `WidgetPreviewCard` (D-049) to match — falling back to `STANDARD` only
+when the host hasn't reported real dimensions yet (a fresh placement mid-configuration, or this
+activity launched directly with no real host behind the `appWidgetId` at all, the same case
+`onEventBound()`'s `runCatching` already tolerates).
+
+**Reason.** D-049 already established the preview as a deliberate approximation, not a
+pixel-identical reproduction — but shape (square vs. short-and-wide vs. wide-and-short) is cheap to
+get right and meaningfully changes what "approximation" means: a user who has already resized their
+widget to 2×1 and reopens configuration should see a preview shaped like their actual widget, not a
+square that looks nothing like what's on their home screen. This is the same "assume nothing about
+size" discipline as D-053 and D-055 applied to a third code path — reading a real, host-reported
+value instead of a value this codebase computed and hoped matched reality.
+
+**Alternatives.** Always preview at `STANDARD` regardless of the widget's real placed size —
+rejected once resizable sizes existed at all, for the reason above. Pass the size class through
+as ViewModel state instead of reading it directly in the Activity — rejected: the size is
+Android-Bundle-shaped data with no bearing on the ViewModel's own responsibilities (event/style/
+toggle selection), and reading it once in `onCreate` and threading it down as a plain
+`WidgetSizeClass` parameter keeps the ViewModel free of an Android dependency it doesn't otherwise
+need, consistent with the project's existing preference for keeping ViewModels
+`SavedStateHandle`/Bundle-agnostic where reasonable.
+
+**Tradeoffs.** The preview's shape only ever reflects the size at the moment configuration was
+opened — resizing the real widget while configuration is open (an unusual but possible sequence)
+would not update the preview's aspect ratio without reopening the screen. Not treated as worth
+solving this milestone; the underlying `AppWidgetManager` options read has no live-update
+callback this screen currently subscribes to.

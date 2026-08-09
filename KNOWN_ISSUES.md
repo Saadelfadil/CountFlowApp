@@ -194,22 +194,6 @@ should not sprout a swipe affordance that the widget cannot have. Scheduled for 
 
 ---
 
-### TD-012 — `resizeMode="none"` is not guaranteed to be honored by every launcher
-**Severity:** Low · **Opened:** Session 7
-
-Some OEM launchers are known to override widget resize hints. Because `SizeMode.Single` (not
-`Exact`/`Responsive`) is in use, a launcher that resizes the widget anyway will still receive
-content rendered for the single declared size — no adaptive fallback exists.
-
-**Why not fixed.** Requires `SizeMode.Exact` with breakpoint ranges, which is explicitly Milestone
-5 scope (multiple sizes). Unverifiable this session regardless, since no non-compliant launcher
-was reachable — only one emulator was reachable at all, in the prior session, and not to
-completion.
-
-**Resolution path.** Addressed as a side effect of Milestone 5's size work, not separately.
-
----
-
 ### TD-013 — CORRECTED Session 8, was never a real gap
 
 Session 7 concluded, from reading Glance 1.1.1's `Text` API surface (`javap` on the AAR showed
@@ -222,6 +206,54 @@ it went — there is still no explicit overflow parameter to set — but the und
 inspection could have caught. Left here, marked corrected rather than deleted, specifically as a
 reminder that reading a library's public API is not a substitute for one real render — see
 `AI_CONTEXT.md`'s defects list.
+
+---
+
+### TD-016 — `WidgetSizeClass` thresholds are calibrated against one emulator's one launcher, not portable
+**Severity:** Medium · **Opened:** Session 10
+
+`COMPACT_MAX_HEIGHT_DP` (164f) and `WIDE_MIN_WIDTH_DP` (300f) are correct for this session's Pixel
+Launcher on this session's `Pixel_9` AVD, confirmed by real on-device measurement (D-055) after the
+original formula-derived thresholds turned out to be wrong. Nothing about those measurements
+generalizes: a different launcher, a different screen density, or a different grid row/column
+count could report meaningfully different real dp values for the same 2×1/2×2/4×2 cell counts,
+the same way this session's real numbers already disagreed by roughly 2× with Android's own
+documented cell-size formula.
+
+**Why not fixed.** No public, launcher-agnostic Android API reports "how many dp is one grid row
+on this specific host" — `SizeMode.Exact` plus an app-owned threshold (D-053) is the mechanism
+available at all, and getting it right requires real measurement on whatever device/launcher
+combination is being verified, which this session did for exactly one.
+
+**Resolution path.** Re-measure on a physical device and, ideally, a second launcher (Samsung One
+UI or another OEM skin) before treating these thresholds as broadly correct rather than
+"correct for the one environment this project has ever had stable device access to." If a future
+session finds different real numbers, recalibrate the same way this session did — a real
+measurement replacing a not-directly-verified one — rather than widening the thresholds
+speculatively to cover an untested range.
+
+---
+
+### TD-017 — 4×2 (`WIDE`) has no real-device visual confirmation
+**Severity:** Medium · **Opened:** Session 10
+
+Every `WIDE` layout (`CountdownWidgetLayouts.kt`'s seven `<Style>LayoutWide` composables) is
+confirmed correct by Robolectric (renders without duplicating or losing content, across all seven
+styles) but has never been seen rendering on an actual launcher. Three genuine attempts to get a
+real device into a wide-resized state this session did not succeed — two placed widgets side by
+side left no free grid column for either to grow into, and freeing space by removing one first did
+not complete via device automation either (`docs/RESPONSIVE_WIDGET_REVIEW.md` has the full
+account, including the specific `adb` techniques tried).
+
+**Why not fixed.** Getting a real `WIDE` placement needs either more automation-technique iteration
+than this session's time budget allowed, a physical device where manual interaction is trivial
+where `adb`-scripted interaction was not, or a fresh home screen layout with more free grid space
+than this session's two-widgets-side-by-side test setup left.
+
+**Resolution path.** Retry on a physical device, or clear the home screen to a single widget
+before attempting the resize, so a free column reliably exists. `WIDE_MIN_WIDTH_DP` (TD-016) should
+be re-confirmed at the same time, since both gaps share the same root cause (no real `WIDE`
+measurement yet).
 
 ---
 
@@ -241,15 +273,23 @@ Worth an instrumented test when Compose UI testing is set up.
 
 ## Platform limitations to design around
 
-### LIM-001 — Glance has no determinate circular progress
-**Verified in AndroidX source, Session 1**
+### LIM-001 — Glance has no determinate circular progress — WORKED AROUND Session 9
+**Verified in AndroidX source, Session 1 · Worked around, Session 9 · Made size-responsive, Session 10**
 
 `androidx.glance.appwidget.CircularProgressIndicator` takes only `(modifier, color)` and is
-indeterminate. Only `LinearProgressIndicator` has a `progress: Float` overload.
+indeterminate. Only `LinearProgressIndicator` has a `progress: Float` overload — still true, and
+still will be for as long as this project depends on Glance 1.1.1; this remains a real library
+limitation, not something a future Glance version is guaranteed to fix.
 
-**Consequence for Milestone 5.** Circular rings must be drawn to a `Bitmap` with `Canvas` and
-supplied via `ImageProvider`, sized against `LocalSize`, capped by the widget bitmap budget, and
-quantized to whole percent so the bitmap regenerates at most 100 times over an event's life.
+**How it's worked around.** `CircularProgressRenderer` (`widget/glance/…/progress/`) draws a
+determinate ring to a `Bitmap` with `Canvas`, supplied via `ImageProvider`, sized against
+`LocalSize`, capped by the widget bitmap budget (LIM-003), and quantized to whole percent so the
+bitmap regenerates at most 100 times over an event's life — exactly the approach this entry
+originally anticipated. Session 10 extended it across all three size classes: the ring appears at
+`STANDARD` and `WIDE` (sized differently for each — `docs/WIDGET_SIZE_MATRIX.md`) and is
+deliberately absent at `COMPACT`, where no diameter above the ring's own legibility floor
+(`MIN_RING_DP`) fits (D-054). Confirmed rendering correctly on a real device both sessions
+(`docs/WIDGET_DESIGN_REVIEW.md`, `docs/RESPONSIVE_WIDGET_REVIEW.md`).
 
 ---
 
@@ -312,6 +352,41 @@ if the device configuration changes while the screen is open).
 ---
 
 ## Resolved
+
+### BUG-R012 — A widget silently drew the wrong size's layout instead of the size it was actually resized to *(found and fixed Session 10)*
+
+`WidgetSizeClass.kt`'s original `COMPACT_MAX_HEIGHT_DP` (75f) was derived from Android's `dp =
+70×cells − 30` cell-size formula rather than a real measurement — the same shape of mistake as
+BUG-R009 (Session 8). A real widget resized down to a genuine, launcher-confirmed 2×1 (172×104dp,
+measured directly) stayed classified as `STANDARD` (the threshold expected anything below 75dp to
+be compact; the real 2×1 height was 104dp), so it kept drawing the full `MaterialLayout` — identity
+row, headline row, and a progress bar — simply compressed into a now-too-short card, rather than
+the dedicated single-row `MaterialLayoutCompact`. No crash, no visible error — the card just quietly
+rendered the wrong composition for its actual size.
+
+Found by cross-checking two independent size readings against each other: the configuration
+screen's `AppWidgetManager`-based size caption correctly said "(2×1)" while the real Glance render
+kept showing standard-shaped content, a discrepancy that had no other explanation once both
+readings were confirmed individually correct. Fixed by recalibrating both thresholds against real
+on-device measurements instead of the formula (D-055) — 164dp for `COMPACT_MAX_HEIGHT_DP`, the
+midpoint of the real 104dp and 224dp height measurements. A second, related bug was found in the
+same investigation and fixed alongside it: `StartIdentity`'s internal `fillMaxWidth()` had been
+correct at every existing call site (each one a sole child of a `Column`) but crowded out its
+sibling `Text` nodes once reused inside `MaterialLayoutCompact`'s `Row` — given a `modifier`
+parameter, defaulting to the prior `fillMaxWidth()` behavior everywhere except the one `Row`
+context that needed `defaultWeight()` instead. Both fixes verified on the same real, previously
+misrendering widget — before/after screenshots in `docs/RESPONSIVE_WIDGET_REVIEW.md`.
+
+### TD-012 — `resizeMode="none"` is not guaranteed to be honored by every launcher *(resolved Session 10)*
+
+Open since Session 7. The premise no longer applies: `resizeMode` is now `"horizontal|vertical"`
+(D-056), and `sizeMode` is `SizeMode.Exact` (D-053), so a launcher resizing the widget — whether
+via the standard resize-handle gesture or, hypothetically, an OEM launcher's own resize behavior —
+is exactly the case this session built the whole responsive system to handle correctly, not a gap
+with no adaptive fallback. Confirmed directly: a real resize on this session's Pixel Launcher
+produced a real, correctly-classified `WidgetSizeClass.COMPACT` render (after BUG-R012's fix).
+Whether every OEM launcher's resize behavior matches this one launcher's is still unverified — see
+the new TD-016 for that narrower, honestly-scoped remaining question.
 
 ### BUG-R011 — A word-shaped headline ("Completed", "Expired") wrapped mid-word instead of ellipsizing *(found and fixed Session 9)*
 

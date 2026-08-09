@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | 5A of 9 complete (2×2 widget visual redesign; rest of Milestone 5 — sizes, multiple widgets — not started) |
-| **Last session** | Session 9 — 2026-08-09 |
+| **Current milestone** | 5B of 9 complete (responsive 2×1/2×2/4×2 widget system; multi-widget independence and polish remain in Milestone 5) |
+| **Last session** | Session 10 — 2026-08-09 |
 | **Build status** | ✅ `assembleDebug` succeeds |
-| **Lint** | 0 errors, 17 accepted warnings (10 pre-existing + 7 new, all documented) |
-| **Tests** | 235 passing, 0 failing. `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 9: all seven widget styles verified genuinely distinct in real, on-device screenshots** — not just in code. First working determinate circular progress ring in this project's history (closes LIM-001). Widget-picker preview closes TD-014 ("mandatory" per the brief). One bug introduced and fixed within the same session (word-wrap, BUG-R011). BUG-011 (Force Stop) partially addressed, deliberately left open — see `docs/WIDGET_DESIGN_REVIEW.md`'s Final Report (verdict: **YES**, would look professionally designed beside Google's own widgets) |
-| **Overall progress** | ~52% |
+| **Lint** | 0 errors, 17 accepted warnings (unchanged from Session 9, all documented) |
+| **Tests** | 245 passing, 0 failing (up from 235). `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ **Session 10: the widget system is now genuinely responsive across three sizes (2×1/2×2/4×2), not just resizable.** 21 Style × Size combinations, each with its own information hierarchy — not a stretched or clipped 2×2. Real-device work found and fixed a significant size-classification bug (`WidgetSizeClass` thresholds were derived from Android's cell-size *formula*, which turned out not to match a real launcher's actual rendered dimensions — the same class of mistake as BUG-R009) and a `Row`/`fillMaxWidth` layout bug specific to the new compact size. See `docs/RESPONSIVE_WIDGET_REVIEW.md`'s Final Report. One real gap acknowledged, not hidden: the 4×2 (WIDE) size has no real-device visual confirmation, Robolectric only (TD-017) — three device-automation attempts to force a real WIDE placement did not succeed within the session |
+| **Overall progress** | ~55% |
 
 ---
 
@@ -41,6 +41,8 @@ Read in this order when picking the project up cold:
 | `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots (`docs/screenshots/`) of every major widget state, with the exact recipe to reproduce each (Session 8 baseline). |
 | `docs/WIDGET_DESIGN_GUIDE.md` | Per-style design philosophy for all seven widget styles — why each layout exists, its hierarchy, what differentiates it, when to choose it (Session 9). |
 | `docs/WIDGET_DESIGN_REVIEW.md` | Before/after evidence for the Milestone 5A redesign, plus the session's Final Report verdict (Session 9). |
+| `docs/WIDGET_SIZE_MATRIX.md` | All 21 Style × Size combinations (Primary/Secondary/Progress/Alignment/Hidden fields/Typography), plus the real-vs-formula size table and content-fit rules (Session 10). |
+| `docs/RESPONSIVE_WIDGET_REVIEW.md` | Real-device evidence for the responsive system — size-threshold correction, multi-widget, edge cases, accessibility — and the session's Final Report (Session 10). |
 | `DECISIONS.md` | Every architectural decision with reason, alternatives, tradeoffs, status. |
 | `ROADMAP.md` | Milestones 0–9 with status. |
 | `TODO.md` | Prioritized outstanding work. |
@@ -147,20 +149,31 @@ something a reviewer has to catch (D-003, D-033).
   project's history, added the "mandatory" widget-picker preview, and upgraded the configuration
   screen to a live, no-save-required preview. See `docs/WIDGET_DESIGN_GUIDE.md` (the philosophy)
   and `docs/WIDGET_DESIGN_REVIEW.md` (the before/after evidence and Final Report verdict: **YES**).
+- **The widget is now a responsive system across three sizes, not one fixed layout that stretches
+  or clips.** Session 10 migrated to `SizeMode.Exact` and gave 2×1, 2×2, and 4×2 each a genuinely
+  distinct information hierarchy per style — 21 combinations total, not a mechanically scaled
+  2×2. A content-fit type-scaling system handles 4+ digit day counts and longer titles gracefully.
+  Real-device work found and fixed a size-classification bug (the dp thresholds derived from
+  Android's cell-size *formula* did not match what a real launcher actually rendered — the same
+  category of mistake as BUG-R009) and a `Row`/`fillMaxWidth` layout bug specific to the compact
+  size. See `docs/WIDGET_SIZE_MATRIX.md` (the full matrix) and `docs/RESPONSIVE_WIDGET_REVIEW.md`
+  (the real-device evidence and Final Report).
 
 ## What does not exist yet
 
 No notifications, no settings, no billing. Within the events feature: no delete or archive
 gesture (TD-008); the create/edit form has an accent-colour picker (Session 9) but no live widget
 preview of its own (the configuration screen has one instead — see `TODO.md`). Within widgets:
-only one size, and multiple independent widgets on different events have not been verified through
-real UI (the domain/mapper support it; nothing has exercised it end-to-end). No D-008 alarm-based
-refresh. One open bug: the widget sticks on a loading spinner after Force Stop until the app
-reopens — now at least a branded prompt rather than a generic spinner, but still does not recover
-on its own (BUG-011). Several UI strings are not localised (TD-007). No widget performance,
-memory, or battery number has ever been measured on a device, in any session — the two
-device-heavy sessions so far (8, 9) prioritised lifecycle, visual, and design verification, which
-had zero or near-zero prior evidence, over performance numbers.
+the same-event-two-different-styles case is unit-tested but not verified through real UI, and the
+4×2 (WIDE) size has no real-device visual confirmation at all — Robolectric only (TD-017); the
+`WidgetSizeClass` thresholds are confirmed against exactly one emulator/launcher combination
+(TD-016). No D-008 alarm-based refresh. One open bug: the widget sticks on a loading spinner after
+Force Stop until the app reopens — now at least a branded prompt rather than a generic spinner,
+but does not recover on its own, and per D-052 this stays open by design until Milestone 8
+(BUG-011). Several UI strings are not localised (TD-007). No widget performance, memory, or
+battery number has ever been measured on a device, in any session — the device-heavy sessions so
+far (8, 9, 10) prioritised lifecycle, visual, and responsiveness verification, which had zero or
+near-zero prior evidence, over performance numbers.
 
 ## Where the important logic lives
 
@@ -183,13 +196,15 @@ had zero or near-zero prior evidence, over performance numbers.
 | Why does each named style look different, layout-wise? | `widget/glance/…/CountdownWidgetLayouts.kt`, or `docs/WIDGET_DESIGN_GUIDE.md` |
 | How is the determinate circular progress ring drawn? | `widget/glance/…/progress/CircularProgressRenderer.kt` |
 | How does the configuration screen preview without saving? | `widget/engine/…/provider/WidgetRenderModelProvider.kt` `preview()`, or DECISIONS.md D-048 |
+| How does a widget decide it's 2×1 vs 2×2 vs 4×2? | `widget/glance/…/WidgetSizeClass.kt` `classifyWidgetSize`, or `docs/WIDGET_SIZE_MATRIX.md` |
+| Why do the dp thresholds look larger than the manifest's cell-size formula would suggest? | `WidgetSizeClass.kt`'s doc comment, or DECISIONS.md D-055 |
 
 ---
 
 ## Progress
 
 ```
-Overall                      52%
+Overall                      55%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
@@ -197,12 +212,12 @@ Domain & countdown engine   100%   Milestone 2
 Database & persistence      100%   Milestone 2
 Event CRUD / UI              88%   Milestone 3 (gestures outstanding; colour picker now done)
 Widget engine                98%   Milestone 4.9 (validated on a real device — docs/PRODUCT_REVIEW.md)
-Widget themes & sizes        35%   Milestone 5A of 5 (2×2 visually redesigned; sizes/multi-widget remain)
+Widget themes & sizes        70%   Milestone 5B of 5 (responsive 2×1/2×2/4×2 delivered; multi-widget polish remains)
 Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
 Optimization & a11y           0%   Milestone 8
 Play Store                    0%   Milestone 9
-Testing                      76%   domain, DAO, repository, ViewModel, widget engine, Glance UI
+Testing                      78%   domain, DAO, repository, ViewModel, widget engine, Glance UI
 ```
 
 ---

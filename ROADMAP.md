@@ -13,7 +13,7 @@ Living document. Update the status column as milestones move.
 | 4 | Widget engine | **Completed** | 5–6 |
 | 4.5 | Widget stabilization | **Completed** | 7 |
 | 4.9 | Real product validation | **Completed** | 8 |
-| 5 | Multiple widgets | **In Progress** (5A done — 2×2 visual redesign; sizes/multi-widget remain) | 9 |
+| 5 | Multiple widgets | **In Progress** (5A, 5B done — visual redesign + responsive sizes; multi-widget polish remains) | 9–10 |
 | 6 | Settings | Not Started | — |
 | 7 | Notifications | Not Started | — |
 | 8 | Optimization | Not Started | — |
@@ -255,6 +255,62 @@ a flawless yes rather than left unsaid.
 **Not delivered, by explicit scope, not oversight:** 2×1/4×2 sizes, multiple independent widgets on
 different events at once, and everything else Milestone 5 still owns. Session 9 stopped at the
 brief's explicit instruction and awaits approval before continuing.
+
+### Milestone 5B — Responsive widget system (2×1 / 2×2 / 4×2) · Completed (Session 10)
+
+The mission: turn the 2×2 visual language Session 9 delivered into one coherent responsive system
+across three sizes — "not simply three sizes... one coherent responsive design system," with an
+explicit rule against mechanically stretching or shrinking the existing 2×2 layouts. Also closed
+out two pending product decisions: the countdown label hierarchy is now permanent (D-051), and
+BUG-011 is decided closed-until-Milestone-8 with no further recovery engineering against Android's
+Force Stop semantics (D-052).
+
+**Delivered:** migration from `SizeMode.Single` to `SizeMode.Exact` (D-053), reading real
+`LocalSize` per composition instead of assuming one fixed footprint; a `WidgetSizeClass`
+classifier (`COMPACT`/`STANDARD`/`WIDE`) with breakpoints derived from real measured device
+dimensions, not Android's cell-size formula (see below); 21 total Style × Size compositions — 14
+new layout composables (`*LayoutCompact`, `*LayoutWide` for all seven styles) alongside the
+existing seven Standard layouts, each with its own information hierarchy rather than a scaled copy
+(`docs/WIDGET_SIZE_MATRIX.md` documents all 21 as a full field-by-field matrix); a content-fit
+type-scaling system (`contentFitScale()`) that gracefully handles 4+ digit day counts and longer
+titles while leaving Session 9's already-tuned content completely unchanged; a responsive circular
+progress ring (`ProgressRing`, shared by Standard and Wide) with 8px bitmap-size quantization and
+an LRU cache bumped 32→40 entries to bound memory growth under continuous-size reporting (D-054);
+manifest changes enabling real resizing (`resizeMode="horizontal|vertical"`, `maxResizeWidth`/
+`maxResizeHeight`, D-056); a size-aware configuration-screen preview reading the widget's actual
+current `AppWidgetManager` size rather than always rendering Standard (D-057).
+
+**The headline finding, from real-device work:** the `WidgetSizeClass` dp thresholds, first
+derived from Android's `dp = 70×cells − 30` cell-size formula (the same formula BUG-R009 used
+correctly in Session 8), did not match what this session's real launcher actually rendered —
+measured values were roughly 2× the formula's prediction on both axes. Recalibrated against real
+measurements (172×104dp compact, 172×224dp standard) rather than the formula (D-055) — explicitly
+documented as a second instance of exactly BUG-R009's mistake: a manifest/dp value asserted to
+mean something specific needs checking against real, not just formula-predicted, platform
+behavior. A second, related bug was found in the same investigation: `StartIdentity`'s
+`.fillMaxWidth()`, safe at every other call site, silently crowded out its sibling headline inside
+`MaterialLayoutCompact`'s `Row` — fixed with a modifier parameter, audited across all 16 call
+sites.
+
+**Also confirmed on-device this session:** two widgets on different events, in different size
+classes, updating independently and simultaneously; font scale robustness at 130% and 200%; the
+day-count/title/label edge cases the brief named (1/8/218/999+ days, long titles, Tomorrow/
+Completed/Expired); light/dark across five named styles; accessibility re-verification (compact
+never announces the secondary line or percentage even when the binding requests them).
+
+**Not delivered, and said so plainly:** no real on-device confirmation of the 4×2 (WIDE) size
+exists — Robolectric only. Three separate device-automation attempts to force a real WIDE
+placement (drag-resize, remove-then-resize, adjusted-coordinate retry) did not succeed within the
+session's time budget; `WIDE_MIN_WIDTH_DP` is a reasoned extrapolation from the compact/standard
+measurements, not a measured value (TD-017). The `WidgetSizeClass` thresholds themselves are
+confirmed on exactly one emulator/launcher combination (TD-016). The same-event-two-different-
+styles case remains unit-tested only, not re-driven on a real device this session.
+
+**Verdict, from `docs/RESPONSIVE_WIDGET_REVIEW.md`'s Final Report:** all 21 combinations are safe
+from clipping/overflow and each size reads as intentionally designed, not a stretched or
+compressed sibling of another. See the review for the full seven-question answer, including which
+size is strongest, which Style × Size combination is weakest, and what would change before Google
+Play.
 
 ---
 

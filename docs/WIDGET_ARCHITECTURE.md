@@ -127,18 +127,32 @@ Content()
 CountdownWidgetContent(model)
         │
         ├─ model == null  →  UnconfiguredContent()   ("Tap to choose a countdown")
-        └─ model != null  →  draw title / emoji / day count / label / progress bar
+        └─ model != null  →  val sizeClass = classifyWidgetSize(LocalSize.current)
+                              dispatch on (sizeClass, model.theme.style)
+                              → one of 21 <Style>Layout[Compact|Wide] composables
+                                (CountdownWidgetLayouts.kt, docs/WIDGET_SIZE_MATRIX.md)
 ```
 
-Two details worth being deliberate about, because both were copied from Google's canonical
-Glance layouts for a stated reason (ARCHITECTURE.md D-001), not by habit:
+Three details worth being deliberate about:
 
 - **The first model is loaded before `provideContent` runs**, in a plain `suspend` call. The
   first frame the launcher ever draws already has content — there is no loading flash, and no
-  window where the widget is empty because a `Flow` hasn't emitted yet.
-- **`key(LocalSize.current)` wraps the content.** With one size in this milestone this buys
-  nothing today; it costs nothing either, and it is one less thing to remember when Milestone 5
-  makes size actually vary.
+  window where the widget is empty because a `Flow` hasn't emitted yet. (Copied from Google's
+  canonical Glance layouts for a stated reason, ARCHITECTURE.md D-001, not by habit.)
+- **`key(LocalSize.current)` wraps the content, and is now load-bearing, not just future-proofing.**
+  Milestone 5A left this line in place "since it costs nothing today" even though only one size
+  existed yet; Milestone 5B is the reason it was there — `sizeMode = SizeMode.Exact` (D-053) means a
+  real drag-resize genuinely changes `LocalSize` mid-session, and this `key` is what forces a full
+  recomposition (not a diff) across that geometry change, the same reasoning Google's own canonical
+  layouts use it for.
+- **Size classification happens once, in the renderer, from a real measured value — not assumed.**
+  `classifyWidgetSize(widthDp, heightDp)` (`WidgetSizeClass.kt`) buckets `LocalSize.current` into
+  `COMPACT`/`STANDARD`/`WIDE`. Its thresholds were originally derived from Android's `dp =
+  70×cells − 30` cell-size formula and were wrong by roughly 2× on a real device (BUG-R012,
+  `docs/RESPONSIVE_WIDGET_REVIEW.md`) — recalibrated against real on-device measurements (D-055).
+  Nothing in this render flow trusts the formula for anything beyond the manifest's own cell-count
+  declaration (§9, `countdown_widget_info.xml`); the actual dp-to-size-class mapping is real,
+  measured data.
 
 ### What the renderer decides versus what it is told
 
@@ -359,45 +373,47 @@ thing to get subtly wrong.
   there is no Compose-UI-style `clearAndSetSemantics` to explicitly suppress child nodes from the
   accessibility tree. The whole-card `contentDescription` in §4 is the best available fix within
   that surface, not a claim that Glance's accessibility model matches Compose UI's.
-- **`SizeMode.Single`** (the default, left unset) is exactly right for one fixed size. Multiple
-  sizes need `SizeMode.Exact` with breakpoint ranges — a Milestone 5 change, not attempted here.
+- **`SizeMode.Exact`** (Milestone 5B, D-053) reports the widget's real current size continuously
+  rather than snapping to one of a declared set — the app classifies that size itself
+  (`classifyWidgetSize`, §4) rather than asking Glance to pick the nearest of a hand-maintained
+  list. Chosen over `SizeMode.Responsive` specifically to avoid keeping two representations of
+  "what sizes this widget supports" in sync (the XML cell-count declaration, §9 below, and a
+  literal `Set<DpSize>`) — see D-053 for the full reasoning.
 
 ---
 
 ## 10. Known limitations
 
 Full detail and severity live in `KNOWN_ISSUES.md`; this section is the widget-specific subset,
-stated plainly for someone who needs to know what *not* to trust yet.
+stated plainly for someone who needs to know what *not* to trust yet. Substantially rewritten
+Session 10 — most of what this section listed as unconfirmed through Session 7 (real launcher
+placement, per-style layout differentiation, determinate progress) is now confirmed; what remains
+open is narrower and newer.
 
-- **No widget has been confirmed through a genuine `AppWidgetHost`/launcher placement** — dragging
-  it from the widget picker onto a real home screen and watching it render there. The
-  configuration Activity's own logic (bind, cancel, reconfigure, prune) is verified directly
-  against the database on a real device, and the Glance composable itself is verified with
-  Glance's own unit-test framework — but neither substitutes for one end-to-end placement through
-  the actual system flow. Session 5 could not complete this because the headless test AVD failed
-  the system's widget-bind user-unlock check. Session 6 confirmed `adb shell appwidget grantbind`
-  now succeeds and the test device reaches `RUNNING_UNLOCKED` — a materially different, more
-  promising signal than Session 5's outright failure — but the device became unreachable
-  mid-session before a full drag-onto-home-screen pass could be completed and screenshotted. See
-  KNOWN_ISSUES.md TD-010; this is the first item queued for the next session with device access.
+- **`WidgetSizeClass` thresholds are calibrated against one emulator's one launcher, not confirmed
+  portable.** Real on-device measurement (D-055) replaced formula-derived thresholds that were
+  wrong by roughly 2× — but the real numbers this session found (172×224dp for 2×2, 172×104dp for
+  2×1) are only confirmed for this project's one known-stable local emulator running Pixel
+  Launcher. A different launcher's grid could measure differently again, the same way this
+  session's numbers already disagreed with Android's own documented formula. (TD-016.)
+- **4×2 (`WIDE`) has no real-device visual confirmation.** Every `WIDE` layout is confirmed
+  correct by Robolectric (renders without duplicating or losing content, across all seven styles)
+  but has never been seen rendering on an actual launcher — three genuine device-automation
+  attempts this session did not succeed in getting a widget into a wide-resized state.
+  (TD-017, `docs/RESPONSIVE_WIDGET_REVIEW.md` has the full account of what was tried.)
 - **Emoji rendering is unverified on real hardware.** Glance `Text` renders through a
   `RemoteViews` `TextView` in the *launcher's* process, so glyph coverage and sizing vary by
   launcher and OEM — the emulator cannot stand in for this. (LIM-006.)
-- **One size, one layout.** `SizeMode.Single`, 2×2 only. The seven themes differ today only in
-  color, corner radius, and text emphasis — not in structural layout. Distinct *shapes* per theme
-  (the brief's example: `Progress`'s emphasis, `Modern`'s density) need more than one size to
-  differentiate across, which is why that work waits for Milestone 5.
-- **No determinate circular progress.** Confirmed directly in the Glance 1.1.1 source:
-  `CircularProgressIndicator` takes only `(modifier, color)` and is indeterminate-only. A real
-  ring has to be drawn to a `Bitmap` via `Canvas`, sized against `LocalSize`, and budgeted against
-  `6 × screenWidthPx × screenHeightPx` bytes — none of that exists yet. `WidgetProgress` already
-  carries `percent`/`fraction` in the shape that renderer will need. (LIM-001, LIM-003.)
 - **The refresh scheduler only covers the app-alive case.** No update while the process is dead,
   no second-level ticking for the final day. See §5.
 - **No Compose UI test for `WidgetConfigurationViewModel` directly.** Its cancel/confirm/no-orphan
   behavior was verified on-device (which is how BUG-R005 was actually found), not by a unit test
   that would catch a regression automatically. Worth adding now that the exact behavior is
   understood.
+- **Glance's Robolectric-based testing API cannot observe actual text wrapping/ellipsis or a
+  composable's resolved `ColorProvider` value.** Two real bugs this project has found
+  (BUG-R010, BUG-R011) were only verifiable visually, on a real device, for exactly this reason —
+  worth remembering before assuming a green Robolectric suite means a layout looks right.
 
 ---
 
@@ -407,20 +423,31 @@ These three sections describe *why the current design does not block* each futur
 none of them are built, and nothing below should be read as a promise of a specific
 implementation, only of an open path.
 
-### 11.1 Multiple widget support (Milestone 5)
+### 11.1 Multiple widget support (Milestone 5 — 5A and 5B delivered, remainder still open)
 
-Nothing in this architecture assumes one widget. `WidgetBinding` is already keyed per
-`appWidgetId`; `WidgetRenderModelProvider.observe` already takes an `appWidgetId` and nothing
-global; `GlanceWidgetRefreshScheduler.updateAll` already redraws every placed instance
-independently. What Milestone 5 actually adds is *breadth*, not a new mechanism:
+Nothing in this architecture ever assumed one widget. `WidgetBinding` is keyed per `appWidgetId`;
+`WidgetRenderModelProvider.observe` takes an `appWidgetId` and nothing global;
+`GlanceWidgetRefreshScheduler.updateAll` redraws every placed instance independently. Milestone 5A
+(Session 9) and 5B (Session 10) delivered most of what this section originally listed as future
+work:
 
-- `SizeMode.Exact` with breakpoint ranges, replacing `SizeMode.Single`.
-- Per-style *layout* differences in `CountdownWidgetContent` (today all seven styles share one
-  layout and differ only in resolved color/radius from `WidgetThemeResolver`).
-- The Canvas-drawn progress ring described in §10.
-- A settings surface for the visibility flags (`showTitle`, `showEmoji`, `showTargetDate`,
-  `showPercentage`) that `WidgetBinding` and `WidgetRenderModel` already carry but no UI sets
-  independently of the `inheriting()` defaults yet.
+- ~~`SizeMode.Exact` with breakpoint ranges~~ — done (D-053), reporting the widget's real size
+  rather than snapping to a declared breakpoint set.
+- ~~Per-style *layout* differences~~ — done; all seven styles now have genuinely different
+  compositions at all three sizes (`docs/WIDGET_DESIGN_GUIDE.md`, `docs/WIDGET_SIZE_MATRIX.md`),
+  not just resolved color/radius.
+- ~~The Canvas-drawn progress ring~~ — done (§10's own note; LIM-001), now size-responsive across
+  `STANDARD` and `WIDE`, deliberately absent at `COMPACT`.
+- ~~A settings surface for the visibility flags~~ — done; `WidgetConfigurationActivity`'s
+  customize step (Session 9) sets `showTitle`/`showEmoji`/`showTargetDate`/`showPercentage`
+  independently of the `inheriting()` defaults, with a live preview.
+
+**Still genuinely open:** confirming two widgets on the exact same event with different style
+overrides through real UI (unit-tested via `WidgetBinding.resolveWidgetStyle`, not yet driven
+end-to-end on a device — Session 10 confirmed the *different-events* case across two size classes,
+which is a different scenario); a real `WIDE` measurement and screenshot (TD-017); confirming this
+session's size thresholds hold on a device/launcher other than the one they were measured on
+(TD-016).
 
 ### 11.2 Android 16 Live Updates
 
