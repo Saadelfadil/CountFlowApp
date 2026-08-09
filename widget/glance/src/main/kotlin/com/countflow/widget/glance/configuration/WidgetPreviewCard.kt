@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.countflow.core.designsystem.format.CountdownLabelFormatter
 import com.countflow.core.domain.model.WidgetStyle
 import com.countflow.widget.engine.model.WidgetRenderModel
+import com.countflow.widget.glance.WidgetSizeClass
 import com.countflow.widget.glance.resolveHeadline
 
 /**
@@ -31,21 +32,30 @@ import com.countflow.widget.glance.resolveHeadline
  * not Glance, since [WidgetConfigurationActivity] is a normal Activity and Glance has no way to
  * render a live composition inline inside one.
  *
- * Deliberately **not** a pixel-identical reproduction of `CountdownWidgetContent`'s seven
- * layouts. It reuses the exact same content-hierarchy decision
+ * Deliberately **not** a pixel-identical reproduction of `CountdownWidgetContent`'s per-style,
+ * per-size layouts. It reuses the exact same content-hierarchy decision
  * ([com.countflow.widget.glance.resolveHeadline]) and the exact same resolved [WidgetRenderModel]
  * a real render would use — nothing about *what* to show is duplicated or re-derived — but *how*
  * it is drawn is a single, simplified card that varies alignment, background, corner radius, and
- * whether progress is a ring or a bar by style, rather than seven fully independent
- * compositions. Close enough to make style/toggle/color choices meaningful before saving; not a
- * substitute for `docs/SCREENSHOT_GUIDE.md`'s real on-device captures of the actual widget.
+ * whether progress is a ring or a bar by style, rather than 21 fully independent compositions.
+ * Close enough to make style/toggle/color choices meaningful before saving; not a substitute for
+ * `docs/RESPONSIVE_WIDGET_REVIEW.md`'s real on-device captures of the actual widget.
+ *
+ * [sizeClass] (Session 10) shapes the card to the widget's real current footprint — read from
+ * `AppWidgetManager`'s own options for the placed widget being reconfigured
+ * (`WidgetConfigurationActivity.onCreate`), defaulting to [WidgetSizeClass.STANDARD] for a fresh
+ * placement or a direct test launch with no real host behind it yet. It also hides exactly the
+ * fields the real [WidgetSizeClass.COMPACT] layouts hide (`docs/WIDGET_SIZE_MATRIX.md`) — showing
+ * a percentage or secondary line here that the real 2×1 widget would never draw would make this
+ * preview actively misleading rather than merely approximate.
  */
 @Composable
-internal fun WidgetPreviewCard(model: WidgetRenderModel, modifier: Modifier = Modifier) {
+internal fun WidgetPreviewCard(model: WidgetRenderModel, sizeClass: WidgetSizeClass, modifier: Modifier = Modifier) {
     val resources = LocalResources.current
     val theme = model.theme
     val labelText = CountdownLabelFormatter.format(resources, model.label)
     val headline = resolveHeadline(model, labelText, resources)
+    val isCompact = sizeClass == WidgetSizeClass.COMPACT
 
     val background = theme.backgroundColorArgb?.let { Color(it) } ?: MaterialTheme.colorScheme.surfaceVariant
     val accent = theme.accentColorArgb?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
@@ -57,13 +67,13 @@ internal fun WidgetPreviewCard(model: WidgetRenderModel, modifier: Modifier = Mo
     }
     val statusColor = if (model.isCompleted || model.isExpired) onSurfaceMuted else accent
     val cornerRadius = (theme.cornerRadiusDp ?: 16).dp
-    val isEditorial = theme.style == WidgetStyle.MODERN
+    val isEditorial = theme.style == WidgetStyle.MODERN && !isCompact
 
     Box(
         modifier = modifier
-            .aspectRatio(1f)
+            .aspectRatio(sizeClass.previewAspectRatio())
             .background(background, RoundedCornerShape(cornerRadius))
-            .padding(16.dp),
+            .padding(if (isCompact) 10.dp else 16.dp),
         contentAlignment = if (isEditorial) Alignment.TopStart else Alignment.Center,
     ) {
         Column(
@@ -85,7 +95,7 @@ internal fun WidgetPreviewCard(model: WidgetRenderModel, modifier: Modifier = Mo
                 }
             }
 
-            if (theme.style == WidgetStyle.PROGRESS && model.progress.isVisible && headline.isNumeric) {
+            if (!isCompact && theme.style == WidgetStyle.PROGRESS && model.progress.isVisible && headline.isNumeric) {
                 Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         progress = { model.progress.fraction },
@@ -100,30 +110,50 @@ internal fun WidgetPreviewCard(model: WidgetRenderModel, modifier: Modifier = Mo
                 Text(
                     text = headline.primary,
                     color = statusColor,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
                     maxLines = 1,
                     textAlign = if (isEditorial) TextAlign.Start else TextAlign.Center,
                 )
             }
 
             headline.unit?.let {
-                Text(it, color = onSurfaceMuted, style = MaterialTheme.typography.labelMedium)
+                Text(it, color = onSurfaceMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
             }
-            headline.secondary?.let {
-                Text(it, color = onSurfaceMuted, style = MaterialTheme.typography.labelMedium)
-            }
+            // COMPACT never draws a secondary line, a progress indicator, or a percentage — see
+            // docs/WIDGET_SIZE_MATRIX.md. Showing one here would preview a widget that cannot
+            // actually be placed.
+            if (!isCompact) {
+                headline.secondary?.let {
+                    Text(it, color = onSurfaceMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                }
 
-            if (model.progress.isVisible && theme.style != WidgetStyle.PROGRESS) {
-                LinearProgressIndicator(
-                    progress = { model.progress.fraction },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    color = statusColor,
-                    trackColor = onSurfaceMuted.copy(alpha = 0.3f),
-                )
-                if (model.showPercentageText) {
-                    Text(model.progress.percentText, color = onSurfaceMuted, style = MaterialTheme.typography.labelSmall)
+                if (model.progress.isVisible && theme.style != WidgetStyle.PROGRESS) {
+                    LinearProgressIndicator(
+                        progress = { model.progress.fraction },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        color = statusColor,
+                        trackColor = onSurfaceMuted.copy(alpha = 0.3f),
+                    )
+                    if (model.showPercentageText) {
+                        Text(model.progress.percentText, color = onSurfaceMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
                 }
             }
         }
     }
+}
+
+/**
+ * The card's width:height ratio for [this] size class, from real on-device measurements
+ * (`WidgetSizeClass.kt`'s own doc has the full account) rather than Android's `dp = 70×cells − 30`
+ * formula, which this session confirmed does not match what a real launcher's grid actually
+ * renders at — 2×1 measured 172:104dp, 2×2 measured 172:224dp (taller than wide, not square).
+ * 4×2's width is reasoned, not measured, same as [WIDE_MIN_WIDTH_DP]. `docs/WIDGET_SIZE_MATRIX.md`
+ * documents the same numbers for the real widget; this is the one place they are restated for a
+ * plain-Compose `aspectRatio`, which wants a ratio rather than two dimensions.
+ */
+private fun WidgetSizeClass.previewAspectRatio(): Float = when (this) {
+    WidgetSizeClass.COMPACT -> 172f / 104f
+    WidgetSizeClass.STANDARD -> 172f / 224f
+    WidgetSizeClass.WIDE -> 320f / 224f
 }

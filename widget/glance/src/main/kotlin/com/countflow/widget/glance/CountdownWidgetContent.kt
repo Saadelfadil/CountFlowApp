@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.LocalContext
+import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.background
@@ -48,9 +49,10 @@ import com.countflow.widget.glance.action.actionOpenConfiguration
  *    state. A completed event's headline is "Completed," not a number; a bare day count and its
  *    own label text are often the same fact said twice.
  *
- * From there, [CountdownWidgetStyle] dispatches to one of seven per-style layouts in
- * `CountdownWidgetLayouts.kt` — each a genuinely different composition, not a re-skin of one
- * shared tree, per `docs/WIDGET_DESIGN_GUIDE.md`.
+ * From there, [CountdownWidgetContent] dispatches on both [WidgetStyle] and [WidgetSizeClass] to
+ * one of the per-style-per-size layouts in `CountdownWidgetLayouts.kt` — each a genuinely
+ * different composition, not a re-skin of one shared tree, per `docs/WIDGET_DESIGN_GUIDE.md` and,
+ * for the size dimension specifically, `docs/WIDGET_SIZE_MATRIX.md`.
  */
 @Composable
 internal fun CountdownWidgetContent(model: WidgetRenderModel?) {
@@ -63,6 +65,8 @@ internal fun CountdownWidgetContent(model: WidgetRenderModel?) {
     val colors = resolveColors(model)
     val labelText = CountdownLabelFormatter.format(resources, model.label)
     val headline = resolveHeadline(model, labelText, resources)
+    val size = LocalSize.current
+    val sizeClass = classifyWidgetSize(size.width.value, size.height.value)
 
     val cardModifier = GlanceModifier
         .fillMaxSize()
@@ -70,17 +74,39 @@ internal fun CountdownWidgetContent(model: WidgetRenderModel?) {
         .widgetCornerRadius(model.theme.cornerRadiusDp)
         // One description for the whole tappable card, not several separate text nodes — the
         // same reasoning `EventCard` applies with `clearAndSetSemantics` in the app's own list.
-        .semantics { contentDescription = widgetContentDescription(model, headline) }
+        .semantics { contentDescription = widgetContentDescription(model, headline, sizeClass) }
         .clickable(actionOpenApp())
 
-    when (model.theme.style) {
-        WidgetStyle.MINIMAL -> MinimalLayout(model, headline, colors, cardModifier)
-        WidgetStyle.MATERIAL -> MaterialLayout(model, headline, colors, cardModifier)
-        WidgetStyle.PROGRESS -> ProgressLayout(model, headline, colors, cardModifier)
-        WidgetStyle.OLED -> OledLayout(model, headline, colors, cardModifier)
-        WidgetStyle.GLASS -> GlassLayout(model, headline, colors, cardModifier)
-        WidgetStyle.ROUNDED -> RoundedLayout(model, headline, colors, cardModifier)
-        WidgetStyle.MODERN -> ModernLayout(model, headline, colors, cardModifier)
+    when (sizeClass) {
+        WidgetSizeClass.COMPACT -> when (model.theme.style) {
+            WidgetStyle.MINIMAL -> MinimalLayoutCompact(model, headline, colors, cardModifier)
+            WidgetStyle.MATERIAL -> MaterialLayoutCompact(model, headline, colors, cardModifier)
+            WidgetStyle.PROGRESS -> ProgressLayoutCompact(model, headline, colors, cardModifier)
+            WidgetStyle.OLED -> OledLayoutCompact(model, headline, colors, cardModifier)
+            WidgetStyle.GLASS -> GlassLayoutCompact(model, headline, colors, cardModifier)
+            WidgetStyle.ROUNDED -> RoundedLayoutCompact(model, headline, colors, cardModifier)
+            WidgetStyle.MODERN -> ModernLayoutCompact(model, headline, colors, cardModifier)
+        }
+
+        WidgetSizeClass.STANDARD -> when (model.theme.style) {
+            WidgetStyle.MINIMAL -> MinimalLayout(model, headline, colors, cardModifier)
+            WidgetStyle.MATERIAL -> MaterialLayout(model, headline, colors, cardModifier)
+            WidgetStyle.PROGRESS -> ProgressLayout(model, headline, colors, cardModifier)
+            WidgetStyle.OLED -> OledLayout(model, headline, colors, cardModifier)
+            WidgetStyle.GLASS -> GlassLayout(model, headline, colors, cardModifier)
+            WidgetStyle.ROUNDED -> RoundedLayout(model, headline, colors, cardModifier)
+            WidgetStyle.MODERN -> ModernLayout(model, headline, colors, cardModifier)
+        }
+
+        WidgetSizeClass.WIDE -> when (model.theme.style) {
+            WidgetStyle.MINIMAL -> MinimalLayoutWide(model, headline, colors, cardModifier)
+            WidgetStyle.MATERIAL -> MaterialLayoutWide(model, headline, colors, cardModifier)
+            WidgetStyle.PROGRESS -> ProgressLayoutWide(model, headline, colors, cardModifier)
+            WidgetStyle.OLED -> OledLayoutWide(model, headline, colors, cardModifier)
+            WidgetStyle.GLASS -> GlassLayoutWide(model, headline, colors, cardModifier)
+            WidgetStyle.ROUNDED -> RoundedLayoutWide(model, headline, colors, cardModifier)
+            WidgetStyle.MODERN -> ModernLayoutWide(model, headline, colors, cardModifier)
+        }
     }
 }
 
@@ -207,20 +233,31 @@ internal fun resolveHeadline(
 
 /**
  * One sentence a screen reader can say once for the whole card, built from exactly what
- * [headline] and [model] say is actually being shown.
+ * [headline] and [model] say is actually being shown **at [sizeClass]**.
+ *
+ * [WidgetSizeClass.COMPACT] never draws [WidgetHeadline.secondary] or a percentage readout (see
+ * `docs/WIDGET_SIZE_MATRIX.md`) — a screen reader must not announce a fact the layout hid for
+ * space, so both are only appended outside of [WidgetSizeClass.COMPACT]. A user who cannot see
+ * the percentage on screen should not hear it read aloud either.
  */
-private fun widgetContentDescription(model: WidgetRenderModel, headline: WidgetHeadline): String = buildString {
+private fun widgetContentDescription(
+    model: WidgetRenderModel,
+    headline: WidgetHeadline,
+    sizeClass: WidgetSizeClass,
+): String = buildString {
     if (headline.showIdentity && model.showTitle) {
         append(model.title)
         append(". ")
     }
     append(headline.primary)
     headline.unit?.let { append(' '); append(it) }
-    headline.secondary?.let { append(". "); append(it) }
-    if (model.showPercentageText) {
-        append(". ")
-        append(model.progress.percentText)
-        append(" complete")
+    if (sizeClass != WidgetSizeClass.COMPACT) {
+        headline.secondary?.let { append(". "); append(it) }
+        if (model.showPercentageText) {
+            append(". ")
+            append(model.progress.percentText)
+            append(" complete")
+        }
     }
 }
 

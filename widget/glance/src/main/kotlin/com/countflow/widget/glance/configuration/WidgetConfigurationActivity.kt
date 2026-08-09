@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +51,8 @@ import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.ProgressStyle
 import com.countflow.core.domain.model.WidgetStyle
 import com.countflow.widget.glance.CountdownGlanceWidget
+import com.countflow.widget.glance.WidgetSizeClass
+import com.countflow.widget.glance.classifyWidgetSize
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
@@ -92,6 +96,8 @@ class WidgetConfigurationActivity : ComponentActivity() {
             return
         }
 
+        val sizeClass = currentWidgetSizeClass()
+
         setContent {
             CountFlowTheme {
                 val viewModel: WidgetConfigurationViewModel = hiltViewModel()
@@ -102,6 +108,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
 
                 WidgetConfigurationContent(
                     uiState = uiState,
+                    sizeClass = sizeClass,
                     onEventSelected = viewModel::onEventSelected,
                     onChangeEvent = viewModel::onChangeEvent,
                     onWidgetStyleChange = viewModel::onWidgetStyleChange,
@@ -116,6 +123,23 @@ class WidgetConfigurationActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /**
+     * The real footprint this specific placed widget currently occupies, read directly from the
+     * host via `AppWidgetManager` — not assumed, not defaulted to 2×2 and hoped correct (BUG-R009
+     * happened exactly that way: an assumed size silently disagreeing with a real host). Falls
+     * back to [WidgetSizeClass.STANDARD] only when the host has not reported real dimensions yet
+     * — a fresh placement mid-configuration, or this activity launched directly for testing with
+     * no real `AppWidgetHost` behind [appWidgetId] at all, the same case
+     * [onEventBound]'s `runCatching` already has to tolerate.
+     */
+    private fun currentWidgetSizeClass(): WidgetSizeClass {
+        val options = AppWidgetManager.getInstance(this)?.getAppWidgetOptions(appWidgetId)
+        val widthDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0) ?: 0
+        val heightDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) ?: 0
+        if (widthDp <= 0 || heightDp <= 0) return WidgetSizeClass.STANDARD
+        return classifyWidgetSize(widthDp.toFloat(), heightDp.toFloat())
     }
 
     /**
@@ -151,6 +175,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
 @Composable
 private fun WidgetConfigurationContent(
     uiState: WidgetConfigurationUiState,
+    sizeClass: WidgetSizeClass,
     onEventSelected: (EventId) -> Unit,
     onChangeEvent: () -> Unit,
     onWidgetStyleChange: (WidgetStyle) -> Unit,
@@ -202,6 +227,7 @@ private fun WidgetConfigurationContent(
 
             uiState.isCustomizing -> CustomizeStep(
                 uiState = uiState,
+                sizeClass = sizeClass,
                 onWidgetStyleChange = onWidgetStyleChange,
                 onProgressStyleChange = onProgressStyleChange,
                 onShowTitleChange = onShowTitleChange,
@@ -248,6 +274,7 @@ private fun EventPickerRow(event: Event, isCurrent: Boolean, onClick: () -> Unit
 @Composable
 private fun CustomizeStep(
     uiState: WidgetConfigurationUiState,
+    sizeClass: WidgetSizeClass,
     onWidgetStyleChange: (WidgetStyle) -> Unit,
     onProgressStyleChange: (ProgressStyle) -> Unit,
     onShowTitleChange: (Boolean) -> Unit,
@@ -264,8 +291,24 @@ private fun CustomizeStep(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         uiState.previewModel?.let { model ->
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                WidgetPreviewCard(model = model, modifier = Modifier.padding(vertical = 8.dp))
+            // Capped to PREVIEW_MAX_WIDTH rather than the old fillMaxWidth() square, which ran
+            // ~340dp tall on a typical phone and pushed every control below it near or past the
+            // fold — confirmed on-device (docs/RESPONSIVE_WIDGET_REVIEW.md) before settling on
+            // this width. Sized by sizeClass, not always square, so the shape itself previews
+            // which footprint is actually placed — a 2×1 widget should look like a short wide
+            // bar here too, not a shrunken square.
+            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                WidgetPreviewCard(
+                    model = model,
+                    sizeClass = sizeClass,
+                    modifier = Modifier.width(PREVIEW_MAX_WIDTH).padding(vertical = 8.dp),
+                )
+                Text(
+                    text = "Preview shown at this widget's current size (${sizeClass.displayName()}). Resize it from the home screen to change size.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
 
@@ -339,3 +382,19 @@ private fun ProgressStyle.displayName(): String = when (this) {
     ProgressStyle.LINEAR -> "Bar"
     ProgressStyle.CIRCULAR -> "Ring"
 }
+
+private fun WidgetSizeClass.displayName(): String = when (this) {
+    WidgetSizeClass.COMPACT -> "2×1"
+    WidgetSizeClass.STANDARD -> "2×2"
+    WidgetSizeClass.WIDE -> "4×2"
+}
+
+/**
+ * Down from the old unbounded `fillMaxWidth()` square (~340dp tall on a typical phone) to a fixed
+ * width every size class's preview scales its own aspect ratio against — about a 40% reduction in
+ * the [WidgetSizeClass.STANDARD] case, more for [WidgetSizeClass.COMPACT] and
+ * [WidgetSizeClass.WIDE] since both are shorter than they are wide. See
+ * `docs/RESPONSIVE_WIDGET_REVIEW.md` for the on-device confirmation this still reads clearly at
+ * this size.
+ */
+private val PREVIEW_MAX_WIDTH = 200.dp

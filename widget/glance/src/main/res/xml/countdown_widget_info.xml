@@ -1,14 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  One fixed size for this milestone — see CountdownGlanceWidget's doc comment for why. minWidth
-  and minHeight follow Android's documented cell-size formula, dp = 70*cells - 30, so the
-  declared footprint and targetCellWidth/Height actually agree: 2 cells = 70*2-30 = 110dp on
-  both axes. minWidth was originally 180dp — the 3-cell value under that same formula — which a
-  real launcher (Session 8, Pixel Launcher on a local emulator, the first session able to reach
-  the actual widget picker) reported as a 3x2 footprint despite targetCellWidth="2" saying
-  otherwise, contradicting every session's "2x2" documentation up to that point. See
-  KNOWN_ISSUES.md BUG-R009. A dimens-resource-based sizing system that matches the canonical-layout
-  breakpoints properly is still Milestone 5's job.
+  Three supported footprints as of Session 10 (Milestone 5B) — 2x1, 2x2 (the default placement
+  size and Session 9's design target), and 4x2 — all resizable into from one another via drag, not
+  three separate widget declarations. Every dp value here follows Android's documented cell-size
+  formula, dp = 70*cells - 30 (the same formula BUG-R009 exists to remind every session to check a
+  size value against, rather than trust a comment): 1 cell = 40dp, 2 cells = 110dp, 4 cells =
+  250dp.
+
+  minWidth/minHeight are the smallest footprint's dimensions on each axis (2x1's width, 2x1's
+  height) — 110dp and 40dp respectively, NOT 2x2's height reused for both, which would silently
+  forbid ever resizing down to 2x1 despite the resizeMode below claiming to allow it.
+  maxResizeWidth/maxResizeHeight (API 31+, this app's minSdk) are the largest footprint's
+  dimensions on each axis (4x2's width, and 2x2/4x2's shared height) — 250dp and 110dp.
+  targetCellWidth/Height stay at 2x2: the size a launcher places the widget at by default, before
+  any drag-resize, unchanged from Session 9 so the picker preview and initial placement experience
+  keep showing the size that design work was built around.
+
+  resizeMode allows both axes so a user can actually reach all three declared footprints by
+  dragging resize handles on the home screen — CountdownGlanceWidget's sizeMode=SizeMode.Exact
+  (D-053) is what lets Glance report the widget's real current size through LocalSize as that drag
+  happens, rather than only ever rendering for one fixed size.
 
   widgetFeatures combines two things that sound contradictory but are not: configuration_optional
   means a launcher MAY place this widget without running configuration first, so the renderer
@@ -21,18 +32,21 @@
   spinner — see that file's own comment for what this does and does not fix (KNOWN_ISSUES.md
   BUG-011). previewLayout (API 31+, Session 9) is a plain Android layout the launcher inflates
   directly for the widget picker — Glance cannot render into the picker itself, so this is a
-  deliberately realistic static approximation of the Material style, not a live render.
+  deliberately realistic static approximation of the Material style at the 2x2 default size, not a
+  live render.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/countdown_widget_description"
     android:initialLayout="@layout/widget_initial_layout"
     android:previewLayout="@layout/widget_preview"
     android:minWidth="110dp"
-    android:minHeight="110dp"
+    android:minHeight="40dp"
+    android:maxResizeWidth="250dp"
+    android:maxResizeHeight="110dp"
     android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
-    android:resizeMode="none"
+    android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen|keyguard"
     android:widgetFeatures="reconfigurable|configuration_optional"
     android:configure="com.countflow.widget.glance.configuration.WidgetConfigurationActivity" />
