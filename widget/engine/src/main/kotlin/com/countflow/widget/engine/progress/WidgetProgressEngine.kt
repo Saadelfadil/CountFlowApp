@@ -13,7 +13,7 @@ import com.countflow.widget.engine.model.WidgetProgress
  * An `object`: [calculate] is a pure function of a [CountdownResult] and a [ProgressStyle], with
  * nothing to inject.
  */
-object WidgetProgressEngine {
+internal object WidgetProgressEngine {
 
     /**
      * Computes the progress state for a widget whose countdown is [countdown], styled as

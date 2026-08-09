@@ -25,7 +25,7 @@ import kotlin.math.absoluteValue
  * repository, and nothing to inject — [com.countflow.widget.engine.provider.WidgetRenderModelProvider]
  * owns the orchestration and calls this once it has everything in hand.
  */
-object WidgetRenderMapper {
+internal object WidgetRenderMapper {
 
     /**
      * @param event the event the widget shows.

@@ -45,6 +45,20 @@ class WidgetThemeResolverTest {
     }
 
     @Test
+    fun `glass stays opaque enough for text to stay legible over a light wallpaper`() {
+        // GLASS is the one style that composites over content this app does not control. Below
+        // MIN_ALPHA_FOR_RELIABLE_CONTRAST, a white wallpaper behind the widget pulls the
+        // effective background light enough that the white text drawn on top of it (see
+        // CountdownWidgetContent's ForcedBackgroundPalette) drops below WCAG AA contrast — found
+        // during Session 7's UX review, not by a failing test, which is exactly why this exists
+        // now.
+        val theme = WidgetThemeResolver.resolve(WidgetStyle.GLASS, AccentColor.Dynamic)
+        val alpha = (theme.backgroundColorArgb!! ushr 24) and 0xFF
+
+        assertThat(alpha).isAtLeast(WidgetThemeResolver.MIN_ALPHA_FOR_RELIABLE_CONTRAST)
+    }
+
+    @Test
     fun `styles with no forced background stay dynamic`() {
         listOf(WidgetStyle.MINIMAL, WidgetStyle.MATERIAL, WidgetStyle.PROGRESS, WidgetStyle.ROUNDED, WidgetStyle.MODERN)
             .forEach { style ->

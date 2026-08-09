@@ -16,7 +16,7 @@ import com.countflow.widget.engine.model.WidgetTheme
  * A pure function of its two inputs, so it is an `object` rather than an injectable class —
  * there is no per-instance state a test would need to fake around.
  */
-object WidgetThemeResolver {
+internal object WidgetThemeResolver {
 
     /**
      * Resolves the theme for [style] with [accentColor] applied.
@@ -100,5 +100,15 @@ object WidgetThemeResolver {
     private const val CORNER_RADIUS_ROUNDED = 28
 
     private const val TRUE_BLACK = 0xFF000000.toInt()
-    private const val TRANSLUCENT_DARK_SURFACE = 0x99101418.toInt()
+
+    // Alpha chosen for a worst case the design can't see coming: unlike every other style, GLASS
+    // renders over whatever wallpaper is behind the widget, not a color this app controls. At the
+    // 0x99 (60%) alpha this constant originally shipped with, a fully white wallpaper composites
+    // to roughly mid-gray — measured at ~4.9:1 contrast against the white text
+    // ForcedBackgroundPalette.onSurface draws, only barely above WCAG AA's 4.5:1 floor for normal
+    // text. 0xCC (80%) composites the same worst case to a near-black gray instead, comfortably
+    // above 10:1. MIN_ALPHA_FOR_RELIABLE_CONTRAST documents the floor this reasoning depends on,
+    // so a future change to this constant doesn't silently drift back below it.
+    private const val TRANSLUCENT_DARK_SURFACE = 0xCC101418.toInt()
+    const val MIN_ALPHA_FOR_RELIABLE_CONTRAST = 0xCC
 }
