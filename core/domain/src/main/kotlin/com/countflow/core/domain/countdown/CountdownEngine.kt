@@ -106,6 +106,88 @@ class CountdownEngine @Inject constructor(
         )
     }
 
+    /**
+     * The next instant at which [countdownAt]'s result for [event] would differ from what it is
+     * right now — the earliest moment a widget showing this event actually needs to redraw, or
+     * `null` once no future redraw could ever change what it shows.
+     *
+     * Built for the background refresh scheduler (DECISIONS.md D-062): rather than a second,
+     * hand-derived copy of "when does each label change" — which risks drifting from
+     * [resolveLabel]/[resolveStatus], the one place that decision is actually made — this
+     * collects candidate instants where [label] or [status] could possibly change, then asks
+     * [countdownAt] itself, at each one in order, whether anything actually did. The candidates
+     * are a deliberate superset: an unnecessary one just gets checked and discarded, but a
+     * missing one would mean silently returning a refresh time later than the real transition,
+     * which is the failure mode that matters here.
+     *
+     * The tempting shortcut — "the next local midnight is always the next transition" — is
+     * wrong, and finding out why is the reason this isn't just one candidate. Most day-count
+     * labels (`Tomorrow`, `InDays`) really do change at every local midnight. [NextWeek] does
+     * not: its window is defined relative to *today* (`fallsInNextWeek`'s `thisWeekStart`), which
+     * only itself moves once a real week, so a target sitting inside "next calendar week" can
+     * keep the identical `NextWeek` label across several consecutive midnights while
+     * [CountdownResult.calendarDaysRemaining] is still visibly decreasing underneath it — the
+     * label and the day count are not the same signal. Checking only the very next midnight would
+     * silently return a refresh time that changes nothing, and this project has already paid for
+     * that exact mistake once with a hand-rederived rule drifting from its source of truth
+     * (D-034's note on `showsMeaningfulDayCount`). So the near-term horizon walks every midnight
+     * up to `nearFutureDays + 14` days out — 14 being generous slack for how far a `NextWeek`
+     * window can sit from "today" in the worst case — rather than assuming any single one of them
+     * is *the* answer. Beyond that horizon there is no plateau to walk through: every day-count
+     * label past it changes every single day, so the horizon's own boundary is always itself a
+     * valid, correctly-detected candidate for a still-distant event.
+     *
+     * Two more candidates catch the transitions no amount of midnight-walking would: the target
+     * instant itself, where [isPast] flips for a timed event independent of any midnight (an
+     * event at 23:50 counting down from 23:00 expires eleven minutes from now, not at midnight);
+     * and [CountdownConfig.imminentThreshold] before the target, for timed events only, where
+     * [CountdownStatus.IMMINENT] begins (skipped for all-day events, which are never imminent,
+     * D-023 — computing a value nothing would ever read).
+     *
+     * Returns `null` immediately for [CountdownStatus.COMPLETED] (only a user action changes
+     * that, never time) and for the terminal [CountdownLabel.Expired] (once daysAgo exceeds
+     * [CountdownConfig.recentPastDays], or the event expired earlier the same day, the label
+     * never changes again). Both match the brief's own framing: perform the one required
+     * transition *into* a terminal state, then stop generating work for it.
+     */
+    fun nextTransitionAt(event: Event, now: Instant, deviceZone: ZoneId): Instant? {
+        val current = countdownAt(event, now, deviceZone)
+        if (current.status == CountdownStatus.COMPLETED) return null
+        if (current.label == CountdownLabel.Expired) return null
+
+        val nowZoned = now.atZone(deviceZone)
+        val today = nowZoned.toLocalDate()
+        val start = event.target.startAt(deviceZone)
+        val targetDate = start.toLocalDate()
+
+        // The plateau only exists on the future side (NextWeek's window), so it's only worth
+        // walking multiple midnights when the target is still ahead of today. A target that is
+        // today or already behind us (an all-day event ending today, or DaysAgo/Yesterday
+        // incrementing daily) only ever needs the very next midnight — walking further there
+        // would just re-check instants nothing about that label's rule depends on.
+        val daysUntilTarget = ChronoUnit.DAYS.between(today, targetDate)
+        val midnightHorizonDays = if (daysUntilTarget > 0) {
+            minOf(daysUntilTarget, (config.nearFutureDays + NEXT_WEEK_PLATEAU_BUFFER_DAYS).toLong()).toInt()
+        } else {
+            1
+        }
+
+        val candidates = buildList {
+            for (offset in 1..midnightHorizonDays) {
+                add(today.plusDays(offset.toLong()).atStartOfDay(deviceZone).toInstant())
+            }
+            add(start.toInstant())
+            if (!event.target.isAllDay) {
+                add(start.toInstant().minus(config.imminentThreshold))
+            }
+        }.filter { it.isAfter(now) }.sorted()
+
+        return candidates.firstOrNull { candidate ->
+            val atCandidate = countdownAt(event, candidate, deviceZone)
+            atCandidate.label != current.label || atCandidate.status != current.status
+        }
+    }
+
     // ---------------------------------------------------------------- status
 
     private fun resolveStatus(
@@ -267,5 +349,14 @@ class CountdownEngine @Inject constructor(
 
     private companion object {
         const val DAYS_PER_WEEK = 7
+
+        /**
+         * Slack added to [CountdownConfig.nearFutureDays] when walking candidate midnights in
+         * [nextTransitionAt]. A [CountdownLabel.NextWeek] window can sit at most a little under
+         * two weeks from "today" in the worst case (today just past `thisWeekStart`, the window
+         * itself seven days wide) — 14 comfortably covers that without needing the exact
+         * day-of-week arithmetic [fallsInNextWeek] already owns duplicated here.
+         */
+        const val NEXT_WEEK_PLATEAU_BUFFER_DAYS = 14
     }
 }

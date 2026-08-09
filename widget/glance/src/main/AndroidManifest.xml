@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      Needed only so WidgetRefreshReceiver's ACTION_BOOT_COMPLETED intent-filter below is
+      actually delivered — a normal (not dangerous) permission, granted automatically at install,
+      no runtime prompt. See docs/WIDGET_REFRESH_ARCHITECTURE.md.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application>
 
         <receiver
@@ -14,6 +21,25 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/countdown_widget_info" />
+        </receiver>
+
+        <!--
+          Registered for exactly the four system broadcasts docs/WIDGET_REFRESH_ARCHITECTURE.md
+          names as genuine recovery scenarios — reboot, timezone change, manual clock change, and
+          a defensive date-rollover check. exported="true" is required: these come from the
+          system, a different UID from ours, the same reason the configuration Activity above is
+          exported. The alarm itself (WidgetRefreshReceiver.ACTION_REFRESH) reaches this same
+          receiver through an explicit PendingIntent and needs no intent-filter of its own.
+        -->
+        <receiver
+            android:name=".refresh.WidgetRefreshReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
         </receiver>
 
         <!--

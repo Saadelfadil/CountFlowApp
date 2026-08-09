@@ -30,6 +30,13 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.navigation.compose)
 
+    // Session 12: the periodic safety net behind the alarm-based refresh scheduler
+    // (docs/WIDGET_REFRESH_ARCHITECTURE.md). Wired through Hilt the same way :app already does,
+    // so WidgetRefreshSafetyNetWorker can take constructor dependencies.
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
+
     debugImplementation(libs.androidx.glance.preview)
     debugImplementation(libs.androidx.glance.appwidget.preview)
 
