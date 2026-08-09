@@ -10,7 +10,69 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. Milestone 4 begins the widget engine.
+Nothing yet. Milestone 5 begins multiple widgets, themes, and sizes.
+
+---
+
+## [0.4.0] — 2026-08-09 — Milestone 4: widget engine
+
+The first widget. `:widget:engine` is now pure Kotlin/JVM.
+
+### Added
+
+**Widget engine (`:widget:engine`, pure Kotlin/JVM)**
+- `WidgetRenderModel` — the entire contract between the engine and the render layer.
+- `WidgetTheme` and `WidgetThemeResolver`, resolving all seven named styles to background,
+  accent, corner radius, and contrast. OLED forces true black regardless of accent.
+- `WidgetProgress` and `WidgetProgressEngine`, computing fraction/percent/percentText once for
+  both the linear bar today and the circular ring Milestone 5 adds.
+- `WidgetRenderMapper`, applying `WidgetBinding.resolveWidgetStyle`/`resolveProgressStyle` on
+  the widget side of the override-else-default precedence rule (D-013).
+- `WidgetRenderModelProvider`, the "load event, load binding, generate model" pipeline —
+  needing only `WidgetBindingRepository`, since `observeBoundWidget` already joins event and
+  binding (built with this consumer in mind back in Milestone 2).
+- `WidgetLifecycleCoordinator` and `WidgetRefreshScheduler` (interface), the seams for widget
+  removal cleanup and for Milestone 8's eventual alarm-based scheduler.
+
+**Widget (`:widget:glance`)**
+- `CountdownGlanceWidget`, one 2×2 size, reaching Hilt through an `EntryPoint` since
+  `GlanceAppWidget` cannot be constructor-injected (LIM-005).
+- `CountdownGlanceWidgetReceiver`, cleaning up bindings in `onDeleted` by delegating to
+  `WidgetLifecycleCoordinator` — the receiver itself carries no logic.
+- `WidgetConfigurationActivity` and `WidgetConfigurationViewModel`: pick an event, bind it,
+  redraw immediately, close. `RESULT_CANCELED` set before any UI shows is the entire mechanism
+  behind "no orphan bindings" — a binding is only ever written in direct response to a
+  selection, so a cancelled configuration has nothing to clean up.
+- `GlanceWidgetRefreshScheduler`, the Milestone 4 implementation of the refresh seam: while the
+  app is alive, redraw every widget when `observeEventsWithWidgets()` emits. Also runs
+  `pruneOrphanedBindings` once at startup against the launcher's live widget ids.
+- Click actions implemented as `ActionCallback`s rather than `actionStartActivity<MainActivity>()`,
+  since `:widget:glance` cannot depend on `:app` without inverting the module graph.
+
+**Domain**
+- `CountdownResult.showsMeaningfulDayCount` and `EventCategory.defaultEmoji` moved from
+  `:feature:events` into `:core:domain`, so the app and the widget can never disagree about
+  either.
+- `AppWidgetId.INVALID`.
+
+**Tests** — 35 new: 30 in `:widget:engine` (plain JUnit, no Robolectric — the module has no
+Android dependency to need it for), 5 in `:widget:glance` using Glance's own unit-test
+framework, which renders a composable against a fabricated `WidgetRenderModel` with no
+repository or Hilt involved. 217 total, 0 failures.
+
+### Fixed
+- `stringResource()`/`pluralStringResource()` replace a Session 4 pattern that manually read
+  `LocalConfiguration.current` as a recomposition signal, which a lint check correctly flagged
+  as insufficient.
+- `WidgetConfigurationActivity.onEventBound` no longer crashes if the widget id cannot resolve
+  to a `GlanceId` after a successful binding write; the redraw is now best-effort and the
+  activity always confirms and closes.
+- Removed an unused `plurals` resource from Session 4 that nothing ever rendered.
+
+### Known gaps
+- No widget has been placed through a real `AppWidgetHost`/launcher flow — the headless test
+  AVD cannot satisfy the system's widget-bind unlock check. See KNOWN_ISSUES.md.
+- Emoji rendering is unverified on real hardware (LIM-006).
 
 ---
 

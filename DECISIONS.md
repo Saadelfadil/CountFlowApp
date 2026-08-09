@@ -561,3 +561,123 @@ counts are reported per module in every session summary, so a count dropping to 
 there.
 
 **Revisit when:** the scaffold modules have code and tests of their own.
+
+
+---
+
+## D-033 — `:widget:engine` becomes pure Kotlin/JVM
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 4
+
+Reverses the Milestone 1 scaffold, which applied `countflow.android.library`.
+
+**Reason.** The same structural argument as D-003. `WidgetRenderModel`, `WidgetThemeResolver`,
+and `WidgetProgressEngine` need nothing an Android SDK provides, and "widgets should only
+render" is best enforced as a compile error rather than a convention someone has to remember.
+The one thing that does need Android — `Context`, `GlanceId`, `AppWidgetManager` — belongs in
+`:widget:glance`, which is exactly the boundary this module exists to draw.
+
+**Tradeoffs.** `:widget:engine` cannot depend on `:core:common`'s dispatcher qualifiers or
+logging facade, the same restriction `:core:domain` already accepts. None of Milestone 4's code
+needed them.
+
+---
+
+## D-034 — Two presentation rules moved from `:feature:events` into `:core:domain`
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 4
+
+`CountdownResult.showsMeaningfulDayCount` and `EventCategory.defaultEmoji`, both written in
+Session 4 as private helpers inside `EventUiMapper`, moved to live beside `CountdownLabel` and
+`EventCategory` respectively.
+
+**Reason.** The widget engine needs the identical answers the app's event list already computes
+— an app row and a widget showing the same event must never disagree about whether "1" next to
+"Tomorrow" is worth drawing, or what emoji a category defaults to. Moving them *before*
+`WidgetRenderMapper` was written, rather than after, meant there was never a moment where two
+independent copies existed to drift apart.
+
+**Alternatives.** Duplicate the logic in `:widget:engine`; introduce a new shared module.
+Duplication was rejected on the same grounds `FakeEventRepository`'s design note gives — two
+approximations of one rule is how a green test suite stops meaning anything. A new module was
+unjustified for two small functions when `:core:domain` already serves both consumers.
+
+**Tradeoffs.** None found. Neither function carries a localisation concern — an emoji is fixed
+Unicode data, and the day-count rule is a decision, not text — so neither conflicts with
+`CountdownLabel`'s own reason for staying out of the domain (D-021).
+
+---
+
+## D-035 — Click targets are `ActionCallback`s, not `actionStartActivity<MainActivity>()`
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 4
+
+**Reason.** `:widget:glance` cannot reference `MainActivity` without depending on `:app`, and
+`:app` depends on `:widget:glance` — the reverse would invert the module graph. An
+`ActionCallback` receives a real `Context` at click time and can ask the `PackageManager` for
+whatever the launcher would open, which also means a future `MainActivity` rename cannot
+silently break the tap target the way a hardcoded `ComponentName` string could have.
+
+**Alternatives.** A `ComponentName` built from a string literal naming the class — works, but
+is a silent, undetectable coupling to a class this module cannot see at compile time.
+
+---
+
+## D-036 — The widget refresh scheduler is a seam, not Milestone 8's strategy
+
+**Date:** 2026-08-09 · **Status:** Accepted (implements the seam proposed in D-008) · **Milestone:** 4
+
+`GlanceWidgetRefreshScheduler` keeps widgets current only while the app process is alive, by
+observing `EventRepository.observeEventsWithWidgets()` — a Room-backed `Flow` that already
+re-emits on any relevant change — and redrawing on each emission. It also runs
+`WidgetLifecycleCoordinator.pruneOrphans()` once at startup.
+
+**Reason.** Building the full alarm-based coalesced scheduler now would be scope creep against
+this milestone's actual goal: proving the engine architecture with one working widget. Because
+Room is always the source of truth (D-002), a widget under this scheme is never *wrong* between
+redraws — only stale while the app is backgrounded — and that staleness window is precisely what
+D-008's Milestone 8 scheduler exists to close.
+
+**Tradeoffs.** No update while the process is dead, and no second-level ticking for the final
+day. Both are explicitly out of scope for this milestone and tracked for Milestone 8.
+
+**Revisit when:** Milestone 8.
+
+---
+
+## D-037 — Widget bindings cannot be excluded from backup at the table level
+
+**Date:** 2026-08-09 · **Status:** Accepted (limitation, mitigated) · **Milestone:** 4
+
+Android's `data-extraction-rules` operate on whole files — a database, a `SharedPreferences`
+file — not on individual tables within one. `widget_bindings` shares `countflow.db` with
+`events` and `reminders`, which must stay backed up, so the table cannot be excluded without
+excluding everything else in the same file.
+
+**Reason for not fixing it structurally.** Splitting bindings into a second Room database would
+make table-level exclusion possible, but is a real schema and migration change, not a manifest
+edit — too large for what this session budgeted.
+
+**Mitigation.** `WidgetLifecycleCoordinator.pruneOrphans()`, run at every app startup, discards
+any binding whose `appWidgetId` the launcher does not currently report live. Since
+`appWidgetId` values are allocated per device, a restored binding can never coincidentally
+match a real id on a new device, so the mitigation is exact, not probabilistic — restored rows
+survive the backup but stop pointing at anything the moment the app first checks.
+
+**Revisit when:** the binding table's write volume or size ever justifies a second database on
+its own merits, independent of this concern.
+
+---
+
+## D-038 — `hasText` in Glance's testing library is always a substring match
+
+**Date:** 2026-08-09 · **Status:** Accepted (documents a verified API detail) · **Milestone:** 4
+
+Verified directly against the `glance-testing` 1.1.1 artifact rather than assumed: `hasText`'s
+second parameter is `ignoreCase`, not `substring` — the function has no exact-match mode of its
+own. `hasTextEqualTo` is the separate, dedicated function for exact matching.
+
+**Reason this is recorded.** A test asserting `hasText("12")` against a widget also showing
+"In 12 days" passes regardless of whether the standalone headline number was ever drawn, because
+both nodes match "12" as a substring. This cost a debugging round trip during this milestone and
+is worth a permanent note so a future test author does not repeat it.

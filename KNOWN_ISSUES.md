@@ -10,7 +10,7 @@ must design around · `WARN-nnn` accepted warnings
 
 ## Open bugs
 
-None. No runtime defects are known as of Session 4.
+None. No runtime defects are known as of Session 5.
 
 ---
 
@@ -153,6 +153,37 @@ should not sprout a swipe affordance that the widget cannot have. Scheduled for 
 
 ---
 
+### TD-010 — No widget has been placed through a real launcher flow
+**Severity:** Medium · **Opened:** Session 5
+
+Every other piece of Milestone 4 was verified on a real emulator: the configuration Activity's
+event picker, the no-orphan-bindings cancel path, the confirm path writing the correct Room row,
+and the startup pruning mechanism discarding a binding not backed by a live widget. What was
+**not** verified is a widget placed through the actual `AppWidgetHost`/launcher flow — dragged
+onto a real home screen and rendering real `RemoteViews` there.
+
+**Why.** `adb shell appwidget grantbind` — the standard scriptable path for testing widget
+binding without full launcher UI automation — failed on the headless (`-no-window`) test AVD
+with `IllegalStateException: User -2 must be unlocked for widgets to be available`, confirmed by
+process/PID to originate from the shell command binary itself, not from CountFlow. A second
+attempt hung rather than erring. This reads as an environment limitation of headless emulation,
+not a defect in the app: the underlying code path (`CountdownGlanceWidget.provideGlance`,
+`WidgetRenderModelProvider`, `CountdownWidgetContent`) is exercised end-to-end by
+`CountdownWidgetContentTest` using Glance's own unit-test framework, which does not depend on a
+real widget host.
+
+**What remains unverified as a result.** Real `RemoteViews` rendering on an actual home screen
+surface; the system's genuine `ACTION_APPWIDGET_DELETED` broadcast reaching
+`CountdownGlanceWidgetReceiver.onDeleted` (a protected broadcast the shell cannot send directly,
+so this was only exercised via unit test); and the widget picker correctly listing CountFlow's
+provider.
+
+**Resolution path.** Retry on a GUI-mode emulator (not `-no-window`) or a physical device at the
+start of Milestone 5, before more widget styles are built on top of an unconfirmed rendering
+path.
+
+---
+
 ### TD-009 — The date picker converts through UTC
 **Severity:** Low · **Opened:** Session 4
 
@@ -246,6 +277,21 @@ for `Dispatchers.setMain` in the ViewModel tests.
 The first `EventsViewModel` debounced the whole input set, so changing the sort order while a
 search was active waited 250 ms, and the search field itself lagged a keystroke behind. Fixed by
 splitting the raw query and the list options into separate flows (D-031).
+
+### BUG-R005 — Configuration crashed if the widget id could not resolve to a GlanceId *(found and fixed Session 5)*
+
+`WidgetConfigurationActivity.onEventBound()` called `GlanceAppWidgetManager.getGlanceIdBy(appWidgetId)`
+unconditionally to force an immediate redraw after a successful binding write. When the id did
+not correspond to a real, host-registered widget — as happened during device testing, and could
+plausibly happen in production if a widget were removed in the narrow window between the binding
+write and the redraw — this threw and crashed the activity, stranding an already-successful
+write instead of confirming and closing.
+
+Found while device-testing the confirm path: the activity appeared to close cleanly, but the
+database showed no binding row, and the crash log revealed why. Fixed by wrapping the redraw in
+`runCatching` and moving `finish()` outside it — the write already succeeded by the time this
+code runs, so `RESULT_OK` and closing must not depend on whether the immediate redraw succeeds.
+A missed redraw is recovered by `GlanceWidgetRefreshScheduler`'s live observation shortly after.
 
 ### BUG-R001 — All-day events read as "starting soon" all day *(found and fixed Session 3)*
 

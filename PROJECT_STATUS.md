@@ -6,19 +6,22 @@ CountFlow is a premium Android countdown widget app. The app itself is lightweig
 are the product. Users create countdown events and display them as home-screen widgets, with
 Android 16 lockscreen and Always-On Display as later targets.
 
+Read `AI_CONTEXT.md` first if you are an AI assistant picking this project up cold — it is the
+single-file orientation this document map assumes you do not yet have.
+
 ---
 
 ## At a glance
 
 | | |
 |---|---|
-| **Current milestone** | 3 of 9 complete |
-| **Last session** | Session 4 — 2026-08-08 |
+| **Current milestone** | 4 of 9 complete |
+| **Last session** | Session 5 — 2026-08-09 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 10 accepted warnings |
-| **Tests** | 179 passing, 0 failing. `:core:domain` 99.5% line coverage, gated at 95% |
-| **Runtime** | ✅ API 36 emulator, Session 4: 14 end-to-end checks across create, validate, search, filter, edit |
-| **Overall progress** | ~36% |
+| **Tests** | 217 passing, 0 failing. `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ API 36 emulator, Session 5: config activity's cancel/confirm/prune paths verified against the database; one real crash found and fixed |
+| **Overall progress** | ~46% |
 
 ---
 
@@ -28,6 +31,7 @@ Read in this order when picking the project up cold:
 
 | Document | What it is |
 |---|---|
+| `AI_CONTEXT.md` | Single-file orientation for an AI assistant starting cold. Read this first. |
 | `PROJECT_STATUS.md` | This file. Permanent overview. |
 | `SESSION_SUMMARY.md` | What the most recent session did and what to do next. |
 | `ARCHITECTURE.md` | The authoritative design. Wins over every other document on conflict. |
@@ -78,7 +82,7 @@ Dependencies point downward only. Features never depend on each other.
 :core:designsystem ──► :core:domain          (token-to-text formatting, D-028)
 
 :widget:glance ──► :widget:engine, :core:designsystem, :core:common
-:widget:engine ──► :core:common
+:widget:engine ──► :core:domain              (pure Kotlin/JVM, D-033)
 
 :core:data ──► :core:domain, :core:database, :core:common
 :core:database ──► :core:domain, :core:common
@@ -86,23 +90,25 @@ Dependencies point downward only. Features never depend on each other.
 :core:domain ──► nothing
 ```
 
-`:core:domain` is a pure Kotlin/JVM module, not an Android library. That is deliberate: an
-accidental `import android.*` in the domain layer is a compile error rather than something a
-reviewer has to catch (D-003).
+`:core:domain` and `:widget:engine` are both pure Kotlin/JVM modules, not Android libraries.
+That is deliberate: an accidental `import android.*` in either is a compile error rather than
+something a reviewer has to catch (D-003, D-033).
 
 **Module status**
 
 | Module | State |
 |---|---|
-| `:app` | Application, MainActivity, NavHost |
+| `:app` | Application, MainActivity, NavHost, starts the widget refresh scheduler |
 | `:core:common` | Dispatchers, application scope, logging facade, `Clock` provision |
-| `:core:designsystem` | Theme, typography, shapes, **token-to-text formatting** |
-| `:core:domain` | **Model, countdown engine, validation, repository contracts** |
-| `:core:database` | **Room: 3 entities, 3 DAOs, converters, schema v1** |
-| `:core:data` | **Repository implementations, mappers, DataStore preferences** |
-| `:feature:events` | **Home list, create/edit form, two ViewModels, UI mapper** |
+| `:core:designsystem` | Theme, typography, shapes, token-to-text formatting |
+| `:core:domain` | Model, countdown engine, validation, repository contracts |
+| `:core:database` | Room: 3 entities, 3 DAOs, converters, schema v1 |
+| `:core:data` | Repository implementations, mappers, DataStore preferences |
+| `:feature:events` | Home list, create/edit form, two ViewModels, UI mapper |
+| `:widget:engine` | **Render model, theme resolver, progress engine, mapper, provider, lifecycle coordinator** |
+| `:widget:glance` | **First widget, configuration activity, refresh scheduler** |
 | `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
-| `:core:notifications` `:core:analytics` `:core:billing` `:widget:engine` `:widget:glance` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
+| `:core:notifications` `:core:analytics` `:core:billing` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
 
 ---
 
@@ -119,12 +125,18 @@ reviewer has to catch (D-003).
   against real SQLite rather than assumed.
 - **Event CRUD works end to end**: create with validation, list, realtime search, category
   filter, four sort orders, and edit. Driven on a device, not just unit-tested.
+- **A countdown widget exists.** One 2×2 size. Placing it through configuration writes the
+  correct binding; cancelling writes nothing (verified against the database, not assumed); the
+  widget redraws while the app is alive when its event changes.
 
 ## What does not exist yet
 
-No widgets, no notifications, no settings, no billing. Within the events feature: no delete or
-archive gesture (TD-008), no accent-colour picker, and no live widget preview — the last two wait
-for the widget renderer they would preview. Several UI strings are not localised (TD-007).
+No notifications, no settings, no billing. Within the events feature: no delete or archive
+gesture (TD-008), no accent-colour picker, no live widget preview. Within widgets: no widget has
+been placed through a genuine `AppWidgetHost`/launcher flow (TD-010 — the headless test
+environment could not satisfy the system's bind-permission check), only one size and no theme
+differentiation beyond colour, and no D-008 alarm-based refresh. Several UI strings are not
+localised (TD-007).
 
 ## Where the important logic lives
 
@@ -133,32 +145,35 @@ for the widget renderer they would preview. Several UI strings are not localised
 | How is time until an event computed? | `core/domain/…/countdown/CountdownEngine.kt` |
 | Why is a day count not a duration division? | Same file, plus `CountdownEngineCalendarTest` |
 | How do all-day and timed events differ? | `core/domain/…/model/EventTarget.kt` |
-| What does the widget display? | `CountdownResult.calendarDaysRemaining` |
+| What does the widget display? | `widget/engine/…/model/WidgetRenderModel.kt` |
 | Where are label thresholds set? | `core/domain/…/countdown/CountdownConfig.kt` |
 | What is the schema? | `core/database/schemas/…/1.json` |
 | What may be saved? | `core/domain/…/validation/EventValidator.kt` |
 | How does a token become text? | `core/designsystem/…/format/CountdownLabelFormatter.kt` |
 | What does Compose actually consume? | `feature/events/…/model/EventCardUiModel.kt` |
+| How does event data become a widget? | `widget/engine/…/provider/WidgetRenderModelProvider.kt` |
+| Why does a widget style differ per binding? | `widget/engine/…/mapper/WidgetRenderMapper.kt` |
+| How does "no orphan bindings" actually work? | `widget/glance/…/configuration/WidgetConfigurationActivity.kt` |
 
 ---
 
 ## Progress
 
 ```
-Overall                      36%
+Overall                      46%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
 Domain & countdown engine   100%   Milestone 2
 Database & persistence      100%   Milestone 2
 Event CRUD / UI              85%   Milestone 3 (gestures and colour picker outstanding)
-Widget engine                 0%   Milestone 4
+Widget engine                90%   Milestone 4 (real launcher placement unverified — TD-010)
 Widget themes & sizes         0%   Milestone 5
 Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
 Optimization & a11y           0%   Milestone 8
 Play Store                    0%   Milestone 9
-Testing                      70%   domain, DAO, repository, ViewModel; no UI tests yet
+Testing                      75%   domain, DAO, repository, ViewModel, widget engine, Glance UI
 ```
 
 ---
@@ -186,5 +201,8 @@ Verified working on this machine as of Session 2:
   `build-tools;37.0.0` (both installed during Session 2), plus platforms 35, 36, 36.1
 - Emulator AVD `Pixel_9`, API 36, arm64
 - `local.properties` holds `sdk.dir` and is git-ignored
+
+**Headless emulation (`-no-window`) cannot test real widget placement** — confirmed in Session 5;
+see KNOWN_ISSUES.md TD-010. Use a GUI-mode emulator or a physical device for that specific check.
 
 Build: `./gradlew assembleDebug` · Lint: `./gradlew :app:lintDebug` · Tests: `./gradlew test`

@@ -10,7 +10,7 @@ Living document. Update the status column as milestones move.
 | 1 | Project foundation | **Completed** | 2 |
 | 2 | Database, repositories, countdown engine | **Completed** | 3 |
 | 3 | Event CRUD | **Completed** | 4 |
-| 4 | Widget engine | Not Started | — |
+| 4 | Widget engine | **Completed** | 5 |
 | 5 | Multiple widgets | Not Started | — |
 | 6 | Settings | Not Started | — |
 | 7 | Notifications | Not Started | — |
@@ -79,17 +79,37 @@ Archive, complete, and delete exist on the ViewModel but have no UI gesture yet.
 
 ---
 
-## Milestone 4 — Widget engine · Not Started
+## Milestone 4 — Widget engine · Completed (Session 5)
 
-The widget configuration activity (the piece Google's sample has no answer for): correct
-`EXTRA_APPWIDGET_ID` handling, `RESULT_OK` echoing the id, a cancel path that leaves no orphan
-bindings, and `reconfigurable` so a placed widget can be re-pointed at another event.
-Snapshot-free render model per D-002. First Glance widget end to end.
+Built the pipeline the brief specified: Room → repository → countdown engine → widget engine →
+render model → Glance. `:widget:engine` converted from an Android library to pure Kotlin/JVM,
+mirroring D-003 — the same structural guarantee that made `:core:domain` trustworthy now
+applies to what a widget is allowed to know.
 
-**Watch:** LIM-005 (Hilt cannot inject `GlanceAppWidget`), LIM-003 (bitmap budget),
-LIM-006 (emoji rendering — verify on real hardware).
+Delivered: `WidgetRenderModel` (pure Kotlin, zero Android dependency), `WidgetThemeResolver`
+(all seven styles), `WidgetProgressEngine`, `WidgetRenderMapper`, `WidgetRenderModelProvider`,
+`WidgetLifecycleCoordinator`, the first `CountdownGlanceWidget` (2×2, one size), the
+configuration Activity with a verified no-orphan-bindings guarantee, and a Milestone-4-scoped
+refresh scheduler that keeps widgets current while the app is alive.
 
-**Done when:** a widget can be placed, bound to an event, re-pointed, and deleted cleanly.
+35 new tests (30 in `:widget:engine`, plain JUnit; 5 in `:widget:glance`, Glance's own testing
+framework). 217 tests total, 0 failures.
+
+Device testing found and fixed one real crash: the configuration Activity's post-save redraw
+could throw if the widget id didn't resolve to a `GlanceId`, stranding an already-successful
+binding write instead of finishing gracefully.
+
+**Not delivered:** genuine placement through the real `AppWidgetHost`/launcher flow. The
+headless AVD used for testing could not satisfy the system's widget-bind user-unlock check
+(`adb shell appwidget grantbind` failed with `IllegalStateException: User -2 must be unlocked`,
+confirmed to originate from the shell binary itself, not the app). Verified instead by launching
+the configuration Activity directly with controlled widget ids and inspecting the database —
+strong evidence for the actual code this milestone wrote, but not a substitute for one real
+placement on a GUI emulator or physical device. See KNOWN_ISSUES.md.
+
+**Watch resolved:** LIM-005 (bridged via a Hilt `EntryPoint`). **Watch still open:** LIM-003
+(bitmap budget — relevant from Milestone 5's progress ring), LIM-006 (emoji rendering on real
+hardware — still unverified).
 
 ---
 
