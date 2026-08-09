@@ -40,6 +40,10 @@ class CountdownWidgetContentTest {
         label: CountdownLabel = CountdownLabel.InDays(12),
         showDaysValue: Boolean = true,
         showTitle: Boolean = true,
+        progressVisible: Boolean = true,
+        showPercentageText: Boolean = false,
+        backgroundColorArgb: Int? = null,
+        isHighContrast: Boolean = false,
     ) = WidgetRenderModel(
         eventId = EventId("event-1"),
         appWidgetId = AppWidgetId(1),
@@ -49,24 +53,25 @@ class CountdownWidgetContentTest {
         showDaysValue = showDaysValue,
         label = label,
         progress = WidgetProgress(
-            style = ProgressStyle.LINEAR,
+            style = if (progressVisible) ProgressStyle.LINEAR else ProgressStyle.NONE,
             fraction = 0.4f,
             percent = 40,
             percentText = "40%",
-            isVisible = true,
+            isVisible = progressVisible,
         ),
         theme = WidgetTheme(
             style = WidgetStyle.MINIMAL,
             accentColorArgb = 0xFF00695C.toInt(),
-            backgroundColorArgb = null,
+            backgroundColorArgb = backgroundColorArgb,
             cornerRadiusDp = 16,
-            isHighContrast = false,
+            isHighContrast = isHighContrast,
         ),
         target = EventTarget.allDay(LocalDate.of(2026, 6, 27), zone),
         targetZone = zone,
         showTitle = showTitle,
         showEmoji = true,
         showDate = false,
+        showPercentageText = showPercentageText,
         isCompleted = false,
         isExpired = false,
     )
@@ -126,7 +131,39 @@ class CountdownWidgetContentTest {
             setContext(ApplicationProvider.getApplicationContext())
             provideComposable { CountdownWidgetContent(null) }
 
-            onNode(hasText("Tap to set up")).assertExists()
+            onNode(hasText("choose a countdown")).assertExists()
+        }
+    }
+
+    @Test
+    fun `draws the percent text only when the model asks for it`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable { CountdownWidgetContent(model(showPercentageText = true)) }
+
+            onNode(hasTextEqualTo("40%")).assertExists()
+        }
+    }
+
+    @Test
+    fun `omits the percent text when the model does not ask for it`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable { CountdownWidgetContent(model(showPercentageText = false)) }
+
+            onNode(hasTextEqualTo("40%")).assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun `omits the percent text when progress itself is not visible, even if requested`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable {
+                CountdownWidgetContent(model(progressVisible = false, showPercentageText = true))
+            }
+
+            onNode(hasTextEqualTo("40%")).assertDoesNotExist()
         }
     }
 }

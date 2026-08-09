@@ -48,6 +48,10 @@ import java.time.ZoneId
  * @property showTitle whether this widget draws the title.
  * @property showEmoji whether this widget draws the emoji.
  * @property showDate whether this widget draws the target date.
+ * @property showPercentageText whether [progress]'s [WidgetProgress.percentText] should be drawn
+ *   alongside the progress indicator, already conjoined with [WidgetProgress.isVisible] — the
+ *   renderer needs only this one boolean, not a repeat of the visibility check
+ *   ([com.countflow.widget.engine.mapper.WidgetRenderMapper] does the conjoining).
  * @property isCompleted the user marked the event done.
  * @property isExpired the target has passed and the user has not marked it done.
  */
@@ -66,6 +70,7 @@ data class WidgetRenderModel(
     val showTitle: Boolean,
     val showEmoji: Boolean,
     val showDate: Boolean,
+    val showPercentageText: Boolean,
     val isCompleted: Boolean,
     val isExpired: Boolean,
 )

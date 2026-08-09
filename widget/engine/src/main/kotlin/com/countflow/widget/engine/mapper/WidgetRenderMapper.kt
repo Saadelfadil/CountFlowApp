@@ -41,6 +41,7 @@ object WidgetRenderMapper {
         zone: ZoneId,
     ): WidgetRenderModel {
         val progressStyle = binding.resolveProgressStyle(event)
+        val progress = WidgetProgressEngine.calculate(countdown, progressStyle)
 
         return WidgetRenderModel(
             eventId = event.id,
@@ -50,7 +51,7 @@ object WidgetRenderMapper {
             daysRemaining = countdown.calendarDaysRemaining.absoluteValue.toInt(),
             showDaysValue = countdown.showsMeaningfulDayCount,
             label = countdown.label,
-            progress = WidgetProgressEngine.calculate(countdown, progressStyle),
+            progress = progress,
             theme = WidgetThemeResolver.resolve(
                 style = binding.resolveWidgetStyle(event),
                 accentColor = event.accentColor,
@@ -60,6 +61,9 @@ object WidgetRenderMapper {
             showTitle = binding.showTitle,
             showEmoji = binding.showEmoji,
             showDate = binding.showTargetDate,
+            // Conjoined here, not left for the renderer: showing "40%" makes no sense next to a
+            // bar that is not drawn at all, and the renderer should not have to re-derive that.
+            showPercentageText = binding.showPercentage && progress.isVisible,
             isCompleted = event.isCompleted,
             isExpired = countdown.status == CountdownStatus.EXPIRED,
         )

@@ -52,12 +52,14 @@ class WidgetRenderMapperTest {
         showTitle: Boolean = true,
         showEmoji: Boolean = true,
         showDate: Boolean = false,
+        showPercentage: Boolean = false,
     ) = WidgetBinding.inheriting(AppWidgetId(1), eventId, Instant.EPOCH).copy(
         widgetStyleOverride = styleOverride,
         progressStyleOverride = progressOverride,
         showTitle = showTitle,
         showEmoji = showEmoji,
         showTargetDate = showDate,
+        showPercentage = showPercentage,
     )
 
     private fun map(event: Event, binding: WidgetBinding) =
@@ -157,5 +159,28 @@ class WidgetRenderMapperTest {
         val model = map(event(accent = AccentColor.Fixed(0xFF112233.toInt())), binding())
 
         assertThat(model.theme.accentColorArgb).isEqualTo(0xFF112233.toInt())
+    }
+
+    @Test
+    fun `percent text is shown only when the binding asks for it and progress is visible`() {
+        val requested = map(event(), binding(showPercentage = true))
+        val notRequested = map(event(), binding(showPercentage = false))
+
+        assertThat(requested.showPercentageText).isTrue()
+        assertThat(notRequested.showPercentageText).isFalse()
+    }
+
+    @Test
+    fun `percent text is never shown when progress itself is off, even if requested`() {
+        // Asking for the number next to a bar that will not be drawn at all is a state the
+        // renderer should never have to reason about — the mapper conjoins the two so it cannot
+        // arise from real data.
+        val model = map(
+            event(defaultProgress = ProgressStyle.NONE),
+            binding(showPercentage = true),
+        )
+
+        assertThat(model.progress.isVisible).isFalse()
+        assertThat(model.showPercentageText).isFalse()
     }
 }
