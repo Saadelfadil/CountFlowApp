@@ -10,7 +10,7 @@ must design around · `WARN-nnn` accepted warnings
 
 ## Open bugs
 
-None. No runtime defects are known as of Session 5.
+None. No runtime defects are known as of Session 6.
 
 ---
 
@@ -154,33 +154,47 @@ should not sprout a swipe affordance that the widget cannot have. Scheduled for 
 ---
 
 ### TD-010 — No widget has been placed through a real launcher flow
-**Severity:** Medium · **Opened:** Session 5
+**Severity:** Medium (downgraded from the Session 5 finding — see below) · **Opened:** Session 5 · **Progress:** Session 6
 
 Every other piece of Milestone 4 was verified on a real emulator: the configuration Activity's
 event picker, the no-orphan-bindings cancel path, the confirm path writing the correct Room row,
 and the startup pruning mechanism discarding a binding not backed by a live widget. What was
-**not** verified is a widget placed through the actual `AppWidgetHost`/launcher flow — dragged
-onto a real home screen and rendering real `RemoteViews` there.
+**still not** verified by the end of Session 6 is a widget placed through the actual
+`AppWidgetHost`/launcher flow — dragged onto a real home screen and rendering real `RemoteViews`
+there.
 
-**Why.** `adb shell appwidget grantbind` — the standard scriptable path for testing widget
-binding without full launcher UI automation — failed on the headless (`-no-window`) test AVD
-with `IllegalStateException: User -2 must be unlocked for widgets to be available`, confirmed by
-process/PID to originate from the shell command binary itself, not from CountFlow. A second
-attempt hung rather than erring. This reads as an environment limitation of headless emulation,
-not a defect in the app: the underlying code path (`CountdownGlanceWidget.provideGlance`,
-`WidgetRenderModelProvider`, `CountdownWidgetContent`) is exercised end-to-end by
-`CountdownWidgetContentTest` using Glance's own unit-test framework, which does not depend on a
-real widget host.
+**Session 5 finding.** `adb shell appwidget grantbind` failed on a headless (`-no-window`) test
+AVD with `IllegalStateException: User -2 must be unlocked for widgets to be available`, confirmed
+by process/PID to originate from the shell command binary itself, not from CountFlow.
+
+**Session 6 progress, and why it stopped short.** A different test device this session was a
+genuine GUI-mode emulator — a real launcher was visible and screenshotted (wallpaper, search bar,
+app icons, navigation bar), and `adb shell dumpsys user` reported `RUNNING_UNLOCKED`, unlike
+Session 5's `-2` failure. `adb shell appwidget grantbind --package com.countflow --user 0`
+**succeeded** (exit 0) — a materially different, more promising signal than Session 5's outright
+failure. The app installed successfully. However, the device connection was unstable throughout
+(required reconnecting between nearly every command) and the device's own reported identity
+changed mid-session (`model:Pixel_8` → `model:Pixel_9`), and unrelated application data was
+observed on it (a "Reminders" app with auto-generated entries CountFlow never created) —
+consistent with an ephemeral or pooled test device that can be reclaimed without notice, not a
+dedicated stable target. The device became fully unreachable (`Connection refused`) partway
+through attempting the home-screen long-press → widget picker → drag flow, before it could be
+completed and before a screenshot of a placed widget could be captured.
 
 **What remains unverified as a result.** Real `RemoteViews` rendering on an actual home screen
 surface; the system's genuine `ACTION_APPWIDGET_DELETED` broadcast reaching
 `CountdownGlanceWidgetReceiver.onDeleted` (a protected broadcast the shell cannot send directly,
 so this was only exercised via unit test); and the widget picker correctly listing CountFlow's
-provider.
+provider. The underlying code path (`CountdownGlanceWidget.provideGlance`,
+`WidgetRenderModelProvider`, `CountdownWidgetContent`) continues to be exercised end-to-end by
+`CountdownWidgetContentTest` using Glance's own unit-test framework, which does not depend on a
+real widget host — this has not changed.
 
-**Resolution path.** Retry on a GUI-mode emulator (not `-no-window`) or a physical device at the
-start of Milestone 5, before more widget styles are built on top of an unconfirmed rendering
-path.
+**Resolution path.** Retry on a *stable* GUI-mode emulator or a physical device, ideally one
+whose connection persists for the full session. Session 6 shows the remaining blocker is very
+likely environment stability rather than the widget-bind permission problem Session 5 hit — worth
+opening with a direct `appwidget grantbind` + `dumpsys user` check before attempting the full
+manual placement, to confirm the device is usable before investing time in it.
 
 ---
 
@@ -263,6 +277,34 @@ Lint currently reports **0 errors and 11 warnings** on `:app:lintDebug` with
 ---
 
 ## Resolved
+
+### BUG-R006 — `WidgetTheme.isHighContrast` was computed but never applied *(found and fixed Session 6)*
+
+`WidgetThemeResolver` had returned a correct `isHighContrast` value for OLED and Modern since the
+theme resolver was first written, but `CountdownWidgetContent` never read the field — every color
+came from the ambient `GlanceTheme` regardless of what the resolver had decided. Combined with a
+related gap, forced-background themes (OLED, Glass) pulled on-colors tuned for the *dynamic*
+Material You surface rather than the fixed background the theme itself forced, with no guarantee
+the two agreed.
+
+Found by re-reading the render model against the renderer while finishing this widget for
+production quality — not by a failing test, since nothing asserted the field was read at all.
+Fixed by resolving on-surface, muted, and progress-track colors explicitly against
+`hasForcedBackground` and `isHighContrast` rather than unconditionally from `GlanceTheme`. See
+DECISIONS.md D-039.
+
+### BUG-R007 — `WidgetBinding.showPercentage` was persisted but never rendered *(found and fixed Session 6)*
+
+The binding field controlling whether a widget's progress percentage should be shown as text has
+existed since Milestone 2, flowing correctly through Room and the data-layer mappers, but
+`WidgetRenderMapper` never read it and `CountdownWidgetContent` had no percent-text element to
+draw at all — setting the field could never have had any visible effect. Currently inert in
+practice, since no UI sets it to `true` yet (`WidgetBinding.inheriting()` defaults it to `false`),
+but would have required a second investigation the day a settings screen finally did set it.
+
+Fixed by adding `WidgetRenderModel.showPercentageText`, computed in the mapper as
+`binding.showPercentage && progress.isVisible` so the renderer never has to re-derive the
+conjunction. See DECISIONS.md D-040.
 
 ### BUG-R003 — Repository tests collided with two coroutine schedulers *(found and fixed Session 4)*
 

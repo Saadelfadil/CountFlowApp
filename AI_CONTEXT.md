@@ -44,6 +44,10 @@ instead, and probably already exists there.
 Two modules are pure Kotlin/JVM (`:core:domain`, `:widget:engine`). Everything else is an
 Android library or the app module. Full detail: `PROJECT_STATUS.md` § Module graph.
 
+For anything inside `widget/`, read `docs/WIDGET_ARCHITECTURE.md` before touching code — it is
+the single-file version of this document, scoped to the widget system, with real file paths and
+function names for data flow, render flow, refresh flow, and both lifecycles.
+
 ## What exists right now (Milestone 4 of 9, complete)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
@@ -54,13 +58,17 @@ Android library or the app module. Full detail: `PROJECT_STATUS.md` § Module gr
   Robolectric, not mocked.
 - **App UI**: home list with search/sort/filter, create/edit form with validation. No delete or
   archive gesture yet (TD-008); no accent-colour picker; no widget preview.
-- **Widget**: one 2×2 `CountdownGlanceWidget`, a configuration activity with a verified
-  no-orphan-bindings guarantee, a theme resolver for all seven named styles, a progress engine,
-  and a Milestone-4-scoped refresh scheduler (app-alive only — the real alarm-based strategy is
-  Milestone 8, D-008).
+- **Widget**: one 2×2 `CountdownGlanceWidget`, finished to production quality within that scope
+  (accessibility content description, colors that resolve correctly against forced dark
+  backgrounds, no dead configuration fields — see D-039, D-040), a configuration activity with a
+  verified no-orphan-bindings guarantee, a theme resolver for all seven named styles, a progress
+  engine, and a Milestone-4-scoped refresh scheduler (app-alive only — the real alarm-based
+  strategy is Milestone 8, D-008).
 - **Not yet real**: a widget has never been placed through an actual launcher/`AppWidgetHost`
   flow. Verified instead by launching the configuration activity directly and inspecting the
-  database. See `KNOWN_ISSUES.md` TD-010 before trusting that a real placement definitely works.
+  database. Session 6 got closer — a real GUI launcher was reached and widget-bind permission
+  succeeded — but the test device was unstable and disappeared mid-verification. See
+  `KNOWN_ISSUES.md` TD-010 before trusting that a real placement definitely works.
 
 `ROADMAP.md` has the milestone-by-milestone detail; `SESSION_SUMMARY.md` has what the *most
 recent* session specifically did.
@@ -88,17 +96,24 @@ recent* session specifically did.
    `ignoreCase`, not `substring`. Use `hasTextEqualTo` for an exact match, or a loose assertion
    will pass when it shouldn't.
 
-## Two defects this codebase has already had, and how they were caught
+## Defects this codebase has already had, and how they were caught
 
-Both were found by testing, not by review — worth knowing because the same *shape* of bug is
-the one most likely to recur:
+Worth knowing because each is a *shape* of bug likely to recur elsewhere:
 
 - An all-day event read as "starting soon" for its entire day, because the imminent-countdown
-  threshold check didn't exclude all-day events (D-023, BUG in Session 3).
+  threshold check didn't exclude all-day events (D-023, BUG in Session 3). Found by testing.
 - The widget configuration activity crashed after a successful binding write, because forcing an
   immediate redraw threw when the widget id didn't resolve to a real `GlanceId` — stranding
-  already-saved data instead of finishing gracefully (BUG-R005, Session 5). The fix: a write
-  that already succeeded must not be undone by an optional follow-up step failing.
+  already-saved data instead of finishing gracefully (BUG-R005, Session 5). Found by device
+  testing. The fix: a write that already succeeded must not be undone by an optional follow-up
+  step failing.
+- Two configuration fields (`WidgetTheme.isHighContrast`, `WidgetBinding.showPercentage`) were
+  computed or persisted correctly for milestones but never actually read by the layer that would
+  have shown their effect (BUG-R006, BUG-R007, Session 6). Found by re-reading the render model
+  against the renderer, not by a failing test — nothing asserted the values were read at all,
+  which is exactly the risk: a field with no consumer looks identical to a field that works,
+  right up until someone checks. Worth deliberately auditing "does every field on a render model
+  have a reader" when a milestone claims to be finished, not just "does every test pass."
 
 ## How to verify the project still works
 
@@ -106,7 +121,7 @@ the one most likely to recur:
 ./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug
 ```
 
-Current baseline: 217 tests, 0 failures, 0 lint errors (10 accepted warnings, all documented in
+Current baseline: 222 tests, 0 failures, 0 lint errors (10 accepted warnings, all documented in
 `KNOWN_ISSUES.md`), `:core:domain` line coverage above 95% (currently ~97%).
 
 Build output is noisy — every module logs two deprecation warnings per compile, a side effect of
@@ -135,7 +150,8 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (38 as of Session 5) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (40 as of Session 6) with reason, alternatives, tradeoffs. |
+| `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render/refresh flow, both lifecycles, Glance's sharp edges, forward compatibility. |
 | `ROADMAP.md` | Milestone-by-milestone status and what each one delivered. |
 | `KNOWN_ISSUES.md` | Open bugs (none), technical debt, platform limitations, resolved defects. |
 | `TODO.md` | Prioritised outstanding work, P0 first. |

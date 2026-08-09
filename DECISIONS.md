@@ -681,3 +681,64 @@ own. `hasTextEqualTo` is the separate, dedicated function for exact matching.
 "In 12 days" passes regardless of whether the standalone headline number was ever drawn, because
 both nodes match "12" as a substring. This cost a debugging round trip during this milestone and
 is worth a permanent note so a future test author does not repeat it.
+
+---
+
+## D-039 — Forced-background widget themes resolve their own text and progress-track colors
+
+**Date:** 2026-08-09 · **Status:** Accepted (closes a real gap, not a new abstraction) · **Milestone:** 4
+
+`CountdownWidgetContent` no longer pulls `onSurface`/`onSurfaceVariant`/`surfaceVariant` from
+`GlanceTheme` unconditionally. When `WidgetTheme.backgroundColorArgb` is non-null — OLED's forced
+true black, Glass's forced translucent dark surface — text and the progress track instead come
+from a small fixed `ForcedBackgroundPalette`. `WidgetTheme.isHighContrast` (true for OLED and
+Modern) is applied the same way for themes that keep the *dynamic* background but still ask for a
+stronger pass: it skips the muted `onSurfaceVariant` tone for full-emphasis `onSurface`.
+
+**Reason.** `GlanceTheme`'s on-colors are tuned to pair with the *dynamic* Material You surface —
+the one that tracks wallpaper. Two named themes deliberately force a background of their own
+instead, and nothing guaranteed the two color sets agreed; a light dynamic scheme could produce
+washed-out "on-surface" text over OLED's forced black. This also closed a dead field:
+`WidgetThemeResolver` had computed `isHighContrast` since this milestone began, but nothing
+downstream ever read it until now — the renderer applied every resolved color except this one.
+
+**Alternatives.** Leave `isHighContrast` unread (the state at the start of this session) — rejected
+because a resolver computing a value nothing consumes is worse than not computing it, and because
+Accessibility was an explicit goal for finishing this widget. A themeable `ColorScheme` object
+passed through `WidgetTheme` — rejected as more abstraction than four fixed colors need; see
+D-040's note on the same session's architectural-stability instruction.
+
+**Tradeoffs.** `ForcedBackgroundPalette` is a second, small, hand-picked color set that must be
+kept legible if `WidgetThemeResolver`'s forced backgrounds ever change. It lives as a private
+object inside `CountdownWidgetContent.kt`, not a new cross-module abstraction — there was nothing
+to inject and no second caller.
+
+---
+
+## D-040 — `showPercentageText` is conjoined in the mapper, not left for the renderer to derive
+
+**Date:** 2026-08-09 · **Status:** Accepted (closes a real gap, not a new feature) · **Milestone:** 4
+
+`WidgetBinding.showPercentage` has existed since Milestone 2 — persisted through Room, mapped
+through `:core:data` — but nothing in `:widget:engine` or `:widget:glance` ever read it; the
+progress percentage had no way to reach the screen no matter how the field was set.
+`WidgetRenderModel` gains one field, `showPercentageText`, computed in `WidgetRenderMapper` as
+`binding.showPercentage && progress.isVisible` — never `true` when there is no bar to show the
+number beside.
+
+**Reason.** This is "finish the first widget," not "add a feature": the field was already part of
+what a binding configures, already flowing through every layer up to the mapper, and silently
+dropped exactly one hop from the screen. The conjunction belongs in the mapper, not the renderer,
+for the same reason `showDaysValue` is pre-computed rather than derived from `CountdownLabel` in
+Glance code: the renderer should read one boolean, not re-derive a business rule from two other
+fields it happens to have in hand.
+
+**Alternatives.** Leave it unwired until a settings screen exists to set it — rejected because the
+field already defaults to `false` via `WidgetBinding.inheriting()`, so wiring it changes no
+default behavior today and only stops being silently broken. Compute the conjunction in the
+renderer instead of the mapper — rejected on the same "widgets should only render" grounds every
+other visibility flag in `WidgetRenderModel` already follows.
+
+**Tradeoffs.** None found. No UI sets `showPercentage` to `true` yet, so this is currently
+inert for every real binding — its value is in being correct the day a settings screen does set
+it, rather than needing a second fix at that point.

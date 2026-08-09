@@ -10,7 +10,7 @@ Living document. Update the status column as milestones move.
 | 1 | Project foundation | **Completed** | 2 |
 | 2 | Database, repositories, countdown engine | **Completed** | 3 |
 | 3 | Event CRUD | **Completed** | 4 |
-| 4 | Widget engine | **Completed** | 5 |
+| 4 | Widget engine | **Completed** | 5–6 |
 | 5 | Multiple widgets | Not Started | — |
 | 6 | Settings | Not Started | — |
 | 7 | Notifications | Not Started | — |
@@ -110,6 +110,35 @@ placement on a GUI emulator or physical device. See KNOWN_ISSUES.md.
 **Watch resolved:** LIM-005 (bridged via a Hilt `EntryPoint`). **Watch still open:** LIM-003
 (bitmap budget — relevant from Milestone 5's progress ring), LIM-006 (emoji rendering on real
 hardware — still unverified).
+
+### Session 6 — finishing pass
+
+Session 5 built the architecture; Session 6's brief was explicit that the milestone was not done
+until the single 2×2 widget was production quality, not just structurally correct. No new
+abstractions were introduced (the session's own architectural rule) — every change either
+polished the existing renderer or closed a gap where a value already computed upstream was
+silently going nowhere.
+
+Delivered: accessibility (`GlanceModifier.semantics { contentDescription = … }` on the whole
+card, one coherent sentence rather than five unrelated text nodes); two real dead-field bugs
+found and fixed — `WidgetTheme.isHighContrast` had been computed since the theme resolver was
+written but never read by the renderer, and `WidgetBinding.showPercentage` had been persisted
+since Milestone 2 but never reached the screen (D-039, D-040; KNOWN_ISSUES.md BUG-R006, BUG-R007);
+typography and spacing tightened to a consistent scale; the unconfigured placeholder redesigned
+to look intentional rather than provisional. 5 new tests, 222 total, 0 failures.
+`docs/WIDGET_ARCHITECTURE.md` was written as the permanent reference for the whole widget system.
+
+**Performance:** the pure-Kotlin compute path (`CountdownEngine.countdownAt` +
+`WidgetRenderMapper.map`, everything that decides what a widget should show) measured at
+~505ns/call, 200,000 iterations, JIT-warmed — confirming the entire non-I/O cost of producing a
+render model is not a performance concern at any plausible widget count.
+
+**Not delivered, despite a real attempt.** TD-010 (real launcher placement) remains open. A
+GUI-mode test device this session reached further than Session 5's headless AVD ever did —
+`appwidget grantbind` succeeded, the user was `RUNNING_UNLOCKED`, a real launcher rendered and
+was screenshotted — but the device connection was unstable throughout and became fully
+unreachable before the drag-onto-home-screen flow could be completed. See KNOWN_ISSUES.md TD-010
+for the full account; this is the clear first item for the next session with stable device access.
 
 ---
 

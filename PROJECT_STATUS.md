@@ -16,12 +16,12 @@ single-file orientation this document map assumes you do not yet have.
 | | |
 |---|---|
 | **Current milestone** | 4 of 9 complete |
-| **Last session** | Session 5 — 2026-08-09 |
+| **Last session** | Session 6 — 2026-08-09 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 10 accepted warnings |
-| **Tests** | 217 passing, 0 failing. `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ API 36 emulator, Session 5: config activity's cancel/confirm/prune paths verified against the database; one real crash found and fixed |
-| **Overall progress** | ~46% |
+| **Tests** | 222 passing, 0 failing. `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ Session 5: config activity's cancel/confirm/prune paths verified against the database, one real crash found and fixed. Session 6: two dead-field render bugs found and fixed (BUG-R006, BUG-R007); real launcher placement still unverified (TD-010) — closer this session (grantbind succeeded, device unlocked) but blocked by an unstable test device, not by the app |
+| **Overall progress** | ~47% |
 
 ---
 
@@ -35,6 +35,7 @@ Read in this order when picking the project up cold:
 | `PROJECT_STATUS.md` | This file. Permanent overview. |
 | `SESSION_SUMMARY.md` | What the most recent session did and what to do next. |
 | `ARCHITECTURE.md` | The authoritative design. Wins over every other document on conflict. |
+| `docs/WIDGET_ARCHITECTURE.md` | The widget system specifically: data/render/refresh flow, binding and configuration lifecycles, Glance sharp edges, forward compatibility. Read this before changing anything under `widget/`. |
 | `DECISIONS.md` | Every architectural decision with reason, alternatives, tradeoffs, status. |
 | `ROADMAP.md` | Milestones 0–9 with status. |
 | `TODO.md` | Prioritized outstanding work. |
@@ -125,18 +126,23 @@ something a reviewer has to catch (D-003, D-033).
   against real SQLite rather than assumed.
 - **Event CRUD works end to end**: create with validation, list, realtime search, category
   filter, four sort orders, and edit. Driven on a device, not just unit-tested.
-- **A countdown widget exists.** One 2×2 size. Placing it through configuration writes the
-  correct binding; cancelling writes nothing (verified against the database, not assumed); the
-  widget redraws while the app is alive when its event changes.
+- **A countdown widget exists, and is finished to production quality for its scope.** One 2×2
+  size. Placing it through configuration writes the correct binding; cancelling writes nothing
+  (verified against the database, not assumed); the widget redraws while the app is alive when
+  its event changes. Session 6 closed the gap between what the engine already computed and what
+  the renderer actually drew: the whole card now has one accessible `contentDescription`, forced
+  dark backgrounds (OLED, Glass) get colors resolved for themselves rather than borrowed from the
+  dynamic Material You scheme, and the persisted-but-previously-inert percentage toggle now
+  reaches the screen.
 
 ## What does not exist yet
 
 No notifications, no settings, no billing. Within the events feature: no delete or archive
 gesture (TD-008), no accent-colour picker, no live widget preview. Within widgets: no widget has
-been placed through a genuine `AppWidgetHost`/launcher flow (TD-010 — the headless test
-environment could not satisfy the system's bind-permission check), only one size and no theme
-differentiation beyond colour, and no D-008 alarm-based refresh. Several UI strings are not
-localised (TD-007).
+been placed through a genuine `AppWidgetHost`/launcher flow (TD-010 — closer this session than
+Session 5's headless failure, but still blocked by test-device instability, not by the app), only
+one size and no theme differentiation beyond colour, and no D-008 alarm-based refresh. Several UI
+strings are not localised (TD-007).
 
 ## Where the important logic lives
 
@@ -154,20 +160,21 @@ localised (TD-007).
 | How does event data become a widget? | `widget/engine/…/provider/WidgetRenderModelProvider.kt` |
 | Why does a widget style differ per binding? | `widget/engine/…/mapper/WidgetRenderMapper.kt` |
 | How does "no orphan bindings" actually work? | `widget/glance/…/configuration/WidgetConfigurationActivity.kt` |
+| How does a forced-background theme (OLED, Glass) pick text colors? | `widget/glance/…/CountdownWidgetContent.kt` `ForcedBackgroundPalette`, or `docs/WIDGET_ARCHITECTURE.md` §6 |
 
 ---
 
 ## Progress
 
 ```
-Overall                      46%
+Overall                      47%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
 Domain & countdown engine   100%   Milestone 2
 Database & persistence      100%   Milestone 2
 Event CRUD / UI              85%   Milestone 3 (gestures and colour picker outstanding)
-Widget engine                90%   Milestone 4 (real launcher placement unverified — TD-010)
+Widget engine                95%   Milestone 4 (real launcher placement unverified — TD-010)
 Widget themes & sizes         0%   Milestone 5
 Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
@@ -203,6 +210,10 @@ Verified working on this machine as of Session 2:
 - `local.properties` holds `sdk.dir` and is git-ignored
 
 **Headless emulation (`-no-window`) cannot test real widget placement** — confirmed in Session 5;
-see KNOWN_ISSUES.md TD-010. Use a GUI-mode emulator or a physical device for that specific check.
+see KNOWN_ISSUES.md TD-010. Session 6 had access to a genuine GUI-mode device instead and got
+further (`grantbind` succeeded, user unlocked), but that device's connection was unstable and it
+became unreachable mid-session, with signs of being an ephemeral/pooled resource (its reported
+model changed mid-session; unrelated app data was present). A *stable* GUI-mode emulator or
+physical device — not just a GUI-capable one — is still the open requirement for closing TD-010.
 
 Build: `./gradlew assembleDebug` · Lint: `./gradlew :app:lintDebug` · Tests: `./gradlew test`

@@ -14,6 +14,58 @@ Nothing yet. Milestone 5 begins multiple widgets, themes, and sizes.
 
 ---
 
+## [0.4.1] — 2026-08-09 — Milestone 4 finishing pass: one production-quality widget
+
+Session 6. No new features, no new abstractions — the brief was explicit that this session closes
+Milestone 4, not starts Milestone 5. Every change either polishes the existing 2×2 widget or fixes
+a value that was already computed upstream and silently never reached the screen.
+
+### Added
+- `docs/WIDGET_ARCHITECTURE.md` — the permanent reference for the whole widget system: data flow,
+  render flow, refresh flow, binding and configuration lifecycles, Glance integration sharp
+  edges, known limitations, and the forward-compatibility seams for multiple widgets, Android 16
+  Live Updates, and lockscreen.
+- Accessibility: the whole widget card now carries one `contentDescription`
+  (`GlanceModifier.semantics { … }`) built from exactly its visible fields — e.g. "Trip to Kyoto.
+  In 12 days. 40% complete." — instead of a screen reader piecing together unrelated text nodes.
+- `WidgetRenderModel.showPercentageText`, wiring `WidgetBinding.showPercentage` (persisted since
+  Milestone 2, never read until now) through to an actual percent-text element beside the
+  progress bar.
+
+### Fixed
+- **BUG-R006** — `WidgetTheme.isHighContrast` had been computed by `WidgetThemeResolver` since
+  Milestone 4 began but was never read by the renderer. Forced-background themes (OLED, Glass)
+  also pulled on-colors tuned for the *dynamic* Material You surface rather than the background
+  the theme itself forced, with no guarantee the two agreed. Fixed by resolving text and
+  progress-track colors explicitly against `hasForcedBackground` and `isHighContrast`.
+- **BUG-R007** — `WidgetBinding.showPercentage` could never have had any visible effect; see
+  "Added" above.
+
+### Changed
+- Typography and spacing tightened to a consistent scale; the unconfigured ("tap to set up")
+  placeholder redesigned to look intentional — centered, with a "+" mark and clearer copy —
+  rather than provisional.
+
+### Tests
+5 new: 3 in `:widget:glance` (percent-text visibility, including that it stays hidden when
+progress itself is off even if requested) and 2 in `:widget:engine` (the same conjunction at the
+mapper level). 222 total, 0 failures. `:core:domain` unchanged at 97.0% line coverage.
+
+### Performance
+The pure-Kotlin compute path — `CountdownEngine.countdownAt` + `WidgetRenderMapper.map`, the
+entire non-I/O decision of what a widget should show — measured at ~505ns/call (200,000
+iterations, JIT-warmed). Not a performance concern at any plausible widget count; see
+`docs/WIDGET_ARCHITECTURE.md` §3.
+
+### Known gaps
+- TD-010 (real launcher placement) remains open. This session's test device got materially
+  further than Session 5's — `appwidget grantbind` succeeded and the user was
+  `RUNNING_UNLOCKED`, unlike Session 5's outright failure — but the device connection was
+  unstable and became unreachable before the drag-onto-home-screen flow could be completed. See
+  KNOWN_ISSUES.md.
+
+---
+
 ## [0.4.0] — 2026-08-09 — Milestone 4: widget engine
 
 The first widget. `:widget:engine` is now pure Kotlin/JVM.

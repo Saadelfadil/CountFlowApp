@@ -1,0 +1,455 @@
+# CountFlow — Widget Architecture
+
+**Audience:** a senior Android engineer who has never opened this codebase and needs to
+understand the widget system without reading it. Every claim here names the real file and
+function it describes; nothing is aspirational unless a section says so explicitly.
+
+**Scope:** one widget type (countdown), one size (2×2), one instance shape (any number of
+placements, each independently bound). This document describes what ships in Milestone 4, and is
+explicit about what does not exist yet.
+
+---
+
+## 1. The one idea that explains the rest of this document
+
+**A widget is a pure function of data it does not decide.** Everything upstream of
+`CountdownWidgetContent` — what event, what countdown state, what colors, what layout flags —
+is resolved before a single Glance composable runs. The composable's only job is turning an
+already-complete `WidgetRenderModel` into pixels. If you are reading widget code and find
+yourself asking "where does this widget decide X," the answer is always: it doesn't — X was
+decided in `:widget:engine`, and the composable is reading the answer off a field.
+
+This is enforced, not just followed: `:widget:engine` is a pure Kotlin/JVM Gradle module
+(`countflow.jvm.library`, not an Android library), so it cannot import `android.*` even by
+accident — the build fails before a reviewer would ever need to notice. `:widget:glance` is the
+only module in the widget system allowed to know Android exists.
+
+```
+:widget:engine        pure Kotlin/JVM — data, rules, no Android
+    ↑
+:widget:glance         Android — Glance composables, Hilt, receivers, the configuration Activity
+```
+
+---
+
+## 2. Module boundary and what lives where
+
+### `:widget:engine`
+
+| File | Role |
+|---|---|
+| `model/WidgetRenderModel.kt` | The entire contract between engine and renderer. |
+| `model/WidgetTheme.kt`, `model/WidgetProgress.kt` | Two nested value types inside the render model. |
+| `theme/WidgetThemeResolver.kt` | `WidgetStyle → WidgetTheme`. All seven named themes. |
+| `progress/WidgetProgressEngine.kt` | `(CountdownResult, ProgressStyle) → WidgetProgress`. |
+| `mapper/WidgetRenderMapper.kt` | `(Event, WidgetBinding, CountdownResult, ZoneId) → WidgetRenderModel`. |
+| `provider/WidgetRenderModelProvider.kt` | Orchestrates repository + `CountdownEngine` + mapper into one `observe`/`get` API. |
+| `lifecycle/WidgetLifecycleCoordinator.kt` | What happens to bindings when widgets are removed or found orphaned. |
+| `refresh/WidgetRefreshScheduler.kt` | An interface only — the seam Milestone 8 will implement fully. |
+
+Nothing in this list touches `Context`, `Bitmap`, `RemoteViews`, `GlanceId`, or any Glance type.
+Every file above is tested with plain JUnit — no Robolectric, no Android runtime — which is the
+practical, everyday payoff of the module boundary: these tests run in milliseconds and cannot be
+broken by an Android SDK upgrade.
+
+### `:widget:glance`
+
+| File | Role |
+|---|---|
+| `CountdownGlanceWidget.kt` | The `GlanceAppWidget`. Loads a model, hands it to the renderer. |
+| `CountdownWidgetContent.kt` | The renderer. A `@Composable` function, nothing else. |
+| `CountdownGlanceWidgetReceiver.kt` | `GlanceAppWidgetReceiver`; delegates `onDeleted` to the lifecycle coordinator. |
+| `configuration/WidgetConfigurationActivity.kt`, `WidgetConfigurationViewModel.kt`, `WidgetConfigurationUiState.kt` | Pick-an-event flow, standard Activity/ViewModel/UiState split. |
+| `refresh/GlanceWidgetRefreshScheduler.kt` | Milestone 4's `WidgetRefreshScheduler` implementation. |
+| `action/WidgetActions.kt` | Click targets, as `ActionCallback`s. |
+| `di/WidgetEntryPoint.kt`, `di/WidgetGlanceModule.kt` | The one Hilt bridge point Glance needs. |
+
+---
+
+## 3. Data flow — from a database row to a decision about what to show
+
+```
+Room (events, widget_bindings tables)
+        │
+        │  WidgetBindingRepository.observeBoundWidget(appWidgetId)
+        │  — one query, already joined: BoundWidget(binding, event)
+        ▼
+WidgetRenderModelProvider
+        │
+        │  CountdownEngine.countdownAt(event, clock.instant(), clock.zone)
+        ▼
+    CountdownResult  ──────────────┐
+                                    │
+        WidgetBinding ─────────────┼──▶ WidgetRenderMapper.map(event, binding, countdown, zone)
+                                    │            │
+        Event ──────────────────────┘            │
+                                                   ▼
+                                          WidgetRenderModel
+```
+
+The join is the important detail: `WidgetRenderModelProvider` injects only
+`WidgetBindingRepository`, not `EventRepository` as well, because
+`WidgetBindingRepository.observeBoundWidget` already returns `BoundWidget(binding, event)` in one
+query — built in Milestone 2 (`core/domain/…/repository/WidgetBindingRepository.kt`)
+specifically anticipating this consumer. There is no N+1 here and never was one to fix.
+
+`CountdownEngine.countdownAt(event, instant, zone)` is used instead of the clock-reading
+`countdown(event)` convenience so the explicit `zone` passed to `WidgetRenderMapper.map` is
+*provably* the same zone the countdown's day count was computed against — the same reasoning
+`EventUiMapper.mapAll` takes `now` as a parameter for (D-030), applied here to one model instead
+of a list.
+
+`WidgetRenderMapper.map` is where `WidgetBinding.resolveWidgetStyle(event)` and
+`resolveProgressStyle(event)` are called — the "override, else the event's default" precedence
+rule (D-013) that lets two widgets on the same event look different. This is the only place in
+the codebase that rule is exercised for widgets.
+
+**A `WidgetRenderModel` costs about half a microsecond of CPU to produce** (measured directly:
+`CountdownEngine.countdownAt` + `WidgetRenderMapper.map`, 200,000 iterations, JIT-warmed, on the
+development machine — ~505ns/call). The entire non-I/O part of "what should this widget show" is
+not a performance concern at any plausible widget count; the cost that matters is the Room query
+and the RemoteViews round-trip through the launcher, neither of which this measurement includes.
+
+---
+
+## 4. Render flow — from a model to pixels
+
+```
+CountdownGlanceWidget.provideGlance(context, id)
+        │
+        │  1. Resolve AppWidgetId from the Glance id
+        │  2. provider.get(appWidgetId)   ← BEFORE provideContent, off the composition
+        │  3. provideContent { key(LocalSize.current) { Content(...) } }
+        ▼
+Content()
+        │  val model by provider.observe(appWidgetId).collectAsState(initial = initialModel)
+        ▼
+CountdownWidgetContent(model)
+        │
+        ├─ model == null  →  UnconfiguredContent()   ("Tap to choose a countdown")
+        └─ model != null  →  draw title / emoji / day count / label / progress bar
+```
+
+Two details worth being deliberate about, because both were copied from Google's canonical
+Glance layouts for a stated reason (ARCHITECTURE.md D-001), not by habit:
+
+- **The first model is loaded before `provideContent` runs**, in a plain `suspend` call. The
+  first frame the launcher ever draws already has content — there is no loading flash, and no
+  window where the widget is empty because a `Flow` hasn't emitted yet.
+- **`key(LocalSize.current)` wraps the content.** With one size in this milestone this buys
+  nothing today; it costs nothing either, and it is one less thing to remember when Milestone 5
+  makes size actually vary.
+
+### What the renderer decides versus what it is told
+
+The renderer makes exactly one kind of decision: **how to lay out fields it was told are
+visible**, never *whether* something is true. Concretely:
+
+- `model.showTitle`, `model.showEmoji`, `model.showDaysValue`, `model.showPercentageText`,
+  `model.progress.isVisible` are booleans the mapper already computed from the binding and the
+  countdown. The renderer's job is `if (model.showTitle) { Text(model.title) }` — a layout
+  branch, not a business decision.
+- Colors are resolved once, near the top of `CountdownWidgetContent`, from
+  `model.theme` — never re-derived per element. See §6 for why this resolution is more than a
+  one-line `ColorProvider` wrap.
+- The countdown label text itself is resolved at render time via
+  `CountdownLabelFormatter.format(LocalContext.current.resources, model.label)` — the model
+  carries a token (`CountdownLabel`), not a string, for the same locale-reactivity reason
+  `EventCardUiModel` does in the app's own list (D-021, D-029). A background redraw the system
+  triggers, outside any recomposition, still resolves the label in the locale active at that
+  moment.
+
+### Accessibility
+
+The whole card is one clickable region carrying one `contentDescription`
+(`GlanceModifier.semantics { contentDescription = … }`), built from exactly the fields that are
+visible — `"Trip to Kyoto. In 12 days. 40% complete."` — rather than leaving a screen reader to
+piece together the emoji, the number, and the label as unrelated fragments. This mirrors the
+pattern `EventCard` already uses in the app's own list (`clearAndSetSemantics`, documented in
+Session 4's developer notes) applied to Glance's own (narrower) semantics API — Glance 1.1.1
+exposes only `contentDescription` and `testTag`, verified directly against the `glance` 1.1.1
+AAR rather than assumed.
+
+---
+
+## 5. Refresh flow — how a widget finds out something changed
+
+```
+Event edited in the app
+        │
+        │  Room write
+        ▼
+EventRepository.observeEventsWithWidgets()   ← Flow, re-emits on the joined tables changing
+        │
+        │  GlanceWidgetRefreshScheduler (started once, from CountFlowApplication.onCreate)
+        ▼
+CountdownGlanceWidget().updateAll(context)
+        │
+        ▼
+provideGlance runs again for every placed instance → new WidgetRenderModel → new frame
+```
+
+`GlanceWidgetRefreshScheduler` (`:widget:glance/refresh/GlanceWidgetRefreshScheduler.kt`) is the
+Milestone 4 implementation of the `WidgetRefreshScheduler` interface (`:widget:engine`), bound to
+it via `WidgetGlanceModule`. It does two things, both started once from
+`CountFlowApplication.onCreate()`:
+
+1. Subscribes to `EventRepository.observeEventsWithWidgets()` and calls
+   `CountdownGlanceWidget().updateAll(context)` on every emission — "editing an event updates its
+   widgets," the actual success criterion this milestone was built against.
+2. Runs `pruneOrphanedBindings()` once at startup: reads the launcher's live widget ids via
+   `AppWidgetManager.getAppWidgetIds(provider)` and calls
+   `WidgetLifecycleCoordinator.pruneOrphans(liveIds)`, which discards any stored binding not in
+   that set.
+
+**This is explicitly not the final refresh strategy.** It says nothing about the final day's
+second-level ticking and nothing about staying current once the app process is killed — both are
+Milestone 8's job (the launcher-ticked `Chronometer` + one coalesced `AlarmManager` alarm
+described in ARCHITECTURE.md §4.2 / D-008). The reason this gap is acceptable *for now*, not a
+shortcut being hidden: Room is always the single source of truth (D-002), so a widget under this
+scheme is never showing wrong data — only stale data, for as long as the app process happens to
+be dead. Closing that staleness window without waking the device more than necessary is precisely
+what the Milestone 8 scheduler exists to do; building it now would have meant building alarm
+infrastructure before there was more than one widget style to prove it against.
+
+---
+
+## 6. Theme resolution — why the renderer cannot just read `GlanceTheme`
+
+`WidgetThemeResolver.resolve(style, accentColor)` is an exhaustive `when` over all seven
+`WidgetStyle` values, producing a `WidgetTheme` with four fields: a nullable accent, a nullable
+background, a corner radius, and `isHighContrast`. Null accent/background means "derive it from
+the dynamic Material You palette at render time" — the same null-means-dynamic convention used
+throughout the domain. Two styles force a concrete background instead: OLED forces true black
+(`0xFF000000`, burn-in prevention — an always-on-display concern, not an aesthetic choice a
+dynamic tone could satisfy), and Glass forces a translucent dark surface (RemoteViews cannot blur
+what's behind a widget, so "glass" is approximated rather than real backdrop blur).
+
+The renderer cannot simply pair a forced background with `GlanceTheme.colors.onSurface` /
+`onSurfaceVariant` / `surfaceVariant`, because those colors are tuned to pair with the *dynamic*
+surface — the one that changes with wallpaper — not with a background the theme fixed itself.
+Nothing guarantees the two agree; a phone with a light dynamic scheme could produce light
+"on-surface" text over OLED's forced black background. `CountdownWidgetContent` resolves this
+explicitly:
+
+```kotlin
+val hasForcedBackground = theme.backgroundColorArgb != null
+val onSurface = if (hasForcedBackground) ForcedBackgroundPalette.onSurface else GlanceTheme.colors.onSurface
+val onSurfaceMuted = when {
+    hasForcedBackground -> ForcedBackgroundPalette.onSurfaceMuted
+    theme.isHighContrast -> GlanceTheme.colors.onSurface   // skip the muted tone entirely
+    else -> GlanceTheme.colors.onSurfaceVariant
+}
+```
+
+`isHighContrast` (true for OLED and Modern) is applied the same way for themes that *keep* the
+dynamic background but still ask for a stronger pass: it skips the muted `onSurfaceVariant` tone
+in favor of full-emphasis `onSurface`, rather than introducing a third color set.
+
+This closed a real gap found while finishing this milestone: `WidgetTheme.isHighContrast` had
+been computed by the resolver since Milestone 4 began, but nothing downstream ever read it — the
+renderer pulled every color from the ambient `GlanceTheme` regardless. See DECISIONS.md D-039.
+
+---
+
+## 7. Binding lifecycle
+
+A `WidgetBinding` row (`appWidgetId → eventId + style overrides + visibility flags`) is the only
+thing that connects a placed widget to the event it shows. Four transitions, and where each is
+handled:
+
+| Transition | Handled by | Effect |
+|---|---|---|
+| **Place** (first configuration) | `WidgetConfigurationViewModel.onEventSelected` | `WidgetBinding.inheriting(id, eventId, now)` is upserted — a fresh binding with no overrides. |
+| **Reconfigure** (re-point an existing widget) | Same method, same code path | If the widget already has a binding, `onEventSelected` reuses it when the event is unchanged, otherwise writes a fresh `inheriting` binding for the new event — a reconfigure is not distinguished from a first-time bind at the data layer, only by whether a row already existed. |
+| **Remove** (user deletes the widget) | `CountdownGlanceWidgetReceiver.onDeleted` → `WidgetLifecycleCoordinator.onWidgetsRemoved` | `WidgetBindingRepository.deleteBindings(ids)`. The event itself is never touched — removing a widget is not the same action as deleting the countdown it showed. |
+| **Orphaned** (binding exists, widget doesn't — a missed callback, or a restored backup) | `GlanceWidgetRefreshScheduler`, once at startup → `WidgetLifecycleCoordinator.pruneOrphans` | `WidgetBindingRepository.pruneOrphanedBindings(liveIds)` discards anything not in the launcher's current id set. |
+
+There is a fifth transition that is *not* a binding-lifecycle event but interacts with one:
+**deleting the event a widget is bound to.** This is handled entirely at the database level — the
+foreign key from `widget_bindings` to `events` cascades on delete (established in Milestone 2's
+schema). `WidgetRenderModelProvider.observe` reads this as the bound-widget query returning null,
+which `CountdownWidgetContent` renders as `UnconfiguredContent()` — the widget does not vanish
+from the home screen (Android widgets never do that on their own), it reverts to the "tap to
+choose a countdown" prompt, exactly as if it had never been configured.
+
+### No-orphan-bindings guarantee
+
+The mechanism is one line, and it is the entire guarantee:
+`WidgetConfigurationActivity.onCreate` calls `setResult(RESULT_CANCELED)` **before any UI is
+shown and before the ViewModel has written anything.** `WidgetConfigurationViewModel` only ever
+writes a binding from inside `onEventSelected`, which only runs in direct response to the user
+tapping a row. So: back out without picking anything (home button, back gesture, task switch) and
+the default `RESULT_CANCELED` stands — the widget host removes the just-placed widget on its own,
+and there was never a binding to clean up in the first place. `RESULT_OK` is set only from
+`onEventBound()`, reached only once the ViewModel reports the write completed
+(`uiState.isSaved`).
+
+---
+
+## 8. Configuration lifecycle
+
+```
+Launcher places a widget
+        │
+        │  android:configure="…WidgetConfigurationActivity"
+        ▼
+WidgetConfigurationActivity.onCreate
+        │  setResult(RESULT_CANCELED)          ← the default; see §7
+        │  read EXTRA_APPWIDGET_ID
+        │  if invalid: finish() immediately
+        ▼
+WidgetConfigurationViewModel.load(appWidgetId)
+        │  reads existing binding (if reconfiguring) + all events
+        ▼
+User taps an event  →  onEventSelected(eventId)
+        │  upserts the binding
+        │  uiState.isSaved = true
+        ▼
+onEventBound()
+        │  setResult(RESULT_OK, id)             ← the write already succeeded; this just reports it
+        │  runCatching { redraw immediately via GlanceAppWidgetManager.getGlanceIdBy + .update() }
+        │  finish()                              ← unconditional, regardless of the redraw's outcome
+```
+
+The `runCatching` around the immediate redraw is deliberate and documents a real production bug
+found and fixed this milestone (BUG-R005): `getGlanceIdBy(appWidgetId)` throws if the id does not
+resolve to a widget the system's `AppWidgetManager` actually knows about. That can happen when
+this Activity is exercised directly for testing rather than through a genuine placement, and —
+more importantly — could plausibly happen in production in the narrow window between a widget
+being removed and this code running. The binding write has *already succeeded* by the time
+`onEventBound()` runs; `RESULT_OK` and `finish()` must not be made conditional on an optional
+follow-up redraw, or a successful write gets stranded behind a crash. If the immediate redraw is
+skipped, `GlanceWidgetRefreshScheduler`'s live observation (§5) catches up shortly after, since it
+depends only on the write, which already happened.
+
+The ViewModel takes the widget id through an explicit `load(AppWidgetId)` call from a
+`LaunchedEffect(Unit)`, not a Hilt-injected `SavedStateHandle` populated from intent extras — a
+plain `ComponentActivity` does not wire that automatically, and the explicit call is one fewer
+thing to get subtly wrong.
+
+---
+
+## 9. Glance integration — the sharp edges specific to this framework
+
+- **`GlanceAppWidget` cannot be constructor-injected.** It is instantiated by Glance's own
+  runtime, not by Hilt. `CountdownGlanceWidget.provideGlance` reaches its one dependency
+  (`WidgetRenderModelProvider`) through `EntryPoints.get(context.applicationContext,
+  WidgetEntryPoint::class.java)` — the single bridge point in the whole widget system. Every
+  other injectable class (`WidgetConfigurationViewModel`, `GlanceWidgetRefreshScheduler`,
+  `CountdownGlanceWidgetReceiver`'s fields) is wired normally. (KNOWN_ISSUES.md LIM-005.)
+- **`GlanceAppWidgetReceiver` *is* a real Android component**, so `@AndroidEntryPoint` with
+  field injection works on `CountdownGlanceWidgetReceiver` — `BroadcastReceiver`s are
+  system-instantiated, so field injection is the only option, the same as it would be for any
+  other receiver.
+- **`ColorProvider(Int)` compiles but is library-restricted** (`@RestrictTo`) in the actual
+  Glance 1.1.1 AAR — confirmed by decompiling it, not assumed. The sanctioned path wraps a
+  Compose `Color` first: `ColorProvider(Color(argbInt))`.
+- **`actionRunCallback` lives in `androidx.glance.appwidget.action`**, not
+  `androidx.glance.action` — an easy wrong guess since most other action types are in the latter
+  package.
+- **Glance's `LocalContext` has no default**, unlike regular Compose UI's. Any test that renders
+  a Glance composable must call `setContext(...)` before rendering, or every `LocalContext.current`
+  read throws `IllegalStateException("No default context")`.
+- **`hasText` in `glance-testing` is always a substring match** — its second parameter is
+  `ignoreCase`, not a switch for exact matching. `hasTextEqualTo` is the separate function for an
+  exact match. (D-038; this cost a real debugging round trip in Milestone 4 before being
+  understood and documented.)
+- **`GlanceModifier.semantics { }` exposes only `contentDescription` and `testTag`** in 1.1.1 —
+  there is no Compose-UI-style `clearAndSetSemantics` to explicitly suppress child nodes from the
+  accessibility tree. The whole-card `contentDescription` in §4 is the best available fix within
+  that surface, not a claim that Glance's accessibility model matches Compose UI's.
+- **`SizeMode.Single`** (the default, left unset) is exactly right for one fixed size. Multiple
+  sizes need `SizeMode.Exact` with breakpoint ranges — a Milestone 5 change, not attempted here.
+
+---
+
+## 10. Known limitations
+
+Full detail and severity live in `KNOWN_ISSUES.md`; this section is the widget-specific subset,
+stated plainly for someone who needs to know what *not* to trust yet.
+
+- **No widget has been confirmed through a genuine `AppWidgetHost`/launcher placement** — dragging
+  it from the widget picker onto a real home screen and watching it render there. The
+  configuration Activity's own logic (bind, cancel, reconfigure, prune) is verified directly
+  against the database on a real device, and the Glance composable itself is verified with
+  Glance's own unit-test framework — but neither substitutes for one end-to-end placement through
+  the actual system flow. Session 5 could not complete this because the headless test AVD failed
+  the system's widget-bind user-unlock check. Session 6 confirmed `adb shell appwidget grantbind`
+  now succeeds and the test device reaches `RUNNING_UNLOCKED` — a materially different, more
+  promising signal than Session 5's outright failure — but the device became unreachable
+  mid-session before a full drag-onto-home-screen pass could be completed and screenshotted. See
+  KNOWN_ISSUES.md TD-010; this is the first item queued for the next session with device access.
+- **Emoji rendering is unverified on real hardware.** Glance `Text` renders through a
+  `RemoteViews` `TextView` in the *launcher's* process, so glyph coverage and sizing vary by
+  launcher and OEM — the emulator cannot stand in for this. (LIM-006.)
+- **One size, one layout.** `SizeMode.Single`, 2×2 only. The seven themes differ today only in
+  color, corner radius, and text emphasis — not in structural layout. Distinct *shapes* per theme
+  (the brief's example: `Progress`'s emphasis, `Modern`'s density) need more than one size to
+  differentiate across, which is why that work waits for Milestone 5.
+- **No determinate circular progress.** Confirmed directly in the Glance 1.1.1 source:
+  `CircularProgressIndicator` takes only `(modifier, color)` and is indeterminate-only. A real
+  ring has to be drawn to a `Bitmap` via `Canvas`, sized against `LocalSize`, and budgeted against
+  `6 × screenWidthPx × screenHeightPx` bytes — none of that exists yet. `WidgetProgress` already
+  carries `percent`/`fraction` in the shape that renderer will need. (LIM-001, LIM-003.)
+- **The refresh scheduler only covers the app-alive case.** No update while the process is dead,
+  no second-level ticking for the final day. See §5.
+- **No Compose UI test for `WidgetConfigurationViewModel` directly.** Its cancel/confirm/no-orphan
+  behavior was verified on-device (which is how BUG-R005 was actually found), not by a unit test
+  that would catch a regression automatically. Worth adding now that the exact behavior is
+  understood.
+
+---
+
+## 11. Forward compatibility
+
+These three sections describe *why the current design does not block* each future capability —
+none of them are built, and nothing below should be read as a promise of a specific
+implementation, only of an open path.
+
+### 11.1 Multiple widget support (Milestone 5)
+
+Nothing in this architecture assumes one widget. `WidgetBinding` is already keyed per
+`appWidgetId`; `WidgetRenderModelProvider.observe` already takes an `appWidgetId` and nothing
+global; `GlanceWidgetRefreshScheduler.updateAll` already redraws every placed instance
+independently. What Milestone 5 actually adds is *breadth*, not a new mechanism:
+
+- `SizeMode.Exact` with breakpoint ranges, replacing `SizeMode.Single`.
+- Per-style *layout* differences in `CountdownWidgetContent` (today all seven styles share one
+  layout and differ only in resolved color/radius from `WidgetThemeResolver`).
+- The Canvas-drawn progress ring described in §10.
+- A settings surface for the visibility flags (`showTitle`, `showEmoji`, `showTargetDate`,
+  `showPercentage`) that `WidgetBinding` and `WidgetRenderModel` already carry but no UI sets
+  independently of the `inheriting()` defaults yet.
+
+### 11.2 Android 16 Live Updates
+
+The seam is `WidgetRenderModel` itself: it is already a pure function's output —
+`(Event, WidgetBinding, CountdownResult, ZoneId) → WidgetRenderModel` — with no Glance type
+anywhere in it. A Live Updates adapter would consume the same `WidgetRenderModelProvider` this
+document describes and translate the model into whatever API surface Live Updates exposes,
+without touching `:core:domain`, `:core:data`, or anything in `:widget:engine`. Nothing in this
+milestone was built *for* Live Updates specifically — the point is that nothing here needs to
+change to make room for it either.
+
+### 11.3 Lockscreen / Always-On Display
+
+`android:widgetCategory="home_screen|keyguard"` is already declared in
+`countdown_widget_info.xml` (present since this milestone, not deferred), so the capability
+declaration exists even though no lockscreen-specific surface or layout has been built. The same
+render-model seam in §11.2 applies here too: a keyguard surface is another thin adapter over
+`WidgetRenderModelProvider`, not a reason to touch the engine.
+
+---
+
+## 12. Where to look for proof, not just claims
+
+| Claim | Where it's verified |
+|---|---|
+| Engine has zero Android dependency | `widget/engine/build.gradle.kts` applies `countflow.jvm.library`; try importing `android.*` there and watch it fail to compile. |
+| Theme resolution is exhaustive | `WidgetThemeResolverTest.kt` — one case per `WidgetStyle`. |
+| Progress math is correct per style | `WidgetProgressEngineTest.kt`. |
+| Override-else-default precedence | `WidgetRenderMapperTest.kt`, "a binding override beats the event default style/progress style". |
+| Percent text only appears when both the binding asks for it *and* progress is visible | `WidgetRenderMapperTest.kt` + `CountdownWidgetContentTest.kt`, both sides of the conjunction (D-040). |
+| No-orphan-bindings | `WidgetConfigurationActivity`'s device verification (SESSION_SUMMARY.md Session 5) plus `WidgetLifecycleCoordinatorTest.kt`. |
+| The renderer draws nothing it wasn't told to draw | `CountdownWidgetContentTest.kt` — title/emoji/day-count visibility toggles. |
