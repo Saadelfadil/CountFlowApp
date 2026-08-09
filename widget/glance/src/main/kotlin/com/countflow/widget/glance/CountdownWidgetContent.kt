@@ -1,5 +1,6 @@
 package com.countflow.widget.glance
 
+import android.content.res.Resources
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -8,15 +9,12 @@ import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.LocalContext
 import androidx.glance.action.clickable
-import androidx.glance.appwidget.LinearProgressIndicator
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
-import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.semantics.contentDescription
@@ -27,35 +25,32 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.countflow.core.designsystem.format.CountdownLabelFormatter
+import com.countflow.core.designsystem.format.TargetDateFormatter
+import com.countflow.core.domain.countdown.CountdownLabel
+import com.countflow.core.domain.model.WidgetStyle
 import com.countflow.widget.engine.model.WidgetRenderModel
 import com.countflow.widget.glance.action.actionOpenApp
 import com.countflow.widget.glance.action.actionOpenConfiguration
 
 /**
  * Draws a [WidgetRenderModel]. Nothing else — no repository, no clock, no countdown arithmetic.
- * This is "widgets should only render" made literal: every value this function reads was
- * already decided upstream, in `:widget:engine`.
+ * This is "widgets should only render" made literal: every value this function reads was already
+ * decided upstream, in `:widget:engine`.
  *
- * A top-level function rather than a method on [CountdownGlanceWidget], so a test can call it
- * directly with a fabricated model — the same stateful-loader/stateless-renderer split used
- * throughout the app's own screens (`HomeScreen`, `CreateEventScreen`).
+ * Two decisions happen here, in the renderer, on purpose — neither belongs in `:widget:engine`,
+ * because both are about *how to say something*, not *what is true*, the same boundary
+ * [CountdownLabelFormatter] already draws:
  *
- * Deliberately minimal for this milestone: one background, one accent colour, a progress bar.
- * Per-style layout differences (the seven named themes' distinct *shapes*, not just colours) are
- * Milestone 5's job, once more than one widget size exists to differentiate them across.
+ * 1. **Color resolution.** See [resolveColors] — forced backgrounds (OLED, Glass) need their own
+ *    fixed on-colors rather than the ambient dynamic scheme's.
+ * 2. **Content hierarchy.** See [resolveHeadline] — which fact is the biggest thing on the card,
+ *    and what (if anything) genuinely adds information underneath it, changes with the countdown
+ *    state. A completed event's headline is "Completed," not a number; a bare day count and its
+ *    own label text are often the same fact said twice.
  *
- * ### Colour resolution
- *
- * [androidx.glance.GlanceTheme]'s `onSurface`/`onSurfaceVariant`/`surfaceVariant` are tuned to
- * pair with the *dynamic* Material You surface. [com.countflow.widget.engine.model.WidgetTheme]
- * sometimes forces its own background instead — true black for OLED (burn-in prevention, not an
- * aesthetic choice a dynamic tone could satisfy) and a translucent dark surface for Glass — and
- * nothing guarantees those two colour sets agree. Whenever the theme forces a background, text
- * and the progress track are pulled from [ForcedBackgroundPalette] instead of `GlanceTheme`, so
- * a dark-forced widget cannot end up with washed-out text a bright dynamic scheme would have
- * produced. [com.countflow.widget.engine.model.WidgetTheme.isHighContrast] is applied the same
- * way for themes that keep the dynamic background but still ask for a stronger pass: it skips
- * the muted `onSurfaceVariant` tone in favour of full-emphasis `onSurface`.
+ * From there, [CountdownWidgetStyle] dispatches to one of seven per-style layouts in
+ * `CountdownWidgetLayouts.kt` — each a genuinely different composition, not a re-skin of one
+ * shared tree, per `docs/WIDGET_DESIGN_GUIDE.md`.
  */
 @Composable
 internal fun CountdownWidgetContent(model: WidgetRenderModel?) {
@@ -64,6 +59,52 @@ internal fun CountdownWidgetContent(model: WidgetRenderModel?) {
         return
     }
 
+    val resources = LocalContext.current.resources
+    val colors = resolveColors(model)
+    val labelText = CountdownLabelFormatter.format(resources, model.label)
+    val headline = resolveHeadline(model, labelText, resources)
+
+    val cardModifier = GlanceModifier
+        .fillMaxSize()
+        .background(colors.background)
+        .widgetCornerRadius(model.theme.cornerRadiusDp)
+        // One description for the whole tappable card, not several separate text nodes — the
+        // same reasoning `EventCard` applies with `clearAndSetSemantics` in the app's own list.
+        .semantics { contentDescription = widgetContentDescription(model, headline) }
+        .clickable(actionOpenApp())
+
+    when (model.theme.style) {
+        WidgetStyle.MINIMAL -> MinimalLayout(model, headline, colors, cardModifier)
+        WidgetStyle.MATERIAL -> MaterialLayout(model, headline, colors, cardModifier)
+        WidgetStyle.PROGRESS -> ProgressLayout(model, headline, colors, cardModifier)
+        WidgetStyle.OLED -> OledLayout(model, headline, colors, cardModifier)
+        WidgetStyle.GLASS -> GlassLayout(model, headline, colors, cardModifier)
+        WidgetStyle.ROUNDED -> RoundedLayout(model, headline, colors, cardModifier)
+        WidgetStyle.MODERN -> ModernLayout(model, headline, colors, cardModifier)
+    }
+}
+
+/**
+ * Resolved colors for one render pass, computed once and threaded into whichever per-style layout
+ * draws the model.
+ *
+ * [onSurface]/[onSurfaceMuted]/[track] cannot come unconditionally from [androidx.glance.GlanceTheme]:
+ * those tokens are tuned to pair with the *dynamic* Material You surface, and OLED/Glass force
+ * their own background instead, with no guarantee the two color sets agree — see
+ * `docs/WIDGET_ARCHITECTURE.md` §6.
+ */
+internal data class WidgetColors(
+    val accent: ColorProvider,
+    val background: ColorProvider,
+    val onSurface: ColorProvider,
+    val onSurfaceMuted: ColorProvider,
+    val track: ColorProvider,
+    /** [onSurfaceMuted] for a completed/expired event, [accent] otherwise. */
+    val statusColor: ColorProvider,
+)
+
+@Composable
+private fun resolveColors(model: WidgetRenderModel): WidgetColors {
     val theme = model.theme
     val hasForcedBackground = theme.backgroundColorArgb != null
 
@@ -77,97 +118,105 @@ internal fun CountdownWidgetContent(model: WidgetRenderModel?) {
         theme.isHighContrast -> GlanceTheme.colors.onSurface
         else -> GlanceTheme.colors.onSurfaceVariant
     }
-    val progressTrack = if (hasForcedBackground) ForcedBackgroundPalette.track else GlanceTheme.colors.surfaceVariant
+    val track = if (hasForcedBackground) ForcedBackgroundPalette.track else GlanceTheme.colors.surfaceVariant
+    val statusColor = if (model.isExpired || model.isCompleted) onSurfaceMuted else accent
 
-    val labelText = CountdownLabelFormatter.format(LocalContext.current.resources, model.label)
-    val labelColor = if (model.isExpired || model.isCompleted) onSurfaceMuted else accent
-
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(background)
-            .cornerRadius(theme.cornerRadiusDp.dp)
-            .padding(WIDGET_PADDING)
-            // One description for the whole tappable card, not five separate text nodes — the
-            // same reasoning `EventCard` applies with `clearAndSetSemantics` in the app's own
-            // list, so a screen reader announces "Trip to Kyoto. In 12 days. 40% complete." once,
-            // rather than reading the emoji, title, number, and label as unrelated fragments.
-            .semantics { contentDescription = widgetContentDescription(model, labelText) }
-            .clickable(actionOpenApp()),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalAlignment = Alignment.Start,
-    ) {
-        if (model.showEmoji || model.showTitle) {
-            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (model.showEmoji) {
-                    Text(text = model.emoji, style = TextStyle(fontSize = EMOJI_SIZE))
-                }
-                if (model.showTitle) {
-                    Text(
-                        text = model.title,
-                        style = TextStyle(
-                            fontSize = TITLE_SIZE,
-                            fontWeight = FontWeight.Medium,
-                            color = onSurface,
-                        ),
-                        maxLines = 1,
-                        modifier = GlanceModifier
-                            .defaultWeight()
-                            .padding(start = if (model.showEmoji) 6.dp else 0.dp),
-                    )
-                }
-            }
-            Spacer(modifier = GlanceModifier.height(SPACING_XS))
-        }
-
-        if (model.showDaysValue) {
-            Text(
-                text = model.daysRemaining.toString(),
-                style = TextStyle(fontSize = DAYS_SIZE, fontWeight = FontWeight.Bold, color = accent),
-            )
-        }
-
-        Text(
-            text = labelText,
-            style = TextStyle(fontSize = LABEL_SIZE, color = labelColor),
-        )
-
-        if (model.progress.isVisible) {
-            Spacer(modifier = GlanceModifier.height(SPACING_SM))
-            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                LinearProgressIndicator(
-                    progress = model.progress.fraction,
-                    modifier = GlanceModifier.defaultWeight().height(PROGRESS_HEIGHT),
-                    // labelColor, not accent: a completed or expired event is already told apart
-                    // by its muted label text (see above) — a still-vivid, full accent-colored
-                    // bar next to that muted text read as a real inconsistency, found on device
-                    // (Session 8). The bar should de-emphasize exactly when the label does.
-                    color = labelColor,
-                    backgroundColor = progressTrack,
-                )
-                if (model.showPercentageText) {
-                    Text(
-                        text = model.progress.percentText,
-                        style = TextStyle(fontSize = PERCENT_SIZE, color = onSurfaceMuted),
-                        modifier = GlanceModifier.padding(start = 6.dp),
-                    )
-                }
-            }
-        }
-    }
+    return WidgetColors(accent, background, onSurface, onSurfaceMuted, track, statusColor)
 }
 
 /**
- * One sentence a screen reader can say once for the whole card, built from exactly the fields
- * that are actually visible — hidden elements (`showTitle = false`, no progress) are left out
- * rather than announced despite not being drawn.
+ * The two-line content hierarchy every layout draws: the biggest fact on the card, and — only
+ * when it adds real information — a second line underneath it.
+ *
+ * @property primary the headline: a bare day count for an ordinary countdown, or the state word
+ *   itself ("Tomorrow," "Completed") when there is no meaningful count to show instead
+ *   ([com.countflow.core.domain.countdown.showsMeaningfulDayCount]).
+ * @property unit the pluralized "day"/"days" caption belonging to [primary], only when [primary]
+ *   is a bare number — never baked into the same string, so a layout can style them differently
+ *   (a huge number, a small caption) or drop the unit entirely for the starkest styles.
+ * @property secondary the supporting line, or null when showing one would just repeat [primary]
+ *   in different words — the exact "Tomorrow / Tomorrow" redundancy this type exists to prevent.
+ * @property showIdentity whether the emoji/title row should be drawn at all. False for
+ *   completed/expired states, where the title has already moved into [secondary] — showing it in
+ *   both places would be the same redundancy the label/count split above avoids.
  */
-private fun widgetContentDescription(model: WidgetRenderModel, labelText: String): String = buildString {
-    if (model.showTitle) {
+internal data class WidgetHeadline(
+    val primary: String,
+    val unit: String?,
+    val secondary: String?,
+    val showIdentity: Boolean,
+) {
+    /**
+     * Whether [primary] is a bare day count rather than a word like "Completed" or "Tomorrow".
+     *
+     * Found on a real device, not in a preview: a status word sized for a 1-3 digit number wraps
+     * mid-word with no hyphen ("Compl" / "eted") in a 2×2 cell's width — every layout needs a
+     * smaller size for the word case, which this flag selects between.
+     */
+    val isNumeric: Boolean get() = primary.isNotEmpty() && primary.all(Char::isDigit)
+}
+
+/** Not `private`: the configuration screen's live preview reuses this exact logic rather than
+ * re-deriving its own approximation of it — see `configuration/WidgetPreviewCard.kt`. */
+internal fun resolveHeadline(
+    model: WidgetRenderModel,
+    labelText: String,
+    resources: Resources,
+): WidgetHeadline {
+    if (model.isCompleted || model.isExpired) {
+        // The status word carries the news; the event's own title is what used to sit in the
+        // identity row, now demoted to supporting information underneath it.
+        return WidgetHeadline(
+            primary = labelText,
+            unit = null,
+            secondary = model.title.takeIf { model.showTitle },
+            showIdentity = false,
+        )
+    }
+
+    if (model.showDaysValue) {
+        val unit = resources.getQuantityString(
+            com.countflow.core.designsystem.R.plurals.countdown_day_unit,
+            model.daysRemaining,
+            model.daysRemaining,
+        )
+        // NextWeek's label ("Next week") says something the bare number doesn't — which calendar
+        // week this falls in. InDays/DaysAgo's label ("In 7 days") is the same fact restated;
+        // showing both next to a headline that already reads "7" is the redundancy this type
+        // exists to prevent.
+        val secondary = labelText.takeIf { model.label == CountdownLabel.NextWeek }
+        return WidgetHeadline(
+            primary = model.daysRemaining.toString(),
+            unit = unit,
+            secondary = secondary,
+            showIdentity = true,
+        )
+    }
+
+    // Near-term: Today, Tomorrow, Yesterday, Starting soon. A bare count would be noise or an
+    // outright error here (com.countflow.core.domain.countdown.showsMeaningfulDayCount already
+    // says so) — the label word itself is the headline, and a timed event's clock time is more
+    // useful underneath it than repeating that same word a second time.
+    val secondary = if (!model.target.isAllDay) {
+        TargetDateFormatter.formatTime(resources, model.target, model.targetZone)
+    } else {
+        null
+    }
+    return WidgetHeadline(primary = labelText, unit = null, secondary = secondary, showIdentity = true)
+}
+
+/**
+ * One sentence a screen reader can say once for the whole card, built from exactly what
+ * [headline] and [model] say is actually being shown.
+ */
+private fun widgetContentDescription(model: WidgetRenderModel, headline: WidgetHeadline): String = buildString {
+    if (headline.showIdentity && model.showTitle) {
         append(model.title)
         append(". ")
     }
-    append(labelText)
+    append(headline.primary)
+    headline.unit?.let { append(' '); append(it) }
+    headline.secondary?.let { append(". "); append(it) }
     if (model.showPercentageText) {
         append(". ")
         append(model.progress.percentText)
@@ -186,7 +235,7 @@ private fun UnconfiguredContent() {
         modifier = GlanceModifier
             .fillMaxSize()
             .background(GlanceTheme.colors.surface)
-            .cornerRadius(16.dp)
+            .widgetCornerRadius(null)
             .padding(WIDGET_PADDING)
             .semantics { contentDescription = UNCONFIGURED_DESCRIPTION }
             .clickable(actionOpenConfiguration()),
@@ -215,24 +264,28 @@ private fun UnconfiguredContent() {
 
 private const val UNCONFIGURED_DESCRIPTION = "Tap to choose a countdown to show"
 
+/** Resolves [radiusDp], or the system's own widget corner radius when it is null (D-045). */
+internal fun GlanceModifier.widgetCornerRadius(radiusDp: Int?): GlanceModifier = if (radiusDp != null) {
+    cornerRadius(radiusDp.dp)
+} else {
+    cornerRadius(android.R.dimen.system_app_widget_background_radius)
+}
+
 /**
- * Fixed colours for a background [com.countflow.widget.engine.model.WidgetTheme] forced itself,
- * rather than one [androidx.glance.GlanceTheme] generated from wallpaper. See the class doc on
- * [CountdownWidgetContent] for why these cannot come from `GlanceTheme` here.
+ * Fixed colors for a background [com.countflow.widget.engine.model.WidgetTheme] forced itself,
+ * rather than one [androidx.glance.GlanceTheme] generated from wallpaper. See [resolveColors]'s
+ * doc for why these cannot come from `GlanceTheme` here.
  */
-private object ForcedBackgroundPalette {
+internal object ForcedBackgroundPalette {
     val onSurface = ColorProvider(Color(0xFFFFFFFF))
     val onSurfaceMuted = ColorProvider(Color(0xFFC7CBD1))
     val track = ColorProvider(Color(0xFF2E3338))
 }
 
-private val WIDGET_PADDING = 12.dp
-private val EMOJI_SIZE = 20.sp
-private val TITLE_SIZE = 14.sp
-private val DAYS_SIZE = 34.sp
-private val LABEL_SIZE = 13.sp
-private val PERCENT_SIZE = 12.sp
-private val UNCONFIGURED_ICON_SIZE = 22.sp
-private val SPACING_XS = 4.dp
-private val SPACING_SM = 8.dp
-private val PROGRESS_HEIGHT = 6.dp
+internal val WIDGET_PADDING = 12.dp
+internal val LABEL_SIZE = 13.sp
+internal val PERCENT_SIZE = 12.sp
+internal val UNCONFIGURED_ICON_SIZE = 22.sp
+internal val SPACING_XS = 4.dp
+internal val SPACING_SM = 8.dp
+internal val PROGRESS_HEIGHT = 6.dp

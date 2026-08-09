@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Replaces Glance's generic androidx.glance.appwidget:glance_default_loading_layout (an
+  unbranded spinner) as android:initialLayout. Shown briefly on first placement, before the first
+  real provideGlance call completes — and, per KNOWN_ISSUES.md BUG-011, also whatever the widget
+  falls back to after Force Stop clears the app's Glance session with no periodic trigger left to
+  redraw it (updatePeriodMillis="0" is deliberate, D-008/D-036).
+
+  This is a real, verified-safe improvement for the ordinary first-placement case (it now says
+  "CountFlow" instead of nothing), but it does NOT and cannot fix BUG-011 itself: a static XML
+  resource the host inflates directly has no app code involved and therefore no way to attach a
+  working PendingIntent — confirmed on-device in Session 8, tapping the stuck state does nothing,
+  which this layout does not and cannot change. Session 9 chose to document that limitation
+  plainly (see KNOWN_ISSUES.md) rather than build a workaround around a state Android does not
+  hand the app a hook into. "Tap to refresh" below is a genuinely honest hint the moment the app
+  *is* running again and this layout is only ever seen transiently — not a functioning affordance
+  while force-stopped.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_background"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="12dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="CountFlow"
+        android:textColor="#FFF3F3F5"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Tap to refresh"
+        android:textColor="#FFA9AEB4"
+        android:textSize="12sp" />
+
+</LinearLayout>

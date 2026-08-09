@@ -42,7 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.countflow.core.designsystem.component.AccentColorPicker
 import com.countflow.core.designsystem.format.asText
+import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.validation.EventField
 import com.countflow.core.domain.validation.EventValidationError
@@ -83,6 +85,7 @@ fun CreateEventScreen(
         onDateChange = viewModel::onDateChange,
         onTimeChange = viewModel::onTimeChange,
         onAllDayChange = viewModel::onAllDayChange,
+        onAccentColorChange = viewModel::onAccentColorChange,
         onSave = viewModel::onSave,
         onNavigateBack = onNavigateBack,
         modifier = modifier,
@@ -100,6 +103,7 @@ internal fun CreateEventScreen(
     onDateChange: (LocalDate) -> Unit,
     onTimeChange: (LocalTime) -> Unit,
     onAllDayChange: (Boolean) -> Unit,
+    onAccentColorChange: (AccentColor) -> Unit,
     onSave: () -> Unit,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -174,6 +178,13 @@ internal fun CreateEventScreen(
                     )
                 }
             }
+
+            Text("Accent color", style = MaterialTheme.typography.titleSmall)
+            AccentColorPicker(
+                selected = uiState.accentColor,
+                onSelect = onAccentColorChange,
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            )
 
             Text("When", style = MaterialTheme.typography.titleSmall)
             OutlinedButton(

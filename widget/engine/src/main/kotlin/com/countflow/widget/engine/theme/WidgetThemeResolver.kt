@@ -35,7 +35,10 @@ internal object WidgetThemeResolver {
                 style = style,
                 accentColorArgb = accentArgb,
                 backgroundColorArgb = null,
-                cornerRadiusDp = CORNER_RADIUS_DEFAULT,
+                // System-tracked (D-045): Minimal has no opinion about shape, only about
+                // typography and restraint — it should look like whatever this launcher considers
+                // a normal widget corner, not assert a number of its own.
+                cornerRadiusDp = null,
                 isHighContrast = false,
             )
 
@@ -43,7 +46,10 @@ internal object WidgetThemeResolver {
                 style = style,
                 accentColorArgb = accentArgb,
                 backgroundColorArgb = null,
-                cornerRadiusDp = CORNER_RADIUS_DEFAULT,
+                // System-tracked: Material's entire premise is being the safe, native-feeling
+                // default, which means matching the shape every other widget on the same home
+                // screen already uses.
+                cornerRadiusDp = null,
                 isHighContrast = false,
             )
 
@@ -54,6 +60,8 @@ internal object WidgetThemeResolver {
                 // with a translucent dark surface rather than a true frosted effect. Revisit if
                 // a platform API ever exposes real backdrop blur to widgets.
                 backgroundColorArgb = TRANSLUCENT_DARK_SURFACE,
+                // Fixed, slightly softer than system (D-045): a translucent surface reads more
+                // like glass with a bit more roundness at its edges than a sharp system corner.
                 cornerRadiusDp = CORNER_RADIUS_GLASS,
                 isHighContrast = false,
             )
@@ -65,7 +73,9 @@ internal object WidgetThemeResolver {
                 // the fewest possible sub-pixels, which a Material You surface tone cannot
                 // guarantee even in dark mode.
                 backgroundColorArgb = TRUE_BLACK,
-                cornerRadiusDp = CORNER_RADIUS_DEFAULT,
+                // System-tracked: OLED's identity is entirely about the display technology
+                // (color), not shape — it should sit in the grid exactly like any other widget.
+                cornerRadiusDp = null,
                 isHighContrast = true,
             )
 
@@ -73,7 +83,7 @@ internal object WidgetThemeResolver {
                 style = style,
                 accentColorArgb = accentArgb,
                 backgroundColorArgb = null,
-                cornerRadiusDp = CORNER_RADIUS_DEFAULT,
+                cornerRadiusDp = null,
                 isHighContrast = false,
             )
 
@@ -81,6 +91,9 @@ internal object WidgetThemeResolver {
                 style = style,
                 accentColorArgb = accentArgb,
                 backgroundColorArgb = null,
+                // Fixed, and deliberately not system-tracked (D-045): "rounder than default" is
+                // this style's entire reason to exist, so it cannot track a system value it is
+                // specifically supposed to exceed.
                 cornerRadiusDp = CORNER_RADIUS_ROUNDED,
                 isHighContrast = false,
             )
@@ -89,15 +102,18 @@ internal object WidgetThemeResolver {
                 style = style,
                 accentColorArgb = accentArgb,
                 backgroundColorArgb = null,
-                cornerRadiusDp = CORNER_RADIUS_DEFAULT,
+                // Fixed, and deliberately tighter than system (D-045): Modern's editorial,
+                // grid-like density reads better with a crisper corner than the softer system
+                // default, the same way a magazine masthead uses sharp rules, not rounded ones.
+                cornerRadiusDp = CORNER_RADIUS_MODERN,
                 isHighContrast = true,
             )
         }
     }
 
-    private const val CORNER_RADIUS_DEFAULT = 16
     private const val CORNER_RADIUS_GLASS = 20
     private const val CORNER_RADIUS_ROUNDED = 28
+    private const val CORNER_RADIUS_MODERN = 8
 
     private const val TRUE_BLACK = 0xFF000000.toInt()
 

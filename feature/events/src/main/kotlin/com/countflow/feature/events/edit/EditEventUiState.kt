@@ -1,6 +1,7 @@
 package com.countflow.feature.events.edit
 
 import androidx.compose.runtime.Immutable
+import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.validation.EventValidationError
 import java.time.LocalDate
@@ -23,6 +24,7 @@ import java.time.LocalTime
  * @property date the target date.
  * @property time the target time, ignored when [isAllDay].
  * @property isAllDay whether this is a whole-day event.
+ * @property accentColor the accent applied to this event and every widget showing it.
  * @property errors problems found by the last save attempt.
  * @property hasAttemptedSave whether to show [errors] at all.
  * @property isSaving a save is in flight.
@@ -39,6 +41,7 @@ data class EditEventUiState(
     val date: LocalDate? = null,
     val time: LocalTime = DEFAULT_TIME,
     val isAllDay: Boolean = true,
+    val accentColor: AccentColor = AccentColor.Default,
     val errors: List<EventValidationError> = emptyList(),
     val hasAttemptedSave: Boolean = false,
     val isSaving: Boolean = false,

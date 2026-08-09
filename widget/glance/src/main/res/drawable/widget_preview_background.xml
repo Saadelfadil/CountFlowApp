@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Matches the Material style's resolved dark-surface background (pixel-sampled from a real device
+  at RGB 26,27,32 — docs/SCREENSHOT_GUIDE.md), since the widget picker preview cannot read
+  GlanceTheme's actual dynamic color at picker-render time. A static approximation, not a claim
+  that every user sees exactly this — the real widget still resolves Material You dynamically.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#FF1A1B20" />
+    <corners android:radius="16dp" />
+</shape>

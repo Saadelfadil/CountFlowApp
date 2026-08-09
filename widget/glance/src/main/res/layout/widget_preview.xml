@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The widget picker's preview (android:previewLayout, API 31+) — a plain Android layout the
+  launcher inflates directly, not a Glance composable at all. Glance has no way to render a
+  preview into the picker itself, so this is a deliberately static approximation of the Material
+  style with realistic example content: what a Pixel user actually decides "do I want this on my
+  home screen" from, so it needs to look like the real thing, not a generic placeholder.
+
+  Content mirrors the Material style's own hierarchy (docs/WIDGET_DESIGN_GUIDE.md): identity row,
+  a headline day count with its unit, a second line only because "Next week" genuinely adds
+  information beyond the number (the same NextWeek case CountdownWidgetContent's own resolver
+  treats as non-redundant), and a progress bar — the everyday shape of the widget most users will
+  actually see.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="180dp"
+    android:layout_height="180dp"
+    android:background="@drawable/widget_preview_background"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✈️"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="Trip to Kyoto"
+            android:textColor="#FFF3F3F5"
+            android:textSize="14sp"
+            android:textStyle="normal" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        android:gravity="bottom">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="7"
+            android:textColor="#FF4FD8BE"
+            android:textSize="32sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginBottom="4dp"
+            android:text="days"
+            android:textColor="#FFA9AEB4"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Next week"
+        android:textColor="#FFA9AEB4"
+        android:textSize="13sp" />
+
+    <ProgressBar
+        android:id="@+id/widget_preview_progress"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:layout_marginTop="8dp"
+        android:indeterminate="false"
+        android:max="100"
+        android:progress="40"
+        android:progressTint="#FF4FD8BE"
+        android:progressBackgroundTint="#FF3A3C42" />
+
+</LinearLayout>

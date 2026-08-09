@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
+import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.Event
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.model.EventId
@@ -82,6 +83,7 @@ class EditEventViewModel @Inject constructor(
                     date = start.toLocalDate(),
                     time = start.toLocalTime(),
                     isAllDay = event.target.isAllDay,
+                    accentColor = event.accentColor,
                 )
             }
         }
@@ -99,6 +101,9 @@ class EditEventViewModel @Inject constructor(
     fun onTimeChange(time: LocalTime) = _uiState.update { it.copy(time = time) }
 
     fun onAllDayChange(isAllDay: Boolean) = _uiState.update { it.copy(isAllDay = isAllDay) }
+
+    fun onAccentColorChange(accentColor: AccentColor) =
+        _uiState.update { it.copy(accentColor = accentColor) }
 
     /**
      * Validates and persists.
@@ -136,12 +141,14 @@ class EditEventViewModel @Inject constructor(
                 emoji = emoji,
                 category = state.category,
                 target = target,
+                accentColor = state.accentColor,
             ) ?: Event.create(
                 title = state.title.trim(),
                 target = target,
                 createdAt = clock.instant(),
                 emoji = emoji,
                 category = state.category,
+                accentColor = state.accentColor,
             )
 
             eventRepository.upsertEvent(event)

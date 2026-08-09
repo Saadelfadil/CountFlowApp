@@ -27,6 +27,16 @@
         <item quantity="other">%1$d days ago</item>
     </plurals>
 
+    <!--
+      The bare unit word, no number attached and no leading "In"/"ago" — for widget layouts that
+      draw the number and the unit as two separately styled Text elements (a large stat figure
+      plus a small caption), rather than one pre-assembled sentence.
+    -->
+    <plurals name="countdown_day_unit">
+        <item quantity="one">day</item>
+        <item quantity="other">days</item>
+    </plurals>
+
     <!-- Event categories. -->
     <string name="category_general">General</string>
     <string name="category_birthday">Birthday</string>

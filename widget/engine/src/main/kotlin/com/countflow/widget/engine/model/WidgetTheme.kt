@@ -24,13 +24,18 @@ import com.countflow.core.domain.model.WidgetStyle
  *   Forced to true black for [WidgetStyle.OLED], which is the entire point of that theme —
  *   burn-in prevention on an always-on display, not an aesthetic choice a dynamic colour could
  *   satisfy.
- * @property cornerRadiusDp the corner radius to apply to the widget's background.
+ * @property cornerRadiusDp a fixed corner radius, or null to use the system's own widget corner
+ *   radius (`android.R.dimen.system_app_widget_background_radius` — an Android resource this
+ *   pure-Kotlin module cannot reference directly, so null is the signal the Glance layer resolves
+ *   it from). Most styles should track the system value, matching whatever the launcher and every
+ *   other widget on the same home screen use; a style resolves a fixed number here only when it
+ *   has a real reason to look more or less rounded than its neighbours (TD-011 / D-045).
  * @property isHighContrast whether text and dividers should use a stronger contrast pass.
  */
 data class WidgetTheme(
     val style: WidgetStyle,
     val accentColorArgb: Int?,
     val backgroundColorArgb: Int?,
-    val cornerRadiusDp: Int,
+    val cornerRadiusDp: Int?,
     val isHighContrast: Boolean,
 )

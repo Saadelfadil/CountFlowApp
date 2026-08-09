@@ -16,10 +16,17 @@
   being set at all means most launchers still run it immediately on placement, which is the path
   this milestone actually exercises. reconfigurable lets a placed widget be re-pointed at a
   different event without deleting and re-adding it.
+
+  initialLayout (Session 9) is our own branded layout_widget_initial_layout, not Glance's generic
+  spinner — see that file's own comment for what this does and does not fix (KNOWN_ISSUES.md
+  BUG-011). previewLayout (API 31+, Session 9) is a plain Android layout the launcher inflates
+  directly for the widget picker — Glance cannot render into the picker itself, so this is a
+  deliberately realistic static approximation of the Material style, not a live render.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/countdown_widget_description"
-    android:initialLayout="@layout/glance_default_loading_layout"
+    android:initialLayout="@layout/widget_initial_layout"
+    android:previewLayout="@layout/widget_preview"
     android:minWidth="110dp"
     android:minHeight="110dp"
     android:targetCellWidth="2"

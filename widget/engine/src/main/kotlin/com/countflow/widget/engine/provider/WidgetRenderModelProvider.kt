@@ -2,6 +2,8 @@ package com.countflow.widget.engine.provider
 
 import com.countflow.core.domain.countdown.CountdownEngine
 import com.countflow.core.domain.model.AppWidgetId
+import com.countflow.core.domain.model.Event
+import com.countflow.core.domain.model.WidgetBinding
 import com.countflow.core.domain.repository.BoundWidget
 import com.countflow.core.domain.repository.WidgetBindingRepository
 import com.countflow.widget.engine.mapper.WidgetRenderMapper
@@ -47,6 +49,19 @@ class WidgetRenderModelProvider @Inject constructor(
     /** Reads the render model for [appWidgetId] once. */
     suspend fun get(appWidgetId: AppWidgetId): WidgetRenderModel? =
         toRenderModelOrNull(widgetBindingRepository.getBoundWidget(appWidgetId))
+
+    /**
+     * Computes the render model for an [event] and [binding] the caller already has in hand —
+     * no repository read, no I/O, safe to call on every keystroke. The configuration screen's
+     * live preview is the reason this exists: it needs the exact same "what would this widget
+     * show" logic a real render uses, for a binding that has not been (and may never be) written
+     * to the database yet, since writing one speculatively would risk the very orphan-binding
+     * guarantee `WidgetConfigurationActivity`'s own class doc explains.
+     */
+    fun preview(event: Event, binding: WidgetBinding): WidgetRenderModel {
+        val countdown = countdownEngine.countdownAt(event, clock.instant(), clock.zone)
+        return WidgetRenderMapper.map(event, binding, countdown, clock.zone)
+    }
 
     private fun toRenderModelOrNull(bound: BoundWidget?): WidgetRenderModel? {
         bound ?: return null

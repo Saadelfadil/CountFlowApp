@@ -68,11 +68,29 @@ class WidgetThemeResolverTest {
     }
 
     @Test
-    fun `rounded has a larger corner radius than the default`() {
-        val rounded = WidgetThemeResolver.resolve(WidgetStyle.ROUNDED, AccentColor.Dynamic)
-        val minimal = WidgetThemeResolver.resolve(WidgetStyle.MINIMAL, AccentColor.Dynamic)
+    fun `styles with no reason to differ from the system radius leave it null`() {
+        // D-045: most styles should look like whatever corner every other widget on the same
+        // home screen uses, not assert a number of their own.
+        listOf(WidgetStyle.MINIMAL, WidgetStyle.MATERIAL, WidgetStyle.PROGRESS, WidgetStyle.OLED)
+            .forEach { style ->
+                val theme = WidgetThemeResolver.resolve(style, AccentColor.Dynamic)
+                assertThat(theme.cornerRadiusDp).isNull()
+            }
+    }
 
-        assertThat(rounded.cornerRadiusDp).isGreaterThan(minimal.cornerRadiusDp)
+    @Test
+    fun `rounded, glass, and modern each resolve a fixed radius distinct from one another`() {
+        val rounded = WidgetThemeResolver.resolve(WidgetStyle.ROUNDED, AccentColor.Dynamic).cornerRadiusDp
+        val glass = WidgetThemeResolver.resolve(WidgetStyle.GLASS, AccentColor.Dynamic).cornerRadiusDp
+        val modern = WidgetThemeResolver.resolve(WidgetStyle.MODERN, AccentColor.Dynamic).cornerRadiusDp
+
+        assertThat(rounded).isNotNull()
+        assertThat(glass).isNotNull()
+        assertThat(modern).isNotNull()
+        assertThat(setOf(rounded, glass, modern)).hasSize(3)
+        // Rounded's entire premise is being the roundest; Modern's is being crisper than system.
+        assertThat(rounded!!).isGreaterThan(glass!!)
+        assertThat(modern!!).isLessThan(glass)
     }
 
     @Test
