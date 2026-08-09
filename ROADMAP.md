@@ -11,6 +11,7 @@ Living document. Update the status column as milestones move.
 | 2 | Database, repositories, countdown engine | **Completed** | 3 |
 | 3 | Event CRUD | **Completed** | 4 |
 | 4 | Widget engine | **Completed** | 5–6 |
+| 4.5 | Widget stabilization | **Completed** | 7 |
 | 5 | Multiple widgets | Not Started | — |
 | 6 | Settings | Not Started | — |
 | 7 | Notifications | Not Started | — |
@@ -139,6 +140,40 @@ GUI-mode test device this session reached further than Session 5's headless AVD 
 was screenshotted — but the device connection was unstable throughout and became fully
 unreachable before the drag-onto-home-screen flow could be completed. See KNOWN_ISSUES.md TD-010
 for the full account; this is the clear first item for the next session with stable device access.
+
+---
+
+## Milestone 4.5 — Widget stabilization · Completed (Session 7)
+
+Not a feature milestone. The brief was explicit: treat the one widget that exists as if it were
+shipping tomorrow, find everything wrong with it, fix what's genuinely a bug, and honestly
+document everything that's a gap instead of a bug. No new sizes, styles, or capabilities — see
+`docs/WIDGET_REVIEW.md` for the full audit and `TODO.md` for the exclusion list this session held
+to.
+
+**Constraint that shaped the whole session:** no device was reachable at all (Session 6's
+emulator connection never came back, and no local emulator tooling exists to start a
+replacement). Every task in the brief that needed a real launcher, real memory profiler, or real
+elapsed wall-clock time (a reboot) could not be completed — and is documented as exactly that,
+not quietly skipped or guessed at.
+
+**What was still achieved without a device:** a full static architecture audit (module boundary,
+dependency graph, injection graph, SOLID read on every Milestone 4 class) found the architecture
+holds, with one real finding — three `:widget:engine` types (`WidgetThemeResolver`,
+`WidgetProgressEngine`, `WidgetRenderMapper`) were `public` with no consumer outside the module,
+tightened to `internal` and verified empirically (D-042). A UX/accessibility review computed
+actual contrast ratios from the code's own color constants and found one real, High-severity
+defect: GLASS's translucent background could drop below WCAG AA contrast over a light wallpaper —
+found, fixed, and regression-tested (BUG-R008, D-041). Three new technical-debt items were opened
+honestly rather than fixed reflexively, since fixing them would have meant new engineering this
+milestone explicitly excluded (TD-011 corner radius, TD-012 resize-mode risk, TD-013 title
+ellipsis).
+
+**Not delivered, and said so plainly:** live verification of any of the eleven lifecycle
+scenarios the brief listed, widget update/creation/refresh latency, memory usage, battery impact,
+TalkBack's actual output, and testing across more than one launcher. `docs/WIDGET_REVIEW.md` §10
+and §12 map every one of these to the strongest evidence that does exist (mostly Session 5's
+device work, mostly one milestone old) rather than claiming coverage that isn't there.
 
 ---
 

@@ -14,6 +14,52 @@ Nothing yet. Milestone 5 begins multiple widgets, themes, and sizes.
 
 ---
 
+## [0.4.2] — 2026-08-09 — Milestone 4.5: widget stabilization
+
+Session 7. A stabilization/audit pass, not a feature session — the brief asked whether this
+widget would be ready to ship tomorrow, not for anything new to add. No device was reachable this
+session; every finding below came from a static architecture audit and a code-level UX/contrast
+review, honestly separated from what could not be verified without a real device. Full detail in
+`docs/WIDGET_REVIEW.md`, the new permanent audit record.
+
+### Fixed
+- **BUG-R008** — GLASS's translucent background (`0x99101418`, 60% opaque) could composite to
+  roughly mid-gray over a light/white wallpaper, dropping the white text drawn on top to ~4.9:1
+  contrast — barely above WCAG AA's 4.5:1 floor. Raised the alpha to `0xCC` (80% opaque, ~10.8:1
+  in the same worst case). Regression test added.
+
+### Changed
+- `WidgetThemeResolver`, `WidgetProgressEngine`, `WidgetRenderMapper` narrowed from `public` to
+  `internal` — none had a real caller outside `:widget:engine`. Verified empirically (both the
+  module's own tests and `:widget:glance`'s compilation still succeed unchanged), not just
+  reasoned about.
+
+### Added
+- `docs/WIDGET_REVIEW.md` — the full Milestone 4.5 audit: architecture, SOLID, dependency and
+  injection graphs, UX/accessibility/contrast findings with actual computed numbers, a
+  simplification pass (what was considered and deliberately left alone, and why), a lifecycle
+  verification-status table naming the strongest real evidence for each of eleven scenarios, and
+  an honest list of everything this session could not verify without a device.
+- One new regression test asserting GLASS's background alpha never regresses below the contrast
+  floor BUG-R008's fix depends on.
+
+### Known gaps (opened this session, not fixed — see docs/WIDGET_REVIEW.md and KNOWN_ISSUES.md)
+- **TD-011** — widget corner radii are hand-picked constants, not tied to the system's actual
+  widget-clip radius (`android.R.dimen.system_app_widget_background_radius`), which ARCHITECTURE.md
+  flagged as worth adopting and never was.
+- **TD-012** — `resizeMode="none"` is not guaranteed to be honored by every launcher; no adaptive
+  fallback exists since `SizeMode.Exact` isn't adopted yet (Milestone 5).
+- **TD-013** — long titles clip at one line with no ellipsis; Glance 1.1.1's `Text` has no
+  overflow parameter to set one.
+- **TD-010** — real launcher placement still unverified; no device was reachable at all this
+  session (Session 6's evidence stands as the most recent signal).
+
+### Tests
+1 new: GLASS's resolved background alpha must stay at or above the contrast-safe floor. 223
+total, 0 failures. `:core:domain` unchanged at 97.0% line coverage.
+
+---
+
 ## [0.4.1] — 2026-08-09 — Milestone 4 finishing pass: one production-quality widget
 
 Session 6. No new features, no new abstractions — the brief was explicit that this session closes

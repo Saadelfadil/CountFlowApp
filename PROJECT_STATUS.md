@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | 4 of 9 complete |
-| **Last session** | Session 6 — 2026-08-09 |
+| **Current milestone** | 4.5 of 9 complete (stabilization pass; Milestone 5 not started) |
+| **Last session** | Session 7 — 2026-08-09 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 10 accepted warnings |
-| **Tests** | 222 passing, 0 failing. `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ Session 5: config activity's cancel/confirm/prune paths verified against the database, one real crash found and fixed. Session 6: two dead-field render bugs found and fixed (BUG-R006, BUG-R007); real launcher placement still unverified (TD-010) — closer this session (grantbind succeeded, device unlocked) but blocked by an unstable test device, not by the app |
-| **Overall progress** | ~47% |
+| **Tests** | 223 passing, 0 failing. `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ Session 5: config activity's cancel/confirm/prune paths verified against the database, one real crash found and fixed. Session 6: two dead-field render bugs found and fixed (BUG-R006, BUG-R007); real launcher placement closer (grantbind succeeded) but blocked by device instability. **Session 7: no device reachable at all** — a full static audit found and fixed one High-severity contrast bug (BUG-R008) instead; see `docs/WIDGET_REVIEW.md` |
+| **Overall progress** | ~48% |
 
 ---
 
@@ -36,6 +36,7 @@ Read in this order when picking the project up cold:
 | `SESSION_SUMMARY.md` | What the most recent session did and what to do next. |
 | `ARCHITECTURE.md` | The authoritative design. Wins over every other document on conflict. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system specifically: data/render/refresh flow, binding and configuration lifecycles, Glance sharp edges, forward compatibility. Read this before changing anything under `widget/`. |
+| `docs/WIDGET_REVIEW.md` | The Milestone 4.5 stabilization audit: architecture/SOLID review, UX and contrast findings with computed numbers, lifecycle verification-status table, and an honest list of what remains unverified without a device. |
 | `DECISIONS.md` | Every architectural decision with reason, alternatives, tradeoffs, status. |
 | `ROADMAP.md` | Milestones 0–9 with status. |
 | `TODO.md` | Prioritized outstanding work. |
@@ -126,23 +127,27 @@ something a reviewer has to catch (D-003, D-033).
   against real SQLite rather than assumed.
 - **Event CRUD works end to end**: create with validation, list, realtime search, category
   filter, four sort orders, and edit. Driven on a device, not just unit-tested.
-- **A countdown widget exists, and is finished to production quality for its scope.** One 2×2
-  size. Placing it through configuration writes the correct binding; cancelling writes nothing
-  (verified against the database, not assumed); the widget redraws while the app is alive when
-  its event changes. Session 6 closed the gap between what the engine already computed and what
-  the renderer actually drew: the whole card now has one accessible `contentDescription`, forced
-  dark backgrounds (OLED, Glass) get colors resolved for themselves rather than borrowed from the
-  dynamic Material You scheme, and the persisted-but-previously-inert percentage toggle now
-  reaches the screen.
+- **A countdown widget exists, and has been audited to production standards for its scope** —
+  not just built, but reviewed against "would you ship this tomorrow." One 2×2 size. Placing it
+  through configuration writes the correct binding; cancelling writes nothing (verified against
+  the database, not assumed); the widget redraws while the app is alive when its event changes.
+  Session 6 closed the gap between what the engine already computed and what the renderer
+  actually drew (accessible `contentDescription`, forced-background colors, the percentage
+  toggle). Session 7's stabilization pass found and fixed a real contrast defect in the GLASS
+  theme (BUG-R008) via a static audit, and confirmed via a traced dependency/injection graph and
+  a SOLID read of every Milestone 4 class that the architecture holds under scrutiny. See
+  `docs/WIDGET_REVIEW.md`.
 
 ## What does not exist yet
 
 No notifications, no settings, no billing. Within the events feature: no delete or archive
 gesture (TD-008), no accent-colour picker, no live widget preview. Within widgets: no widget has
-been placed through a genuine `AppWidgetHost`/launcher flow (TD-010 — closer this session than
-Session 5's headless failure, but still blocked by test-device instability, not by the app), only
-one size and no theme differentiation beyond colour, and no D-008 alarm-based refresh. Several UI
-strings are not localised (TD-007).
+been placed through a genuine `AppWidgetHost`/launcher flow (TD-010 — three sessions running now;
+Session 7 had no device reachable at all to make further progress on it), only one size and no
+theme differentiation beyond colour, no D-008 alarm-based refresh, no system-matched corner radius
+(TD-011), no adaptive fallback if a launcher ignores `resizeMode="none"` (TD-012), and no ellipsis
+on a truncated title (TD-013). Several UI strings are not localised (TD-007). No widget
+performance, memory, or battery number has ever been measured on a device, in any session.
 
 ## Where the important logic lives
 
@@ -167,14 +172,14 @@ strings are not localised (TD-007).
 ## Progress
 
 ```
-Overall                      47%
+Overall                      48%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
 Domain & countdown engine   100%   Milestone 2
 Database & persistence      100%   Milestone 2
 Event CRUD / UI              85%   Milestone 3 (gestures and colour picker outstanding)
-Widget engine                95%   Milestone 4 (real launcher placement unverified — TD-010)
+Widget engine                96%   Milestone 4.5 (audited and stabilized; real launcher placement still unverified — TD-010)
 Widget themes & sizes         0%   Milestone 5
 Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
@@ -213,7 +218,10 @@ Verified working on this machine as of Session 2:
 see KNOWN_ISSUES.md TD-010. Session 6 had access to a genuine GUI-mode device instead and got
 further (`grantbind` succeeded, user unlocked), but that device's connection was unstable and it
 became unreachable mid-session, with signs of being an ephemeral/pooled resource (its reported
-model changed mid-session; unrelated app data was present). A *stable* GUI-mode emulator or
-physical device — not just a GUI-capable one — is still the open requirement for closing TD-010.
+model changed mid-session; unrelated app data was present). **Session 7 had no device reachable
+at all** — the same emulator address refused every connection attempt, and no local `emulator`
+binary or AVD exists in this environment to start a replacement. A *stable* GUI-mode emulator or
+physical device — not just a GUI-capable one, and not one this environment has to be re-granted
+access to each session — is still the open requirement for closing TD-010.
 
 Build: `./gradlew assembleDebug` · Lint: `./gradlew :app:lintDebug` · Tests: `./gradlew test`

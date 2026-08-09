@@ -10,7 +10,7 @@ must design around · `WARN-nnn` accepted warnings
 
 ## Open bugs
 
-None. No runtime defects are known as of Session 6.
+None. No runtime defects are known as of Session 7.
 
 ---
 
@@ -153,8 +153,67 @@ should not sprout a swipe affordance that the widget cannot have. Scheduled for 
 
 ---
 
+### TD-011 — Widget corner radii are hand-picked constants, not tied to the system's actual clip radius
+**Severity:** Medium · **Opened:** Session 7
+
+`WidgetThemeResolver`'s corner radii (16dp default, 20dp Glass, 28dp Rounded) are fixed constants
+with no relationship to `android.R.dimen.system_app_widget_background_radius` — the dimension the
+system actually uses to clip a widget's outer bounds, which varies by device and Android version
+(notably themed from Android 12 onward). ARCHITECTURE.md D-001 explicitly flagged Google's
+`appWidgetInnerCornerRadius()` utility as a "keep — adopt close to verbatim" item from the
+canonical sample; it was never adopted.
+
+**Risk.** On a device whose system clip radius differs meaningfully from these constants, the
+widget's drawn background corners and the launcher's outer clip mask could visibly disagree —
+either straight corners peeking past a tighter clip, or the clip visibly cutting inside a larger
+drawn radius.
+
+**Why not fixed immediately.** Adopting it needs an Android `Context.resources` read, which
+belongs in `:widget:glance` (the resolver itself is intentionally pure Kotlin — D-033), plus a
+product decision about which styles should track the system value and which should keep an
+intentionally different one (ROUNDED's entire premise is being *more* rounded than default).
+Session 7 was explicitly scoped to stabilization, not this kind of design call.
+
+**Resolution path.** Read the system dimension in `:widget:glance` (Glance's `cornerRadius(Int)`
+overload accepts a resource id directly, confirmed via the AAR) and decide per-style whether to
+use it or the resolver's own constant. Good candidate for the start of Milestone 5.
+
+---
+
+### TD-012 — `resizeMode="none"` is not guaranteed to be honored by every launcher
+**Severity:** Low · **Opened:** Session 7
+
+Some OEM launchers are known to override widget resize hints. Because `SizeMode.Single` (not
+`Exact`/`Responsive`) is in use, a launcher that resizes the widget anyway will still receive
+content rendered for the single declared size — no adaptive fallback exists.
+
+**Why not fixed.** Requires `SizeMode.Exact` with breakpoint ranges, which is explicitly Milestone
+5 scope (multiple sizes). Unverifiable this session regardless, since no non-compliant launcher
+was reachable — only one emulator was reachable at all, in the prior session, and not to
+completion.
+
+**Resolution path.** Addressed as a side effect of Milestone 5's size work, not separately.
+
+---
+
+### TD-013 — Title truncation has no ellipsis
+**Severity:** Low · **Opened:** Session 7
+
+`Event.MAX_TITLE_LENGTH` is 120 code points; the widget's title `Text` uses `maxLines = 1`, but
+Glance 1.1.1's `Text` composable has no overflow/ellipsis parameter at all (confirmed via `javap`
+on the `glance` 1.1.1 AAR — only text, modifier, style, and maxLines exist). A title near the
+length ceiling clips mid-character with no "…", standard RemoteViews `TextView` behavior absent an
+explicit `android:ellipsize` Glance provides no way to set.
+
+**Resolution path.** No clean fix exists within Glance's plain `Text` API. Worth revisiting if a
+future Glance release adds overflow support, or by dropping to `AndroidRemoteViews` interop
+specifically for the title — the latter is more machinery than this single cosmetic issue
+currently justifies.
+
+---
+
 ### TD-010 — No widget has been placed through a real launcher flow
-**Severity:** Medium (downgraded from the Session 5 finding — see below) · **Opened:** Session 5 · **Progress:** Session 6
+**Severity:** Medium (unchanged from Session 6 — no device was reachable this session at all) · **Opened:** Session 5 · **Progress:** Session 6
 
 Every other piece of Milestone 4 was verified on a real emulator: the configuration Activity's
 event picker, the no-orphan-bindings cancel path, the confirm path writing the correct Room row,
@@ -189,6 +248,12 @@ provider. The underlying code path (`CountdownGlanceWidget.provideGlance`,
 `WidgetRenderModelProvider`, `CountdownWidgetContent`) continues to be exercised end-to-end by
 `CountdownWidgetContentTest` using Glance's own unit-test framework, which does not depend on a
 real widget host — this has not changed.
+
+**Session 7.** No device was reachable at all — the Session 6 emulator (`127.0.0.1:6555`)
+returned `Connection refused` on every attempt, including after an `adb kill-server`/`start-server`
+cycle, and no local `emulator` binary or AVD exists to start a replacement. No new evidence either
+way this session; the Session 6 finding stands as the most recent signal (permission problem
+resolved, stability problem still open).
 
 **Resolution path.** Retry on a *stable* GUI-mode emulator or a physical device, ideally one
 whose connection persists for the full session. Session 6 shows the remaining blocker is very
@@ -277,6 +342,22 @@ Lint currently reports **0 errors and 11 warnings** on `:app:lintDebug` with
 ---
 
 ## Resolved
+
+### BUG-R008 — GLASS's translucent background could fail contrast over a light wallpaper *(found and fixed Session 7)*
+
+`WidgetThemeResolver`'s GLASS background was a translucent overlay (`0x99101418`, 60% opaque),
+composited by the launcher over whatever wallpaper sits behind the widget — the one style whose
+effective background this app does not fully control, unlike OLED's fully opaque true black or
+the five styles that inherit the system's own dynamic Material You surface. Over a fully
+light/white wallpaper, the 60% overlay composites to roughly mid-gray, and the white text
+`CountdownWidgetContent` draws on top of forced backgrounds measured at approximately 4.9:1
+contrast against that worst case — barely above WCAG AA's 4.5:1 floor, with no margin.
+
+Found during Session 7's UX review (§4 of `docs/WIDGET_REVIEW.md`), by computing the actual
+composited contrast against the constant in the code rather than by observation — no device was
+available this session (see TD-010). Fixed by raising the alpha to `0xCC` (80% opaque, ~10.8:1 in
+the same worst case). See DECISIONS.md D-041; a regression test in `WidgetThemeResolverTest`
+asserts the alpha never regresses below the floor this reasoning depends on.
 
 ### BUG-R006 — `WidgetTheme.isHighContrast` was computed but never applied *(found and fixed Session 6)*
 

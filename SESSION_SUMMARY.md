@@ -1,183 +1,173 @@
 # CountFlow
 
-## Session 6
+## Session 7
 
 Date: 2026-08-09
-Current Milestone: **Milestone 4 — Widget engine (COMPLETE, finishing pass)**
+Current Milestone: **Milestone 4.5 — Widget stabilization (COMPLETE)**
 
-> **READ THIS FIRST:** Milestone 4 is now finished, not just architected. Session 5 built the
-> engine and the first widget; Session 6's brief was explicit that the milestone was not done
-> until that one 2×2 widget was production quality — and closed two real gaps where a value the
-> engine already computed never reached the screen. 222 tests pass, `:core:domain` is unchanged
-> at 97.0% line coverage. Do **not** start Milestone 5 without explicit approval, and read TD-010
-> before assuming a real widget placement works — it is closer than ever but still unverified.
+> **READ THIS FIRST:** This was an audit session, not a feature session — the brief was "treat
+> CountFlow as if it were shipping tomorrow, no new features, only improve quality." No device
+> was reachable at all this session. Everything below is a static architecture audit, a UX/
+> contrast review done by computing real numbers from the code, and one genuine High-severity
+> defect found and fixed that way (GLASS's contrast over light wallpapers). 223 tests pass,
+> `:core:domain` unchanged at 97.0%. Do **not** start Milestone 5 without explicit approval, and
+> read `docs/WIDGET_REVIEW.md` before assuming anything about the widget is device-verified —
+> most of it still isn't, honestly and explicitly.
 >
-> Authoritative documents, in reading order: `AI_CONTEXT.md` (single-file orientation),
-> `ARCHITECTURE.md` (design, wins on conflict), `docs/WIDGET_ARCHITECTURE.md` (new this session —
-> the widget system in one file), `PROJECT_STATUS.md`, `DECISIONS.md` (40 entries), then this
-> file.
+> Authoritative documents, in reading order: `AI_CONTEXT.md`, `ARCHITECTURE.md`,
+> `docs/WIDGET_ARCHITECTURE.md`, `docs/WIDGET_REVIEW.md` (new this session), `PROJECT_STATUS.md`,
+> `DECISIONS.md` (42 entries), then this file.
 >
-> Three items are open for Session 7 — see "Requires approval" at the end.
+> Three items are open for Session 8 — see "Requires approval" at the end. The first is now a
+> device, not a decision.
 
 ----------------------------------
 
 ## Objective
 
-The brief for this session was explicit and narrow: **finish the first widget, do not start the
-next milestone.** No new sizes, no new styles, no animations, no Live Updates, no lockscreen —
-"quality over quantity." A second explicit constraint: the architecture is now considered stable,
-and no new interface/manager/coordinator/provider/service/resolver/helper/wrapper/engine should
-be introduced unless it solves a problem that exists today. Every change this session either
-polishes the existing renderer in place or fixes a value that was already computed upstream and
-silently never used — nothing here is a new abstraction.
+Milestone 4.5, explicitly not Milestone 5: verify the widget lifecycle exhaustively, measure
+performance, review accessibility/typography/spacing/Material 3/dynamic color, review resizing
+behavior, test across multiple launchers, run a simplification pass over every Milestone 4 class,
+audit the technical architecture (public APIs, naming, package structure, SOLID, dependency
+graph, injection graph), and produce `docs/WIDGET_REVIEW.md` covering all of it plus a
+production-readiness and risk assessment. No new sizes, styles, the circular renderer, Live
+Updates, lockscreen, settings, premium, or notifications.
 
 ----------------------------------
 
 ## Completed
 
-**Visual and accessibility polish, `CountdownWidgetContent.kt`**
-- One `contentDescription` on the whole clickable card (`GlanceModifier.semantics { … }`),
-  built from exactly the fields actually visible — e.g. "Trip to Kyoto. In 12 days. 40% complete."
-  — instead of a screen reader piecing together the emoji, title, number, and label as unrelated
-  fragments. Mirrors the pattern `EventCard` already uses in the app's own list.
-- Typography and spacing tightened to a consistent scale (a `SPACING_XS`/`SPACING_SM` pair
-  instead of ad hoc 4dp/6dp literals; the day-count headline bumped to 34sp for stronger
-  hierarchy; a 6dp progress-bar height instead of the Glance default).
-- The unconfigured ("tap to set up") placeholder redesigned to look intentional: centered, a "+"
-  mark, clearer copy ("Tap to choose a countdown"), and its own content description.
-- The title `Text` now takes `GlanceModifier.defaultWeight()` inside its `Row`, so a long title
-  cannot push the row's layout in an unbounded way.
+**Environment reality check, first** — the Session 6 emulator (`127.0.0.1:6555`) was unreachable
+from the first command of this session onward: `Connection refused`, unchanged after `adb
+kill-server`/`start-server`, and no local `emulator` binary or AVD exists to start a replacement.
+This eliminated every device-dependent task in the brief (live lifecycle verification,
+performance/memory/battery measurement, multi-launcher testing) before the session properly
+started. Rather than skip those sections or fabricate plausible-sounding results, every one of
+them is answered honestly in `docs/WIDGET_REVIEW.md` as "not verifiable this session," mapped to
+whatever the *strongest actually-existing* evidence is instead (mostly Session 5's device work,
+one milestone old).
 
-**Two real defects found and fixed — both dead fields, neither caught by a failing test**
-- `WidgetTheme.isHighContrast` had been correctly computed by `WidgetThemeResolver` since the
-  theme resolver was written, but nothing in the renderer ever read it — every color came from
-  the ambient `GlanceTheme` regardless of what the resolver had decided. Compounding this, forced
-  backgrounds (OLED's true black, Glass's translucent dark surface) paired with on-colors tuned
-  for the *dynamic* Material You surface, with no guarantee the two agreed. Fixed by resolving
-  text and progress-track colors explicitly against `hasForcedBackground` and `isHighContrast` in
-  the renderer (BUG-R006, D-039).
-- `WidgetBinding.showPercentage` has been persisted through Room and mapped through `:core:data`
-  since Milestone 2, but no code between the database and the screen ever read it — setting it
-  could never have shown a percentage anywhere. Fixed by adding
-  `WidgetRenderModel.showPercentageText`, computed in `WidgetRenderMapper` as
-  `binding.showPercentage && progress.isVisible` so the renderer reads one boolean rather than
-  re-deriving the conjunction (BUG-R007, D-040). Currently inert for every real binding, since no
-  UI sets the field to `true` yet — its value is in being correct the day a settings screen does.
+**Technical/architecture audit** (`docs/WIDGET_REVIEW.md` §2)
+- Re-traced the full dependency graph and injection graph by hand from every `build.gradle.kts`
+  and Hilt module touching widgets: no cycle, no back-reference from `:widget:engine` or
+  `:widget:glance` toward `:app` (confirmed by `grep`, zero hits).
+- Read every class added in Milestone 4 against SOLID. All held up. One real finding: three
+  `:widget:engine` types (`WidgetThemeResolver`, `WidgetProgressEngine`, `WidgetRenderMapper`)
+  were `public` with no consumer outside the module. Tightened to `internal`, verified empirically
+  (not just reasoned) — both the module's own test compilation and `:widget:glance`'s compilation
+  still succeed unchanged. See D-042.
 
-**Performance measurement**
-- The pure-Kotlin compute path — `CountdownEngine.countdownAt` + `WidgetRenderMapper.map`,
-  everything that decides what a widget should show, with no I/O — measured directly at
-  **~505ns per call** (200,000 iterations, JIT-warmed, on the development machine). This is not a
-  device benchmark; it is a real, reproducible number for the one part of "widget creation" that
-  `:widget:engine`'s pure-Kotlin boundary makes measurable without an emulator at all. Confirms
-  the compute cost is not a concern at any plausible widget count — the real cost, unmeasured this
-  session, is the Room query and the RemoteViews round-trip through the launcher process.
-- No on-device performance numbers (widget update latency, memory, battery) were obtained — see
-  "Three problems found" below.
+**Simplification pass** (`docs/WIDGET_REVIEW.md` §3)
+- Reviewed every class added since Milestone 4 against "does this solve a problem that exists
+  today." Nothing was found that should be removed structurally — the one real finding was excess
+  *visibility* (above), not excess *structure*. Three specific extractions were considered and
+  explicitly rejected (a color-resolution helper, a generalized color-palette abstraction, a
+  formal typography/spacing object) with the reasoning kept in the review rather than silently
+  discarded, since "considered and rejected" is exactly the kind of judgment call worth being
+  able to check later.
 
-**`docs/WIDGET_ARCHITECTURE.md` — new document**
-- The permanent, senior-engineer-oriented reference for the whole widget system: module boundary,
-  data flow, render flow, refresh flow, theme resolution (with the exact reasoning behind the
-  forced-background color fix), binding lifecycle, configuration lifecycle, Glance's sharp edges
-  (with real file/line references and, where relevant, "verified by decompiling the AAR" rather
-  than assumed), known limitations, and three explicitly-scoped forward-compatibility sections
-  (multiple widgets, Android 16 Live Updates, lockscreen) that describe *why the current design
-  does not block* each, without claiming any of them are built.
+**UX and accessibility review, done by computing real numbers** (`docs/WIDGET_REVIEW.md` §§4–5)
+- Read every layout dimension, color constant, and string-length constraint against the review
+  checklist in the brief (hierarchy, readability, contrast, progress visibility, emoji placement,
+  title truncation, long titles, small widgets, dark/light wallpapers, OLED). One High-severity
+  defect found this way — see "Three problems found" below. Two Medium/Low findings recorded as
+  technical debt rather than fixed, since fixing them would have meant new engineering outside
+  this session's explicit "no new features" scope (title ellipsis has no clean fix within Glance
+  1.1.1's `Text` API at all; corner-radius system-matching needs an Android resource read plus a
+  product decision on which styles should track it).
+- Re-verified Glance 1.1.1's semantics API surface (only `contentDescription`/`testTag`, no
+  `clearAndSetSemantics` equivalent) — unchanged from Session 6's finding, re-confirmed rather than
+  assumed to still be true.
 
-**Attempted, and partially achieved: real widget placement (TD-010)**
-- See "Three problems found" below — this is the one planned piece of work that did not complete,
-  for an environmental reason rather than a code reason.
+**Performance** (`docs/WIDGET_REVIEW.md` §6)
+- Re-measured the pure-Kotlin compute path (`CountdownEngine.countdownAt` + `WidgetRenderMapper.map`,
+  200,000 iterations, JIT-warmed): ~505ns/call, matching Session 6's number exactly — the mapper's
+  logic didn't change in a way that would move it.
+- Everything requiring a device (creation/update/refresh latency, memory, battery) is explicitly
+  marked not measured, not guessed at.
+
+**`docs/WIDGET_REVIEW.md` — new document**
+- The full Milestone 4.5 audit record: architecture review, simplification pass, UX/accessibility
+  findings with actual computed contrast ratios, performance, battery reasoning, a
+  scenario-by-scenario lifecycle table naming the strongest real evidence for each of the eleven
+  scenarios the brief asked about, technical debt opened this session, and an explicit "what this
+  session could not verify" list rather than a vague disclaimer.
 
 **Verification**
 - `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` — BUILD SUCCESSFUL.
-- 222 tests, 0 failures (5 new: 3 in `:widget:glance` for percent-text visibility including the
-  "requested but progress is off" edge case, 2 in `:widget:engine` for the same conjunction at
-  the mapper level). Lint 0 errors, 10 accepted warnings, unchanged.
-- `:core:domain` coverage unchanged at 97.0% lines — this session touched only `:widget:engine`
-  and `:widget:glance`.
+- 223 tests, 0 failures (1 new: GLASS's background alpha must stay at or above the contrast-safe
+  floor). Lint 0 errors, 10 accepted warnings, unchanged.
+- `:core:domain` coverage unchanged at 97.0% — untouched this session.
 
 ----------------------------------
 
 ## Three problems found, and one environment limitation
 
-1. **`WidgetTheme.isHighContrast` was dead code for its entire life so far.** Found not by a
-   failing test but by deliberately re-reading the render model's fields against what the
-   renderer actually consumed, while auditing the widget for "production quality" as the brief
-   asked. No test had ever asserted the field was read, so none failed when it wasn't. Fixed; see
-   BUG-R006 above.
+1. **GLASS's translucent background could fail WCAG AA contrast over a light wallpaper — a real,
+   High-severity defect, found by computing the actual composited color, not by seeing it.**
+   `TRANSLUCENT_DARK_SURFACE` was `0x99101418` (60% opaque). Composited over a fully light/white
+   wallpaper — the one thing about a widget's background this app has never fully controlled,
+   unlike every other style — that works out to roughly mid-gray, and the white text
+   `ForcedBackgroundPalette.onSurface` draws over forced backgrounds measured at approximately
+   4.9:1 contrast: barely above WCAG AA's 4.5:1 floor for normal text, with zero margin for a
+   wallpaper any lighter or a panel any less accurate than assumed. Fixed by raising the alpha to
+   `0xCC` (80% opaque; ~10.8:1 in the same worst case, past WCAG AAA). A regression test now
+   asserts the alpha can't silently regress below the floor this reasoning depends on. BUG-R008,
+   D-041.
 
-2. **`WidgetBinding.showPercentage` was dead code since Milestone 2 — three sessions.** Found the
-   same way, during the same audit. A field can be perfectly persisted, perfectly mapped through
-   every intermediate layer, and still never do anything if the one layer that would act on it
-   never reads it — and nothing about the test suite passing says otherwise, because there was
-   nothing to assert against. Fixed; see BUG-R007 above.
+2. **Three `:widget:engine` types had a wider public surface than any real caller needed.**
+   Not a defect — nothing was broken — but a genuine finding under the session's explicit "review
+   public APIs" task. `WidgetThemeResolver`, `WidgetProgressEngine`, and `WidgetRenderMapper` were
+   all `public object`s consumed only by `WidgetRenderModelProvider`, itself inside the same
+   module. Tightened to `internal`, verified by rebuilding rather than assumed correct. D-042.
 
-   **The pattern worth remembering from both of these:** a green test suite proves the tests that
-   exist pass, not that every field has a reader. `AI_CONTEXT.md` now carries this as a permanent
-   note — when a render model gains a field, verify something actually reads it before calling
-   the work done, not just that the field compiles and is spelled correctly everywhere.
-
-3. **The test device this session was materially better than Session 5's, then became
-   unreachable mid-verification — an environment problem, not a code problem.** Unlike Session
-   5's headless (`-no-window`) AVD, which failed `appwidget grantbind` outright with
-   `IllegalStateException: User -2 must be unlocked`, this session's device was a genuine GUI-mode
-   emulator: a real launcher rendered and was screenshotted (wallpaper, search bar, icons,
-   navigation bar), `adb shell dumpsys user` reported `RUNNING_UNLOCKED`, and
-   `adb shell appwidget grantbind --package com.countflow --user 0` **succeeded** (exit 0). The
-   app installed successfully. But the `adb` connection required reconnecting between nearly
-   every command, the device's own reported model changed mid-session (`Pixel_8` → `Pixel_9`),
-   and a long-press on an empty home-screen area opened an unrelated pre-existing "Reminders" app
-   with auto-generated data CountFlow never created — all consistent with an ephemeral or pooled
-   test resource that can be reclaimed without notice, not a dedicated stable target. The
-   connection was finally refused outright (`Connection refused`) partway through the
-   long-press → widget picker → drag sequence, before a placed widget could be reached or
-   screenshotted, and did not recover after several retries and an `adb kill-server` /
-   `start-server` cycle.
-
-**Net effect on TD-010.** Materially more promising than Session 5 — the permission failure that
-blocked Session 5 outright is gone — but still open. The next session should treat device
-*stability*, not widget-bind permissions, as the thing to verify first.
+3. **The environment problem, stated as plainly as the code problems.** No device was reachable
+   at any point this session. This is not new in kind — Session 5 had a headless AVD that failed
+   outright, Session 6 had an unstable GUI-mode device that disappeared mid-verification — but
+   this session is the first with literally zero device access, which meant literally zero live
+   verification of anything the brief asked for under "verify widget lifecycle completely,"
+   "measure widget update latency," "measure widget memory usage," "measure battery impact," or
+   "review widget on Pixel/Samsung/third-party launchers." `docs/WIDGET_REVIEW.md` §§10 and 12
+   are the honest record of exactly what that leaves unconfirmed, scenario by scenario, rather
+   than a single blanket disclaimer standing in for eleven different unanswered questions.
 
 ----------------------------------
 
 ## Files Created
 
-One new file, several rewritten in place (no new modules, no new classes beyond what closing the
-two dead-field gaps required).
+One new file. No new modules, no new classes — this session's brief explicitly asked for fewer
+moving parts, not more, and the one structural change (§below) is a visibility narrowing.
 
 ```
-docs/WIDGET_ARCHITECTURE.md                                    (new)
+docs/WIDGET_REVIEW.md                                          (new)
 ```
 
-Rewritten: `widget/glance/…/CountdownWidgetContent.kt` (accessibility, color resolution,
-percent-text element, restyled unconfigured state), `widget/engine/…/model/WidgetRenderModel.kt`
-(+1 field), `widget/engine/…/mapper/WidgetRenderMapper.kt` (computes the new field),
-`widget/glance/src/test/…/CountdownWidgetContentTest.kt` (+3 tests, model helper extended),
-`widget/engine/src/test/…/mapper/WidgetRenderMapperTest.kt` (+2 tests, binding helper extended).
+Modified: `widget/engine/…/theme/WidgetThemeResolver.kt` (`internal`, alpha constant, new
+documented floor constant), `widget/engine/…/progress/WidgetProgressEngine.kt` (`internal`),
+`widget/engine/…/mapper/WidgetRenderMapper.kt` (`internal`),
+`widget/engine/src/test/…/theme/WidgetThemeResolverTest.kt` (+1 test).
 
 ----------------------------------
 
 ## Architecture Decisions
 
-Two new entries, D-039 and D-040, detailed in `DECISIONS.md`:
+Two new entries, D-041 and D-042, detailed in `DECISIONS.md`:
 
-- **D-039 — Forced-background widget themes resolve their own text and progress-track colors**,
-  rather than pulling them from `GlanceTheme`'s ambient, wallpaper-tuned scheme. Also the fix for
-  `isHighContrast` having been computed but never consumed.
-- **D-040 — `showPercentageText` is conjoined in the mapper, not left for the renderer to
-  derive** — `binding.showPercentage && progress.isVisible`, computed once where the two facts
-  are already in hand, so the renderer reads one boolean rather than re-deriving a business rule.
-
-Both entries are explicit that neither is a new abstraction — the session's own architectural
-rule — just correct application of fields that already existed.
+- **D-041 — GLASS's translucent background alpha raised from 0x99 to 0xCC**, with the reasoning
+  (a wallpaper-composited worst case, computed explicitly) and the alternative considered and
+  rejected (wallpaper-color sampling — real new engineering, out of scope for a stabilization
+  milestone).
+- **D-042 — `WidgetThemeResolver`, `WidgetProgressEngine`, `WidgetRenderMapper` are `internal`**,
+  verified empirically rather than just reasoned about, closing a public-API-surface finding from
+  this session's technical audit.
 
 ----------------------------------
 
 ## Current Project Structure
 
-Unchanged from Session 5 at the module level — no new modules, no new top-level classes. See
-`PROJECT_STATUS.md` for the full module graph and status table; the only structural addition this
-session is `docs/WIDGET_ARCHITECTURE.md` alongside the other permanent documents.
+Unchanged at the module level — no new modules, no new top-level classes, three visibility
+changes. See `PROJECT_STATUS.md` for the module graph; `docs/WIDGET_REVIEW.md` is the only new
+permanent document this session, alongside `docs/WIDGET_ARCHITECTURE.md` from Session 6.
 
 ----------------------------------
 
@@ -189,25 +179,25 @@ None.
 
 ## Current Features Working
 
-- Everything from Milestones 1–4 (Session 5) is unchanged and still passing.
-- The countdown widget's accessibility, color correctness on forced-dark themes, and
-  configuration-field fidelity (every field a binding can set now actually affects rendering) are
-  new this session — see "Completed" above.
+Unchanged from Session 6, with one contrast defect fixed (see "Three problems found" above). No
+feature work occurred this session by design.
 
 ----------------------------------
 
 ## Pending Work
 
-**P0 — blocks Session 7**
-1. **Approval to begin Milestone 5** (multiple widgets, themes, sizes).
-2. **Verify real widget placement on a *stable* GUI-mode emulator or physical device** (TD-010) —
-   now the only unverified piece of Milestone 4, and likely blocked on device stability rather
-   than app behavior. Open with a `grantbind` + `dumpsys user` check before investing more time.
-3. **Confirm the countdown label policy** — still unanswered since Session 3.
+**P0 — blocks Session 8**
+1. **Get a stable device before anything else** — the single biggest blocker now, ahead of any
+   remaining code work, after three sessions of escalating device trouble (unavailable → unstable
+   → fully unreachable).
+2. **Verify real widget placement** (TD-010) once a device is confirmed stable.
+3. **Approval to begin Milestone 5.**
+4. **Confirm the countdown label policy** — still unanswered since Session 3.
 
-**P1 — Milestone 5:** circular progress ring, per-style layout differentiation, additional sizes,
-a settings surface for the visibility flags that are now fully wired but have no UI, accent-colour
-picker and live widget preview deferred from Milestone 3, list gestures (TD-008).
+**P1 — Milestone 5:** everything from Session 6's plan, plus TD-011 (system-matched corner
+radius, opened this session) and wiring `showDate`/`target`/`targetZone` (identified this session
+as a dead-field gap like `showPercentage` was, but deliberately not fixed — it needs new
+date-formatting logic this session's scope excluded).
 
 Full breakdown in `TODO.md`.
 
@@ -217,18 +207,18 @@ Full breakdown in `TODO.md`.
 
 No open runtime bugs as of this session. Full detail in `KNOWN_ISSUES.md`.
 
-**Closed this session:** BUG-R006 (`isHighContrast` never applied), BUG-R007 (`showPercentage`
-never rendered).
+**Closed this session:** BUG-R008 (GLASS contrast over light wallpapers).
 
-**Updated this session:** TD-010 — new evidence recorded (grantbind succeeded, device unlocked,
-real launcher reached), severity assessment updated, but still open.
+**Opened this session:** TD-011 (corner radius not system-matched), TD-012 (no adaptive fallback
+if a launcher ignores `resizeMode="none"`), TD-013 (title truncation has no ellipsis) — all Medium
+or Low, all documented with why they weren't fixed immediately.
+
+**Updated this session:** TD-010 — no new evidence either way; explicitly noted that this
+session's total lack of device access means the Session 6 finding (permission problem resolved,
+stability problem open) remains the most recent signal.
 
 **Open, unchanged:** TD-001, TD-002, TD-005, TD-006, TD-007, TD-008, TD-009. LIM-001, LIM-003,
 LIM-004, LIM-006.
-
-**Testing gaps:** no Compose UI tests for the app's own screens; no direct unit test for
-`WidgetConfigurationViewModel`; no real-device instrumented test for the full widget lifecycle
-(blocked on TD-010).
 
 **Lint:** 0 errors, 10 accepted warnings.
 
@@ -236,29 +226,21 @@ LIM-004, LIM-006.
 
 ## Next Session Plan
 
-**Step 0 is a gate.** Resolve the three P0 items. Do not start Milestone 5 without approval.
+**Step 0 is a gate, and it's a device, not a decision this time.** Confirm `adb devices -l` shows
+a device, then `appwidget grantbind` and `dumpsys user` both succeed, then confirm the connection
+survives several minutes idle — *before* relying on it for anything else this session.
 
-1. Before anything else: confirm device stability. `adb shell appwidget grantbind --package
-   com.countflow --user 0` and `adb shell dumpsys user` should both succeed and stay reachable for
-   the whole verification — if the connection is unstable, treat that as the blocker to solve
-   first, not a code problem to route around.
-2. Drag CountFlow's widget from the picker onto a real home screen, confirm it renders, edit the
-   bound event and confirm the widget updates, remove it and confirm the binding is cleaned up.
-   Screenshot each step.
-3. Circular progress ring: `Canvas` → `Bitmap` → `ImageProvider`, sized against `LocalSize`,
-   quantized to whole percent, budgeted against `6 × screenW × screenH` bytes (LIM-001, LIM-003).
-4. Differentiate all seven `WidgetStyle` values by layout, not just color — the resolver and (as
-   of this session) the renderer's color handling are both already correct per-style; only
-   structural layout is still shared.
-5. Sizes 2×1 and 4×2 using `SizeMode.Exact` and breakpoint ranges.
-6. Accent-colour picker, live widget preview, and list gestures (TD-008), all deferred from
-   earlier milestones specifically because the renderer they depend on now exists and is finished.
-7. Verify `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug`, then update all
-   eight documents (`AI_CONTEXT.md` and `docs/WIDGET_ARCHITECTURE.md` included).
-
-Suggested commits: `feat(widget-engine): circular progress ring`,
-`feat(widget): style-differentiated layouts`, `feat(widget): additional widget sizes`,
-`feat(events): accent colour picker and widget preview`, `feat(events): list gestures`.
+1. Real widget placement end to end: drag from the picker, confirm render, edit the event and
+   confirm the widget updates, remove and confirm binding cleanup, reconfigure and confirm the
+   binding changes to the new event. Screenshot every step this time.
+2. If time and device stability allow: a first rough widget update-latency and memory measurement
+   — no session has produced either number yet, and Milestone 5 will be easier to scope
+   accurately with at least one real data point instead of zero.
+3. Once TD-010 is closed: approval to begin Milestone 5 — circular progress ring, per-style
+   layout differentiation, additional sizes, TD-011's corner-radius fix, the settings surface for
+   the visibility flags, accent-colour picker, live widget preview, list gestures (TD-008).
+4. Verify `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug`, then update all
+   documents (`AI_CONTEXT.md`, `docs/WIDGET_ARCHITECTURE.md`, `docs/WIDGET_REVIEW.md` included).
 
 ----------------------------------
 
@@ -268,14 +250,11 @@ Suggested commits: `feat(widget-engine): circular progress ring`,
 
 Verified this session:
 - `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` → BUILD SUCCESSFUL
-- 222 tests, 0 failures — 5 new this session (3 `:widget:glance`, 2 `:widget:engine`)
+- 223 tests, 0 failures — 1 new this session (`:widget:engine`)
 - Coverage gate passed: `:core:domain` 97.0% lines, unchanged
 - Lint: 0 errors, 10 warnings, all previously accepted
-- Compute-path performance measured directly (not device-profiled): ~505ns/call for
-  `CountdownEngine.countdownAt` + `WidgetRenderMapper.map`
-- Runtime: app installed successfully on a GUI-mode test device; `appwidget grantbind` succeeded;
-  full drag-onto-home-screen placement not completed — device became unreachable mid-session (see
-  "Three problems found")
+- Compute-path performance re-measured (not device-profiled): ~505ns/call, unchanged from Session 6
+- Runtime: **no device reachable at any point this session** — see "Three problems found"
 
 Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed.
 
@@ -283,7 +262,7 @@ Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed.
 
 ## Tests
 
-**222 written, 222 passing, 0 failing.**
+**223 written, 223 passing, 0 failing.**
 
 | Module | Tests | What changed this session |
 |---|---|---|
@@ -291,8 +270,8 @@ Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed.
 | `:core:database` | 38 | Unchanged |
 | `:core:data` | 31 | Unchanged |
 | `:feature:events` | 22 | Unchanged |
-| `:widget:engine` | 32 | +2: `showPercentageText` is true only when the binding asks for it *and* progress is visible; false when progress itself is off even if requested |
-| `:widget:glance` | 8 | +3: percent text shown when requested, hidden when not, hidden when progress is off even if requested |
+| `:widget:engine` | 33 | +1: GLASS's resolved background alpha stays at or above the contrast-safe floor |
+| `:widget:glance` | 8 | Unchanged |
 
 **Coverage** — `:core:domain` 97.0% lines, unchanged; this session did not touch that module.
 
@@ -303,66 +282,60 @@ Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed.
 Two commits this session, on `master`:
 
 ```
-faacccc  fix(widget): apply forced-background/high-contrast colors and wire showPercentage
-         docs: milestone 4 finishing-pass documentation        ← this commit
+ec79e90  fix(widget): raise GLASS contrast floor, tighten engine internals
+         docs: milestone 4.5 widget stabilization review    ← this commit
 ```
 
-Twenty-nine commits total. No remote configured.
+Thirty-one commits total. No remote configured.
 
 ----------------------------------
 
 ## Developer Notes
 
-- **A render model field with no reader is a bug, not a work-in-progress.** `WidgetTheme.isHighContrast`
-  and `WidgetBinding.showPercentage` both compiled, both had correct values, and both did nothing
-  for one to three sessions because nothing downstream read them. When adding a field to
-  `WidgetRenderModel` or `WidgetBinding`, trace it all the way to the renderer before considering
-  the work done.
-- **Forced-background themes (OLED, Glass) cannot use `GlanceTheme`'s on-colors.** Those colors
-  are tuned for the *dynamic* Material You surface; a theme that forces its own background needs
-  its own fixed on-colors. See `ForcedBackgroundPalette` in `CountdownWidgetContent.kt` and
-  `docs/WIDGET_ARCHITECTURE.md` §6.
-- **Glance's `semantics { }` only exposes `contentDescription` and `testTag`** in 1.1.1 — there is
-  no `clearAndSetSemantics` equivalent to suppress child nodes. A whole-card `contentDescription`
-  is the best available accessibility fix within that surface, not a claim that it behaves
-  identically to Compose UI's semantics model.
-- **The compute cost of a `WidgetRenderModel` is not a performance concern** (~505ns/call,
-  measured). If a future widget update ever feels slow, look at the Room query or the RemoteViews
-  round-trip, not the engine.
-- **`:widget:engine` needs no Robolectric for anything** — direct proof the pure-Kotlin boundary
-  (D-033) keeps paying off: tests here run as plain JVM tests, no Android runtime, no emulator.
+- **GLASS is the one style whose background this app doesn't fully control.** Any future change
+  to its alpha, or a new style that also forces a translucent background, needs the same
+  worst-case contrast reasoning D-041 did — check `WidgetThemeResolver.MIN_ALPHA_FOR_RELIABLE_CONTRAST`
+  and the regression test guarding it before touching that constant.
+- **`WidgetThemeResolver`, `WidgetProgressEngine`, `WidgetRenderMapper` are `internal` now.** If a
+  future change in `:widget:glance` seems to need one of them directly, that's very likely a sign
+  the orchestration belongs in `WidgetRenderModelProvider` instead, not a reason to widen the
+  visibility back.
+- **Three sessions of device trouble is now a pattern, not a one-off.** If a device is available
+  at the start of a session, verify it stays reachable *before* planning the rest of the session
+  around it — don't discover instability partway through, the way Session 6 did.
+- **`WidgetRenderModel.target`/`.targetZone`/`.showDate` are the next dead-field gap**, same shape
+  as `isHighContrast`/`showPercentage` were — but wiring it needs actual new date-formatting logic
+  (no `DateTimeFormatter` exists anywhere in the codebase yet), which is why it wasn't fixed this
+  session the way the two simpler gaps were last session.
 - **Build output is noisy** (TD-005). Filter with
   `grep -vE "^w: file:.*build.gradle.kts|Deprecated 'org"`.
-- **A test device that requires reconnecting between commands, or whose `model` property changes
-  mid-session, is not reliable enough to trust for a definitive placement test.** Confirm
-  stability first; don't spend a session's remaining time fighting a flaky connection.
 - Commands: `./gradlew assembleDebug` · `./gradlew test` · `./gradlew :core:domain:koverVerify` ·
   `./gradlew :app:lintDebug`.
 
 ----------------------------------
 
-## Requires approval before Session 7
+## Requires approval before Session 8
 
-1. **Milestone 5.**
-2. **A stable device for TD-010 verification** — recommended to happen first, since it is now the
-   only unverified piece of Milestone 4 and Session 5/6 both spent real time on environment
-   problems rather than app problems.
-3. **The countdown label policy**, still unanswered since Session 3: an event a week out reads
-   "7 / Next week". Is that the wording and threshold set you want?
+1. **A stable device** — not really an approval, but the practical precondition for everything
+   else; flagged here because it's now blocked three sessions running.
+2. **Milestone 5** — the widget has now had a finishing pass (Session 6) and a stabilization audit
+   (Session 7); `docs/WIDGET_REVIEW.md`'s production-readiness read is the thing to weigh before
+   saying yes.
+3. **The countdown label policy**, still unanswered since Session 3.
 
 ----------------------------------
 
 ## Estimated Progress
 
 ```
-Overall Progress            47%
+Overall Progress            48%
 
 Research & Architecture    100%
 Project Setup              100%
 Domain / Countdown Engine  100%
 Database                   100%
 Event CRUD / UI             85%   (gestures and colour picker outstanding)
-Widget Engine                95%   (real launcher placement unverified — TD-010)
+Widget Engine                96%   (audited and stabilized; real launcher placement unverified — TD-010)
 Widget Themes & Sizes         0%
 Notifications                 0%
 Billing                       0%

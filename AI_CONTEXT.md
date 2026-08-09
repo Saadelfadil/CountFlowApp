@@ -46,9 +46,12 @@ Android library or the app module. Full detail: `PROJECT_STATUS.md` § Module gr
 
 For anything inside `widget/`, read `docs/WIDGET_ARCHITECTURE.md` before touching code — it is
 the single-file version of this document, scoped to the widget system, with real file paths and
-function names for data flow, render flow, refresh flow, and both lifecycles.
+function names for data flow, render flow, refresh flow, and both lifecycles. Read
+`docs/WIDGET_REVIEW.md` alongside it before assuming anything about the widget is
+production-verified — it's the honest record of what has and hasn't actually been confirmed on a
+device, versus reasoned about from code.
 
-## What exists right now (Milestone 4 of 9, complete)
+## What exists right now (Milestone 4.5 of 9, complete)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
@@ -67,8 +70,11 @@ function names for data flow, render flow, refresh flow, and both lifecycles.
 - **Not yet real**: a widget has never been placed through an actual launcher/`AppWidgetHost`
   flow. Verified instead by launching the configuration activity directly and inspecting the
   database. Session 6 got closer — a real GUI launcher was reached and widget-bind permission
-  succeeded — but the test device was unstable and disappeared mid-verification. See
-  `KNOWN_ISSUES.md` TD-010 before trusting that a real placement definitely works.
+  succeeded — but the test device was unstable and disappeared mid-verification; Session 7 had no
+  device reachable at all. See `KNOWN_ISSUES.md` TD-010 before trusting that a real placement
+  definitely works, and see `docs/WIDGET_REVIEW.md` §12 for the full list of what no session has
+  yet verified on a device (update latency, memory, battery, TalkBack output, multi-launcher
+  behavior).
 
 `ROADMAP.md` has the milestone-by-milestone detail; `SESSION_SUMMARY.md` has what the *most
 recent* session specifically did.
@@ -114,6 +120,15 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
   which is exactly the risk: a field with no consumer looks identical to a field that works,
   right up until someone checks. Worth deliberately auditing "does every field on a render model
   have a reader" when a milestone claims to be finished, not just "does every test pass."
+- GLASS's translucent widget background could drop below WCAG AA text contrast over a light
+  wallpaper — a case no unit test could ever catch, because the actual composited color depends on
+  content (the user's wallpaper) that exists entirely outside the app and the test suite (BUG-R008,
+  Session 7). Found by computing the real composited contrast from the color constants in the
+  code, not by seeing it rendered. Worth remembering: any widget color that composites over
+  something the app doesn't control (a launcher's wallpaper, not an app-drawn background) needs
+  its worst case reasoned through explicitly — "it looked fine in the emulator" was never even
+  available to check this, but wouldn't have been sufficient evidence anyway, since the emulator's
+  one wallpaper isn't the worst case.
 
 ## How to verify the project still works
 
@@ -121,7 +136,7 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
 ./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug
 ```
 
-Current baseline: 222 tests, 0 failures, 0 lint errors (10 accepted warnings, all documented in
+Current baseline: 223 tests, 0 failures, 0 lint errors (10 accepted warnings, all documented in
 `KNOWN_ISSUES.md`), `:core:domain` line coverage above 95% (currently ~97%).
 
 Build output is noisy — every module logs two deprecation warnings per compile, a side effect of
@@ -150,8 +165,9 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (40 as of Session 6) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (42 as of Session 7) with reason, alternatives, tradeoffs. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render/refresh flow, both lifecycles, Glance's sharp edges, forward compatibility. |
+| `docs/WIDGET_REVIEW.md` | The Milestone 4.5 audit: what's verified, what's reasoned-about, what's genuinely unknown, ranked. |
 | `ROADMAP.md` | Milestone-by-milestone status and what each one delivered. |
 | `KNOWN_ISSUES.md` | Open bugs (none), technical debt, platform limitations, resolved defects. |
 | `TODO.md` | Prioritised outstanding work, P0 first. |

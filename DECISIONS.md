@@ -742,3 +742,61 @@ other visibility flag in `WidgetRenderModel` already follows.
 **Tradeoffs.** None found. No UI sets `showPercentage` to `true` yet, so this is currently
 inert for every real binding — its value is in being correct the day a settings screen does set
 it, rather than needing a second fix at that point.
+
+---
+
+## D-041 — GLASS's translucent background alpha raised from 0x99 to 0xCC
+
+**Date:** 2026-08-09 · **Status:** Accepted (contrast fix, found by review) · **Milestone:** 4.5
+
+`WidgetThemeResolver.TRANSLUCENT_DARK_SURFACE`'s alpha channel moved from `0x99` (60% opaque) to
+`0xCC` (80% opaque). A new constant, `MIN_ALPHA_FOR_RELIABLE_CONTRAST`, documents the floor this
+reasoning depends on, and a regression test asserts the resolved theme never drops below it.
+
+**Reason.** GLASS is the one named style that composites over content this app does not control —
+every other style's background is either fully opaque (OLED's true black) or the system's own
+dynamic Material You surface (which Android itself guarantees an appropriate on-color pairing
+for). At the original 60% alpha, a fully light/white wallpaper behind the widget composites to
+roughly mid-gray, and `ForcedBackgroundPalette.onSurface` (white text) measured at approximately
+4.9:1 contrast against that worst case — barely above WCAG AA's 4.5:1 floor for normal-size text,
+with no margin for a brighter wallpaper or a less accurate display than assumed. At 80% alpha, the
+same worst case composites dark enough that the same white text measures approximately 10.8:1 —
+comfortably past WCAG AAA (7:1).
+
+**Alternatives.** A wallpaper-color-sampling approach that picks text color dynamically — rejected
+as real new engineering (Android widgets have no API to read the wallpaper color behind them
+without `WallpaperManager` permissions and a fair amount of new plumbing) for a Milestone
+explicitly scoped to stabilization, not new capability. A fully opaque GLASS background —
+rejected because it stops being "glass" in any visual sense, which is the entire point of the
+style existing separately from MINIMAL.
+
+**Tradeoffs.** GLASS is now less transparent than originally designed — less of the wallpaper
+shows through. This is the deliberate trade: a "glass" effect that is illegible on a light
+wallpaper is worse than one that is slightly less see-through.
+
+---
+
+## D-042 — `WidgetThemeResolver`, `WidgetProgressEngine`, `WidgetRenderMapper` are `internal`
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 4.5
+
+All three were `public` `object`s inside `:widget:engine` with no real caller outside the module —
+`WidgetRenderModelProvider`, itself inside `:widget:engine`, was their only consumer beyond their
+own tests. All three are now `internal`.
+
+**Reason.** Session 7's brief asked explicitly for a public-API review as part of stabilizing the
+architecture before treating it as settled. A module's public surface should be exactly what its
+consumers need, not everything its implementation happens to expose — the wider surface was
+never used by `:widget:glance` and cost nothing to close. Verified empirically before committing
+to it, not just reasoned: both `:widget:engine`'s own test compilation (which needs to see
+`internal` members of its module's main source set) and `:widget:glance`'s compilation (which
+never referenced any of the three) succeeded unchanged.
+
+**Alternatives.** Leave them `public` — the status quo carried no correctness cost, only an
+unnecessarily wide surface. Rejected because "no cost today" is not the same as "no cost ever";
+a wider surface is a standing invitation for a future caller in `:widget:glance` to reach past
+`WidgetRenderModelProvider` for one of these directly, which would be exactly the kind of shortcut
+`WidgetRenderModel`'s own documentation warns against.
+
+**Tradeoffs.** None found. This is a pure visibility narrowing with no behavioral change,
+confirmed by the full test suite passing unchanged before and after.
