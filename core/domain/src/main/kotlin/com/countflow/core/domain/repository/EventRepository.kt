@@ -25,18 +25,42 @@ enum class EventSort {
 }
 
 /**
+ * Which of an event's three mutually exclusive lifecycle buckets to show.
+ *
+ * Deliberately exclusive rather than the two independent inclusion flags this replaced
+ * (`includeArchived`/`includeCompleted`): those could only ever express "don't hide X", never
+ * "show only X", which is exactly what a three-tab list (Upcoming / Completed / Archived) needs.
+ * An event that is both completed and archived sorts into [ARCHIVED] — archiving is the more
+ * deliberate, final hiding action, so it takes precedence over completion for which single tab
+ * the event appears in.
+ */
+enum class EventLifecycleFilter {
+    /** Not completed, not archived. The default list. */
+    UPCOMING,
+
+    /** Completed and not archived. */
+    COMPLETED,
+
+    /** Archived, regardless of completion. */
+    ARCHIVED,
+    ;
+
+    companion object {
+        val Default: EventLifecycleFilter = UPCOMING
+    }
+}
+
+/**
  * Which events to include.
  *
  * @property query case-insensitive substring match on the title. Blank means no filtering.
  * @property categories restrict to these categories. Empty means all.
- * @property includeArchived whether archived events are returned.
- * @property includeCompleted whether events the user marked done are returned.
+ * @property lifecycle which of the three buckets to return.
  */
 data class EventFilter(
     val query: String = "",
     val categories: Set<EventCategory> = emptySet(),
-    val includeArchived: Boolean = false,
-    val includeCompleted: Boolean = true,
+    val lifecycle: EventLifecycleFilter = EventLifecycleFilter.Default,
 ) {
     companion object {
         /** Everything the main list shows by default. */

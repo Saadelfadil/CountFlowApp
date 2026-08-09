@@ -27,8 +27,9 @@ interface EventDao {
      * @param categories restrict to these categories; ignored when [filterByCategory] is false.
      * @param filterByCategory whether [categories] applies. Needed because SQL `IN ()` with an
      *   empty list matches nothing, which is the opposite of what "no filter" should mean.
-     * @param includeArchived whether archived events are returned.
-     * @param includeCompleted whether completed events are returned.
+     * @param lifecycle the name of an `EventLifecycleFilter` constant — exactly one of the three
+     *   `CASE WHEN` arms below is true for any given row, since the buckets are mutually
+     *   exclusive (an archived-and-completed event counts as archived).
      * @param sort the name of an `EventSort` constant.
      */
     @Query(
@@ -36,8 +37,11 @@ interface EventDao {
         SELECT * FROM events
         WHERE (:query = '' OR title LIKE '%' || :query || '%' COLLATE NOCASE)
           AND (:filterByCategory = 0 OR category IN (:categories))
-          AND (:includeArchived = 1 OR is_archived = 0)
-          AND (:includeCompleted = 1 OR is_completed = 0)
+          AND (
+            (:lifecycle = 'UPCOMING' AND is_completed = 0 AND is_archived = 0) OR
+            (:lifecycle = 'COMPLETED' AND is_completed = 1 AND is_archived = 0) OR
+            (:lifecycle = 'ARCHIVED' AND is_archived = 1)
+          )
         ORDER BY
           CASE WHEN :sort = 'TARGET_DATE' THEN target_epoch_millis END ASC,
           CASE WHEN :sort = 'CREATED_DATE' THEN created_at END DESC,
@@ -50,8 +54,7 @@ interface EventDao {
         query: String,
         categories: Set<EventCategory>,
         filterByCategory: Boolean,
-        includeArchived: Boolean,
-        includeCompleted: Boolean,
+        lifecycle: String,
         sort: String,
     ): Flow<List<EventEntity>>
 

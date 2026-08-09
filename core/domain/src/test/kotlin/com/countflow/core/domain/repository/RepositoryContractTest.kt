@@ -21,13 +21,12 @@ import org.junit.Test
 class RepositoryContractTest {
 
     @Test
-    fun `the default event filter hides archived events and shows completed ones`() {
+    fun `the default event filter shows only upcoming events`() {
         val filter = EventFilter.Default
 
         assertThat(filter.query).isEmpty()
         assertThat(filter.categories).isEmpty()
-        assertThat(filter.includeArchived).isFalse()
-        assertThat(filter.includeCompleted).isTrue()
+        assertThat(filter.lifecycle).isEqualTo(EventLifecycleFilter.UPCOMING)
     }
 
     @Test
@@ -38,7 +37,7 @@ class RepositoryContractTest {
         )
 
         assertThat(filter.categories).containsExactly(EventCategory.BIRTHDAY)
-        assertThat(filter.includeArchived).isFalse()
+        assertThat(filter.lifecycle).isEqualTo(EventLifecycleFilter.UPCOMING)
     }
 
     @Test

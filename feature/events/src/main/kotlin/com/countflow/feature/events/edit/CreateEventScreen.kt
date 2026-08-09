@@ -142,6 +142,10 @@ internal fun CreateEventScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            uiState.previewModel?.let { model ->
+                EventWidgetPreview(model = model, modifier = Modifier.fillMaxWidth())
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = uiState.emoji,

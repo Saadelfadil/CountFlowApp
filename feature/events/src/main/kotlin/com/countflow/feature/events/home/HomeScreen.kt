@@ -44,6 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.countflow.core.designsystem.format.asText
 import com.countflow.core.domain.model.EventCategory
+import com.countflow.core.domain.repository.EventLifecycleFilter
 import com.countflow.core.domain.repository.EventSort
 import com.countflow.feature.events.model.EventCardUiModel
 
@@ -77,7 +78,11 @@ fun HomeScreen(
         onSortChange = viewModel::onSortChange,
         onCategoryToggle = viewModel::onCategoryToggle,
         onClearFilters = viewModel::onClearFilters,
+        onTabChange = viewModel::onTabChange,
         onEventClick = onNavigateToEditEvent,
+        onCompletedChange = viewModel::onCompletedChange,
+        onArchivedChange = viewModel::onArchivedChange,
+        onDelete = viewModel::onDelete,
         onNavigateToCreateEvent = onNavigateToCreateEvent,
         onNavigateToSettings = onNavigateToSettings,
         modifier = modifier,
@@ -94,7 +99,11 @@ internal fun HomeScreen(
     onSortChange: (EventSort) -> Unit,
     onCategoryToggle: (EventCategory) -> Unit,
     onClearFilters: () -> Unit,
+    onTabChange: (EventLifecycleFilter) -> Unit,
     onEventClick: (String) -> Unit,
+    onCompletedChange: (String, Boolean) -> Unit,
+    onArchivedChange: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
     onNavigateToCreateEvent: () -> Unit,
     onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -124,18 +133,69 @@ internal fun HomeScreen(
                 onQueryChange = onQueryChange,
                 onClearQuery = onClearQuery,
             )
+            EventTabRow(selected = uiState.tab, onSelect = onTabChange)
             CategoryFilterRow(
                 selected = uiState.selectedCategories,
                 onToggle = onCategoryToggle,
             )
 
             when (val empty = uiState.emptyState) {
-                null -> EventList(events = uiState.events, onEventClick = onEventClick)
-                else -> EmptyState(state = empty, onClearFilters = onClearFilters)
+                null -> EventList(
+                    events = uiState.events,
+                    tab = uiState.tab,
+                    onEventClick = onEventClick,
+                    onCompletedChange = onCompletedChange,
+                    onArchivedChange = onArchivedChange,
+                    onDelete = onDelete,
+                )
+                else -> EmptyState(
+                    state = empty,
+                    onClearFilters = onClearFilters,
+                    onNavigateToCreateEvent = onNavigateToCreateEvent,
+                )
             }
         }
     }
 }
+
+/**
+ * Switches between the three lifecycle buckets.
+ *
+ * A row of single-select [FilterChip]s rather than a new Material component: the category row
+ * above already establishes this exact visual language, and reusing it keeps the screen coherent
+ * rather than introducing a second filter idiom the user has to learn.
+ */
+@Composable
+private fun EventTabRow(
+    selected: EventLifecycleFilter,
+    onSelect: (EventLifecycleFilter) -> Unit,
+) {
+    // Scrolls rather than shrinking, the same reason CategoryFilterRow does below it — three
+    // fixed-width chips with no room to grow otherwise force a large font scale to wrap "Archived"
+    // one letter per line instead of onto a second line, found on-device at 200% (Session 11).
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        EventLifecycleFilter.entries.forEach { tab ->
+            FilterChip(
+                selected = tab == selected,
+                onClick = { onSelect(tab) },
+                label = { Text(tab.displayName) },
+            )
+        }
+    }
+}
+
+private val EventLifecycleFilter.displayName: String
+    get() = when (this) {
+        EventLifecycleFilter.UPCOMING -> "Upcoming"
+        EventLifecycleFilter.COMPLETED -> "Completed"
+        EventLifecycleFilter.ARCHIVED -> "Archived"
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -186,7 +246,11 @@ private fun CategoryFilterRow(
 @Composable
 private fun EventList(
     events: List<EventCardUiModel>,
+    tab: EventLifecycleFilter,
     onEventClick: (String) -> Unit,
+    onCompletedChange: (String, Boolean) -> Unit,
+    onArchivedChange: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -196,7 +260,14 @@ private fun EventList(
         // Keyed by id so reordering after a sort change animates rows rather than rebuilding
         // every one of them.
         items(items = events, key = { it.id }) { event ->
-            EventCard(event = event, onClick = { onEventClick(event.id) })
+            EventCard(
+                event = event,
+                tab = tab,
+                onClick = { onEventClick(event.id) },
+                onCompletedChange = { onCompletedChange(event.id, it) },
+                onArchivedChange = { onArchivedChange(event.id, it) },
+                onDelete = { onDelete(event.id) },
+            )
         }
     }
 }
@@ -205,6 +276,7 @@ private fun EventList(
 private fun EmptyState(
     state: HomeEmptyState,
     onClearFilters: () -> Unit,
+    onNavigateToCreateEvent: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -212,8 +284,14 @@ private fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val (title, body) = when (state) {
-            HomeEmptyState.NO_EVENTS ->
-                "No countdowns yet" to "Tap the plus button to create your first one."
+            HomeEmptyState.NO_UPCOMING ->
+                "Nothing coming up" to "Create a countdown for your next moment."
+
+            HomeEmptyState.NO_COMPLETED ->
+                "No completed countdowns yet" to "Events you mark complete will show up here."
+
+            HomeEmptyState.NO_ARCHIVED ->
+                "No archived countdowns" to "Events you archive will show up here."
 
             HomeEmptyState.NO_MATCHES ->
                 "Nothing matches" to "No events match your search and filters."
@@ -231,10 +309,23 @@ private fun EmptyState(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp),
         )
-        if (state == HomeEmptyState.NO_MATCHES) {
-            TextButton(onClick = onClearFilters, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Clear filters")
+        when (state) {
+            HomeEmptyState.NO_MATCHES -> {
+                TextButton(onClick = onClearFilters, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("Clear filters")
+                }
             }
+
+            HomeEmptyState.NO_UPCOMING -> {
+                TextButton(
+                    onClick = onNavigateToCreateEvent,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text("Create countdown")
+                }
+            }
+
+            HomeEmptyState.NO_COMPLETED, HomeEmptyState.NO_ARCHIVED -> Unit
         }
     }
 }

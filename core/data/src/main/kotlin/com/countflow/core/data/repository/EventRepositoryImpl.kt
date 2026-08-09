@@ -38,8 +38,7 @@ internal class EventRepositoryImpl @Inject constructor(
             // SQL `IN ()` over an empty set matches nothing, which is the opposite of what an
             // empty filter should mean, so the query needs telling whether to apply it at all.
             filterByCategory = filter.categories.isNotEmpty(),
-            includeArchived = filter.includeArchived,
-            includeCompleted = filter.includeCompleted,
+            lifecycle = filter.lifecycle.name,
             sort = sort.name,
         )
             .map { entities -> entities.map { it.toDomain() } }

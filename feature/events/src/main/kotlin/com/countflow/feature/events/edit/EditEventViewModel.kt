@@ -5,15 +5,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import com.countflow.core.domain.model.AccentColor
+import com.countflow.core.domain.model.AppWidgetId
 import com.countflow.core.domain.model.Event
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.EventTarget
+import com.countflow.core.domain.model.WidgetBinding
 import com.countflow.core.domain.repository.EventRepository
 import com.countflow.core.domain.validation.EventValidationResult
 import com.countflow.core.domain.validation.errors
 import com.countflow.feature.events.navigation.EditEventRoute
 import com.countflow.core.domain.validation.EventValidator
+import com.countflow.widget.engine.provider.WidgetRenderModelProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,11 +37,20 @@ import javax.inject.Inject
  * Nothing reaches the repository without passing [EventValidator] first. That check lives in the
  * domain rather than here precisely so this is not the only place enforcing it — restore and,
  * later, widget configuration write events too.
+ *
+ * Also owns [EditEventUiState.previewModel], recomputed after every field change through
+ * [WidgetRenderModelProvider.preview] — the exact pure, no-I/O render path the widget
+ * configuration screen's own live preview already uses (D-048), reused here rather than
+ * re-derived so this form's preview can never quietly drift from what a real widget would show.
+ * Nothing about this preview is ever written: [refreshPreview] constructs an [Event] and
+ * [WidgetBinding] that exist only in memory, the same discipline [onSave] itself already follows
+ * for the real write.
  */
 @HiltViewModel
 class EditEventViewModel @Inject constructor(
     private val eventRepository: EventRepository,
     private val validator: EventValidator,
+    private val renderModelProvider: WidgetRenderModelProvider,
     private val clock: Clock,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -86,24 +98,44 @@ class EditEventViewModel @Inject constructor(
                     accentColor = event.accentColor,
                 )
             }
+            refreshPreview()
         }
     }
 
-    fun onTitleChange(title: String) = _uiState.update { it.copy(title = title) }
+    fun onTitleChange(title: String) {
+        _uiState.update { it.copy(title = title) }
+        refreshPreview()
+    }
 
-    fun onEmojiChange(emoji: String) = _uiState.update { it.copy(emoji = emoji) }
+    fun onEmojiChange(emoji: String) {
+        _uiState.update { it.copy(emoji = emoji) }
+        refreshPreview()
+    }
 
-    fun onCategoryChange(category: EventCategory) =
+    fun onCategoryChange(category: EventCategory) {
         _uiState.update { it.copy(category = category) }
+        refreshPreview()
+    }
 
-    fun onDateChange(date: LocalDate) = _uiState.update { it.copy(date = date) }
+    fun onDateChange(date: LocalDate) {
+        _uiState.update { it.copy(date = date) }
+        refreshPreview()
+    }
 
-    fun onTimeChange(time: LocalTime) = _uiState.update { it.copy(time = time) }
+    fun onTimeChange(time: LocalTime) {
+        _uiState.update { it.copy(time = time) }
+        refreshPreview()
+    }
 
-    fun onAllDayChange(isAllDay: Boolean) = _uiState.update { it.copy(isAllDay = isAllDay) }
+    fun onAllDayChange(isAllDay: Boolean) {
+        _uiState.update { it.copy(isAllDay = isAllDay) }
+        refreshPreview()
+    }
 
-    fun onAccentColorChange(accentColor: AccentColor) =
+    fun onAccentColorChange(accentColor: AccentColor) {
         _uiState.update { it.copy(accentColor = accentColor) }
+        refreshPreview()
+    }
 
     /**
      * Validates and persists.
@@ -135,26 +167,69 @@ class EditEventViewModel @Inject constructor(
         _uiState.update { it.copy(hasAttemptedSave = true, errors = emptyList(), isSaving = true) }
 
         viewModelScope.launch {
-            val existing = loadedEvent
-            val event = existing?.copy(
-                title = state.title.trim(),
-                emoji = emoji,
-                category = state.category,
-                target = target,
-                accentColor = state.accentColor,
-            ) ?: Event.create(
-                title = state.title.trim(),
-                target = target,
-                createdAt = clock.instant(),
-                emoji = emoji,
-                category = state.category,
-                accentColor = state.accentColor,
-            )
-
+            val event = buildEvent(state, target, state.title.trim(), emoji)
             eventRepository.upsertEvent(event)
             _uiState.update { it.copy(isSaving = false, isSaved = true) }
         }
     }
+
+    /**
+     * Recomputes [EditEventUiState.previewModel] from the form's current field values.
+     *
+     * Runs synchronously — no repository read, no I/O — through the exact same
+     * [WidgetRenderModelProvider.preview] the widget configuration screen already uses for its
+     * own live preview (D-048), so this form's preview can never show something a real widget
+     * wouldn't. Nothing it builds is written: [buildEvent] and the [WidgetBinding] below exist
+     * only for this one call.
+     *
+     * Null when there is nothing meaningful to preview yet — a blank title, or (not reachable
+     * today, since the date picker always has a default) no date.
+     */
+    private fun refreshPreview() {
+        val state = _uiState.value
+        val title = state.title.trim()
+        val target = buildTarget(state)
+        if (title.isBlank() || target == null) {
+            _uiState.update { it.copy(previewModel = null) }
+            return
+        }
+
+        val emoji = state.emoji.trim().ifBlank { null }
+        val event = buildEvent(state, target, title, emoji)
+        val binding = WidgetBinding.inheriting(
+            appWidgetId = AppWidgetId(AppWidgetId.INVALID),
+            eventId = event.id,
+            createdAt = clock.instant(),
+        )
+        val model = renderModelProvider.preview(event, binding)
+        _uiState.update { it.copy(previewModel = model) }
+    }
+
+    /**
+     * Applies the form's fields onto [loadedEvent], or builds a fresh [Event] when creating.
+     *
+     * Shared between [onSave] (the real write) and [refreshPreview] (never written) so the two
+     * can never quietly diverge on what a save would actually produce.
+     */
+    private fun buildEvent(
+        state: EditEventUiState,
+        target: EventTarget,
+        title: String,
+        emoji: String?,
+    ): Event = loadedEvent?.copy(
+        title = title,
+        emoji = emoji,
+        category = state.category,
+        target = target,
+        accentColor = state.accentColor,
+    ) ?: Event.create(
+        title = title,
+        target = target,
+        createdAt = clock.instant(),
+        emoji = emoji,
+        category = state.category,
+        accentColor = state.accentColor,
+    )
 
     /**
      * Builds the target from the form.

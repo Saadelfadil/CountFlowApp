@@ -11,6 +11,7 @@ import com.countflow.core.domain.model.EventTarget
 import com.countflow.core.domain.model.WidgetBinding
 import com.countflow.core.domain.model.AppWidgetId
 import com.countflow.core.domain.repository.EventFilter
+import com.countflow.core.domain.repository.EventLifecycleFilter
 import com.countflow.core.domain.repository.EventSort
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.Dispatchers
@@ -109,6 +110,18 @@ internal class EventRepositoryImplTest {
         val visible = repository.observeEvents().first().map { it.id.value }
 
         assertThat(visible).containsExactly("live")
+    }
+
+    @Test
+    fun `the lifecycle filter selects the archived bucket`() = runTest {
+        repository.upsertEvents(listOf(event("live"), event("filed")))
+        repository.setArchived(EventId("filed"), true)
+
+        val archived = repository.observeEvents(
+            filter = EventFilter(lifecycle = EventLifecycleFilter.ARCHIVED),
+        ).first().map { it.id.value }
+
+        assertThat(archived).containsExactly("filed")
     }
 
     @Test

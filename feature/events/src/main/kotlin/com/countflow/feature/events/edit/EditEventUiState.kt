@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.validation.EventValidationError
+import com.countflow.widget.engine.model.WidgetRenderModel
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -31,6 +32,11 @@ import java.time.LocalTime
  * @property isSaved the save completed and the screen should close.
  * @property isLoading true while an existing event is being fetched.
  * @property notFound the event being edited no longer exists.
+ * @property previewModel what a widget showing this event would render right now, recomputed
+ *   after every field change via `WidgetRenderModelProvider.preview()` — the same pure, no-I/O
+ *   render path the widget configuration screen's own live preview uses (D-048). Null only when
+ *   there is no date yet to preview against; every other field has a usable default from the
+ *   moment the form opens, so this is null only very briefly on a fresh create.
  */
 @Immutable
 data class EditEventUiState(
@@ -48,6 +54,7 @@ data class EditEventUiState(
     val isSaved: Boolean = false,
     val isLoading: Boolean = false,
     val notFound: Boolean = false,
+    val previewModel: WidgetRenderModel? = null,
 ) {
     /** Errors worth showing — none until the user has actually tried to save. */
     val visibleErrors: List<EventValidationError>

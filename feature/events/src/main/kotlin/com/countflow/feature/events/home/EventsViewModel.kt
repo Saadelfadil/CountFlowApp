@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.repository.EventFilter
+import com.countflow.core.domain.repository.EventLifecycleFilter
 import com.countflow.core.domain.repository.EventRepository
 import com.countflow.core.domain.repository.EventSort
 import com.countflow.feature.events.model.EventCardUiModel
@@ -59,7 +60,7 @@ class EventsViewModel @Inject constructor(
                 filter = EventFilter(
                     query = query,
                     categories = options.categories,
-                    includeArchived = options.showArchived,
+                    lifecycle = options.tab,
                 ),
                 sort = options.sort,
             ).map { domainEvents ->
@@ -77,7 +78,7 @@ class EventsViewModel @Inject constructor(
                 sort = options.sort,
                 selectedCategories = options.categories,
                 isLoading = false,
-                showArchived = options.showArchived,
+                tab = options.tab,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -116,9 +117,9 @@ class EventsViewModel @Inject constructor(
         listOptions.value = listOptions.value.copy(categories = emptySet())
     }
 
-    /** Shows or hides archived events. */
-    fun onShowArchivedChange(showArchived: Boolean) {
-        listOptions.value = listOptions.value.copy(showArchived = showArchived)
+    /** Switches between the Upcoming, Completed, and Archived tabs. */
+    fun onTabChange(tab: EventLifecycleFilter) {
+        listOptions.value = listOptions.value.copy(tab = tab)
     }
 
     /** Marks an event complete, or reopens it. */
@@ -144,7 +145,7 @@ class EventsViewModel @Inject constructor(
     private data class ListOptions(
         val sort: EventSort = EventSort.Default,
         val categories: Set<EventCategory> = emptySet(),
-        val showArchived: Boolean = false,
+        val tab: EventLifecycleFilter = EventLifecycleFilter.Default,
     )
 
     private companion object {

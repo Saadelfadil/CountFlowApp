@@ -3,6 +3,7 @@ package com.countflow.core.database.dao
 import app.cash.turbine.test
 import com.countflow.core.database.DatabaseTestCase
 import com.countflow.core.domain.model.EventCategory
+import com.countflow.core.domain.repository.EventLifecycleFilter
 import com.countflow.core.domain.repository.EventSort
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
@@ -25,15 +26,13 @@ internal class EventDaoTest : DatabaseTestCase() {
     private suspend fun query(
         text: String = "",
         categories: Set<EventCategory> = emptySet(),
-        includeArchived: Boolean = false,
-        includeCompleted: Boolean = true,
+        lifecycle: EventLifecycleFilter = EventLifecycleFilter.UPCOMING,
         sort: EventSort = EventSort.TARGET_DATE,
     ) = dao.observeEvents(
         query = text,
         categories = categories,
         filterByCategory = categories.isNotEmpty(),
-        includeArchived = includeArchived,
-        includeCompleted = includeCompleted,
+        lifecycle = lifecycle.name,
         sort = sort.name,
     ).first().map { it.id }
 
@@ -124,19 +123,61 @@ internal class EventDaoTest : DatabaseTestCase() {
     }
 
     @Test
-    fun `hides archived events by default and shows them on request`() = runTest {
-        dao.upsertEvents(listOf(event("live"), event("filed", isArchived = true)))
+    fun `the upcoming bucket excludes archived and completed events`() = runTest {
+        dao.upsertEvents(
+            listOf(
+                event("live"),
+                event("filed", isArchived = true),
+                event("done", isCompleted = true),
+            ),
+        )
 
-        assertThat(query(includeArchived = false)).containsExactly("live")
-        assertThat(query(includeArchived = true)).containsExactly("live", "filed")
+        assertThat(query(lifecycle = EventLifecycleFilter.UPCOMING)).containsExactly("live")
     }
 
     @Test
-    fun `hides completed events on request`() = runTest {
-        dao.upsertEvents(listOf(event("open"), event("done", isCompleted = true)))
+    fun `the completed bucket excludes archived events even if also completed`() = runTest {
+        dao.upsertEvents(
+            listOf(
+                event("open"),
+                event("done", isCompleted = true),
+                event("filed-and-done", isCompleted = true, isArchived = true),
+            ),
+        )
 
-        assertThat(query(includeCompleted = true)).containsExactly("open", "done")
-        assertThat(query(includeCompleted = false)).containsExactly("open")
+        assertThat(query(lifecycle = EventLifecycleFilter.COMPLETED)).containsExactly("done")
+    }
+
+    @Test
+    fun `the archived bucket includes archived events regardless of completion`() = runTest {
+        dao.upsertEvents(
+            listOf(
+                event("live"),
+                event("filed", isArchived = true),
+                event("filed-and-done", isCompleted = true, isArchived = true),
+            ),
+        )
+
+        assertThat(query(lifecycle = EventLifecycleFilter.ARCHIVED))
+            .containsExactly("filed", "filed-and-done")
+    }
+
+    @Test
+    fun `the three buckets are mutually exclusive and exhaustive`() = runTest {
+        // Every event lands in exactly one bucket, so the three queries together must reconstruct
+        // the full table with nothing missing and nothing duplicated.
+        dao.upsertEvents(
+            listOf(
+                event("live"),
+                event("done", isCompleted = true),
+                event("filed", isArchived = true),
+                event("filed-and-done", isCompleted = true, isArchived = true),
+            ),
+        )
+
+        val everyBucket = EventLifecycleFilter.entries.flatMap { query(lifecycle = it) }
+
+        assertThat(everyBucket).containsExactly("live", "done", "filed", "filed-and-done")
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.countflow.core.domain.model.Event
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.EventTarget
+import com.countflow.core.domain.repository.EventLifecycleFilter
 import com.countflow.core.domain.repository.EventSort
 import com.countflow.feature.events.model.EventUiMapper
 import com.countflow.feature.events.testing.FakeEventRepository
@@ -173,21 +174,21 @@ class EventsViewModelTest {
     }
 
     @Test
-    fun `an empty list with no filters offers to create the first event`() = runTest {
+    fun `an empty upcoming list with no filters offers to create a countdown`() = runTest {
         repository.emit(emptyList())
 
         viewModel.uiState.test {
             val loaded = awaitLoaded()
 
-            assertThat(loaded.emptyState).isEqualTo(HomeEmptyState.NO_EVENTS)
+            assertThat(loaded.emptyState).isEqualTo(HomeEmptyState.NO_UPCOMING)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `an empty list with an active filter says nothing matches`() = runTest {
-        // Showing "no events yet" while a search is active reads as though the user's data has
-        // disappeared, which is alarming and wrong.
+    fun `an empty list with an active filter says nothing matches, on every tab`() = runTest {
+        // Showing the tab's own empty copy while a search is active reads as though the user's
+        // data has disappeared, which is alarming and wrong.
         repository.emit(emptyList())
 
         viewModel.uiState.test {
@@ -196,6 +197,61 @@ class EventsViewModelTest {
 
             val filtered = awaitState { it.query == "nothing like this" }
             assertThat(filtered.emptyState).isEqualTo(HomeEmptyState.NO_MATCHES)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `defaults to the upcoming tab`() = runTest {
+        repository.emit(emptyList())
+
+        viewModel.uiState.test {
+            val loaded = awaitLoaded()
+
+            assertThat(loaded.tab).isEqualTo(EventLifecycleFilter.UPCOMING)
+            assertThat(repository.lastFilter?.lifecycle).isEqualTo(EventLifecycleFilter.UPCOMING)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `switching tabs reaches the repository without waiting`() = runTest {
+        // A tab tap is a deliberate press, like a sort tap, and must not inherit the search
+        // field's typing delay.
+        repository.emit(emptyList())
+        backgroundScope.launch { viewModel.uiState.collect { } }
+        advanceTimeBy(1)
+
+        viewModel.onTabChange(EventLifecycleFilter.ARCHIVED)
+        advanceTimeBy(1)
+
+        assertThat(repository.lastFilter?.lifecycle).isEqualTo(EventLifecycleFilter.ARCHIVED)
+    }
+
+    @Test
+    fun `an empty completed tab explains that completed events show up here`() = runTest {
+        repository.emit(emptyList())
+
+        viewModel.uiState.test {
+            awaitLoaded()
+            viewModel.onTabChange(EventLifecycleFilter.COMPLETED)
+
+            val onCompleted = awaitState { it.tab == EventLifecycleFilter.COMPLETED }
+            assertThat(onCompleted.emptyState).isEqualTo(HomeEmptyState.NO_COMPLETED)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an empty archived tab explains that archived events show up here`() = runTest {
+        repository.emit(emptyList())
+
+        viewModel.uiState.test {
+            awaitLoaded()
+            viewModel.onTabChange(EventLifecycleFilter.ARCHIVED)
+
+            val onArchived = awaitState { it.tab == EventLifecycleFilter.ARCHIVED }
+            assertThat(onArchived.emptyState).isEqualTo(HomeEmptyState.NO_ARCHIVED)
             cancelAndIgnoreRemainingEvents()
         }
     }
