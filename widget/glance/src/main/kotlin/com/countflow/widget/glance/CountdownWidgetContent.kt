@@ -138,7 +138,11 @@ internal fun CountdownWidgetContent(model: WidgetRenderModel?) {
                 LinearProgressIndicator(
                     progress = model.progress.fraction,
                     modifier = GlanceModifier.defaultWeight().height(PROGRESS_HEIGHT),
-                    color = accent,
+                    // labelColor, not accent: a completed or expired event is already told apart
+                    // by its muted label text (see above) — a still-vivid, full accent-colored
+                    // bar next to that muted text read as a real inconsistency, found on device
+                    // (Session 8). The bar should de-emphasize exactly when the label does.
+                    color = labelColor,
                     backgroundColor = progressTrack,
                 )
                 if (model.showPercentageText) {

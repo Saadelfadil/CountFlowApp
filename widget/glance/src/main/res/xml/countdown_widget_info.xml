@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   One fixed size for this milestone — see CountdownGlanceWidget's doc comment for why. minWidth
-  and minHeight are approximate 2x2-cell dimensions; a dimens-resource-based sizing system that
-  matches the canonical-layout breakpoints properly is Milestone 5's job (KNOWN_ISSUES.md).
+  and minHeight follow Android's documented cell-size formula, dp = 70*cells - 30, so the
+  declared footprint and targetCellWidth/Height actually agree: 2 cells = 70*2-30 = 110dp on
+  both axes. minWidth was originally 180dp — the 3-cell value under that same formula — which a
+  real launcher (Session 8, Pixel Launcher on a local emulator, the first session able to reach
+  the actual widget picker) reported as a 3x2 footprint despite targetCellWidth="2" saying
+  otherwise, contradicting every session's "2x2" documentation up to that point. See
+  KNOWN_ISSUES.md BUG-R009. A dimens-resource-based sizing system that matches the canonical-layout
+  breakpoints properly is still Milestone 5's job.
 
   widgetFeatures combines two things that sound contradictory but are not: configuration_optional
   means a launcher MAY place this widget without running configuration first, so the renderer
@@ -14,7 +20,7 @@
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/countdown_widget_description"
     android:initialLayout="@layout/glance_default_loading_layout"
-    android:minWidth="180dp"
+    android:minWidth="110dp"
     android:minHeight="110dp"
     android:targetCellWidth="2"
     android:targetCellHeight="2"
