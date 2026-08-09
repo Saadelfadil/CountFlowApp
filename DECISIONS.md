@@ -1292,3 +1292,151 @@ opened — resizing the real widget while configuration is open (an unusual but 
 would not update the preview's aspect ratio without reopening the screen. Not treated as worth
 solving this milestone; the underlying `AppWidgetManager` options read has no live-update
 callback this screen currently subscribes to.
+
+---
+
+## D-058 — `EventLifecycleFilter` replaces `includeArchived`/`includeCompleted` on `EventFilter`
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5 (Session 11)
+
+`EventFilter.lifecycle: EventLifecycleFilter` (`UPCOMING` / `COMPLETED` / `ARCHIVED`, exclusive)
+replaces the two independent inclusion flags. `EventDao.observeEvents` takes a `lifecycle: String`
+parameter and picks exactly one bucket via three `CASE WHEN`-style `OR` arms, following the same
+verified-SQL pattern the existing `sort` parameter already uses (D-027). An event that is both
+archived and completed sorts into `ARCHIVED` — archiving is the more deliberate, final hiding
+action, so it wins the tie.
+
+**Reason.** The Session 11 brief asked for three genuinely separate tabs (Upcoming / Completed /
+Archived), which needs "show only X" semantics. The two flags this replaces could only ever
+express "don't hide X" — `includeCompleted = true` meant "also show completed alongside
+everything else," not "show completed and nothing else." Building three tabs on top of that
+would have needed the app to fetch the union and filter client-side, which is exactly the
+in-memory filtering D-027 already rejected once for the same reason (a thousand events loaded to
+show ten).
+
+**Alternatives.** Add two more booleans (`onlyCompleted`, `onlyArchived`) alongside the existing
+two — rejected: four interacting booleans with no enforced exclusivity is more surface for a
+combination that was never meant to occur (`onlyCompleted && onlyArchived`) than one enum whose
+three values are the only three states that can exist. Filter the existing inclusive union
+client-side per tab — rejected on the same in-memory-filtering grounds as D-027.
+
+**Tradeoffs.** A source-breaking change to `EventFilter`'s two-field shape. Low real cost: the
+type had exactly one production call site (`EventsViewModel`) and three test call sites, all
+already using named-default construction rather than positional args, so every affected site was
+a mechanical rename. Verified via `EventDaoTest`'s new
+`the three buckets are mutually exclusive and exhaustive` test, which reconstructs the full table
+from all three bucket queries and asserts nothing is missing or duplicated.
+
+---
+
+## D-059 — The create/edit form's live preview depends on `:widget:engine`, not `:widget:glance`
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5 (Session 11)
+
+`:feature:events` gains one new dependency, `implementation(project(":widget:engine"))`, to reuse
+`WidgetRenderModelProvider.preview()` for `CreateEventScreen`'s new inline preview
+(`EventWidgetPreview.kt`). It does **not** depend on `:widget:glance` — `WidgetPreviewCard`, the
+configuration screen's own preview card (D-049), stays exactly where it is, unreused.
+
+**Reason.** `WidgetRenderModelProvider.preview()` is pure Kotlin/JVM with zero Android or Glance
+dependency (D-033) — exactly the kind of narrow, reusable seam D-004 built `:widget:engine` to be
+a "future consumer" of, here realized one milestone later than expected but for exactly the
+reason D-004 named. `:widget:glance`, by contrast, carries the full Glance/AppWidget runtime,
+`WidgetConfigurationActivity`, all 21 size×style layouts, and the Hilt `EntryPoint` bridge — none
+of which a form screen needs, and pulling it in would blur the module graph's existing shape
+(`:widget:glance` is assembled only by `:app`, alongside features, not depended on by one).
+`WidgetPreviewCard` and the `resolveHeadline`/`WidgetHeadline` content-hierarchy split it draws on
+(D-046) are also both `internal` to `:widget:glance` — reusing them verbatim would have required
+widening that module's public surface for a single new consumer outside the pattern D-042 already
+established for narrowing it.
+
+**What this means for the new preview.** `EventWidgetPreview.kt` (`:feature:events`) is a second,
+independently simplified drawing of a `WidgetRenderModel` — the same category of thing
+`WidgetPreviewCard` already is relative to the real 21 Glance layouts (D-049's own precedent).
+It reuses every fact the model carries (resolved theme colours, corner radius, progress fraction,
+`CountdownLabelFormatter`-formatted label text) and invents none of its own — no countdown math,
+no theme-colour resolution — but does **not** reproduce `resolveHeadline`'s primary/secondary
+line split (D-046). That split exists to resolve a redundancy problem specific to full-size
+widgets showing several lines at once ("Tomorrow / Tomorrow"); a compact single-line form preview
+was never at risk of that problem, so reproducing the split would have been complexity spent
+solving nothing.
+
+**Alternatives.** Depend on `:widget:glance` and widen `WidgetPreviewCard`/`resolveHeadline` to
+`public` — rejected for the dependency-weight and module-shape reasons above. Depend on
+`:widget:engine` and *also* reimplement the primary/secondary hierarchy split locally — rejected:
+would have meant two independent copies of a presentation *decision* (not just its drawing),
+which is precisely the "two approximations of one rule" duplication D-034's own precedent warns
+against.
+
+**Tradeoffs.** The create/edit form's preview and the configuration screen's preview are now two
+separately maintained (if both intentionally simplified) drawings of a `WidgetRenderModel`, not
+one shared component. Accepted: a genuinely shared component would need to live somewhere both
+`:feature:events` and `:widget:glance` can reach without either depending on the other, which is
+a real module-graph change this session's brief explicitly ruled out ("Do NOT redesign the
+architecture"). Revisit if a third consumer ever wants the same preview, at which point extracting
+one shared component becomes worth its own module-boundary decision.
+
+---
+
+## D-060 — Delete is never a swipe target; the overflow menu is the one action surface every tab and every action always has
+
+**Date:** 2026-08-09 · **Status:** Accepted · **Milestone:** 5 (Session 11)
+
+`EventCard`'s swipe gesture (`SwipeToDismissBox`) is wired only on the `UPCOMING` tab, mapping its
+two directions to Complete and Archive — never Delete, on any tab. Every card, on every tab,
+also carries an overflow (`⋮`) menu offering every action valid for that tab's lifecycle bucket,
+including Delete with its own confirmation dialog. `COMPLETED` and `ARCHIVED` rows have no swipe
+gesture at all; their actions (Restore, Delete, and — from `COMPLETED` — Archive) are menu-only.
+
+**Reason.** Two requirements from the brief, both non-negotiable: "Do NOT make destructive
+deletion too easy," and "Swipe actions must NOT be the only way to complete, archive, or delete —
+provide an accessible alternative." A swipe gesture that deletes on a full-distance drag is
+exactly what "too easy" describes — it can be triggered by a single, fast, accidental motion with
+no confirmation step in the gesture itself. Scoping swipe to `UPCOMING` only, rather than building
+three tabs' worth of swipe-direction combinations (Restore vs. Archive vs. Delete, per tab), is
+the smaller mechanism for the two actions the brief actually described swiping for by name
+("Complete" one direction, "Archive/Delete" the other) — read as "Archive, and separately, handle
+deletion safely" rather than as an instruction to make deletion swipeable too.
+
+**Alternatives.** Swipe-to-delete with a confirming snackbar ("Undo") instead of an upfront
+dialog — a legitimate pattern elsewhere, rejected here specifically because the brief named the
+upfront-confirmation shape explicitly (`Delete "Japan Trip"? ... Cancel / Delete`). Swipe gestures
+on `COMPLETED`/`ARCHIVED` too (e.g., swipe-to-restore) — considered and deferred: it would need a
+third state-dependent mapping for marginal gain, since the menu already reaches Restore in one
+tap on tabs with only a handful of rows expected.
+
+**Tradeoffs.** A user who wants to restore or delete from `COMPLETED`/`ARCHIVED` has only the menu,
+never a faster swipe — accepted, since those two tabs are expected to be visited far less often
+than `UPCOMING` and the menu is already the accessible baseline every tab needs regardless.
+
+---
+
+## D-061 — The empty Upcoming tab does not distinguish genuine first launch from "everything is done or archived"
+
+**Date:** 2026-08-09 · **Status:** Accepted (deliberate scope reduction) · **Milestone:** 5 (Session 11)
+
+The brief's mockup text names two separate empty states — "No countdowns yet / Create something
+worth looking forward to" for first launch, and "Nothing coming up / Create a countdown for your
+next moment" for an Upcoming tab that just happens to be empty. `HomeUiState.emptyState` collapses
+these into one `NO_UPCOMING` case, using the second copy ("Nothing coming up..."), for both
+triggering conditions.
+
+**Reason.** Telling the two cases apart needs a signal `HomeUiState` does not otherwise have —
+whether the user has *ever* created an event, independent of the current tab or filter. The
+cheapest correct version would be a new reactive `EventRepository` method (`observeHasAnyEvents()`
+backed by a `SELECT COUNT(*)` query) purely to drive copy on one screen. The brief's own
+instruction — "Do not over-design these states" — was read as license to skip that plumbing:
+"Nothing coming up... create a countdown for your next moment" reads correctly whether it is
+truly the user's first session or they have simply completed and archived everything so far,
+where "No countdowns yet" would read slightly wrong in the second case (the user does have
+countdowns, just not upcoming ones).
+
+**Alternatives.** Add `observeHasAnyEvents()` and the extra combine to distinguish the two states
+precisely — rejected as more plumbing than a copy-only distinction is worth, per the brief's own
+instruction. Show the first-launch copy always — rejected: reads wrong once a user has genuinely
+used the app and cleared their Upcoming tab through completion or archiving, which is the more
+common way to reach this state after the first session.
+
+**Tradeoffs.** A true first-time user and a returning user with nothing upcoming see identical
+copy. Accepted as the correct trade for this app's scale; revisit only if user feedback
+specifically asks for a distinct first-run welcome.

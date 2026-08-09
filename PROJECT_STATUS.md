@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | 5B of 9 complete (responsive 2×1/2×2/4×2 widget system; multi-widget independence and polish remain in Milestone 5) |
-| **Last session** | Session 10 — 2026-08-09 |
+| **Current milestone** | 5 of 9: Event CRUD/UI now considered 100% for V1 (Session 11); widget sizing/multi-widget polish remain the rest of Milestone 5 |
+| **Last session** | Session 11 — 2026-08-09 |
 | **Build status** | ✅ `assembleDebug` succeeds |
-| **Lint** | 0 errors, 17 accepted warnings (unchanged from Session 9, all documented) |
-| **Tests** | 245 passing, 0 failing (up from 235). `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 10: the widget system is now genuinely responsive across three sizes (2×1/2×2/4×2), not just resizable.** 21 Style × Size combinations, each with its own information hierarchy — not a stretched or clipped 2×2. Real-device work found and fixed a significant size-classification bug (`WidgetSizeClass` thresholds were derived from Android's cell-size *formula*, which turned out not to match a real launcher's actual rendered dimensions — the same class of mistake as BUG-R009) and a `Row`/`fillMaxWidth` layout bug specific to the new compact size. See `docs/RESPONSIVE_WIDGET_REVIEW.md`'s Final Report. One real gap acknowledged, not hidden: the 4×2 (WIDE) size has no real-device visual confirmation, Robolectric only (TD-017) — three device-automation attempts to force a real WIDE placement did not succeed within the session |
-| **Overall progress** | ~55% |
+| **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9, all documented) |
+| **Tests** | 259 passing, 0 failing (up from 245). `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ **Session 11: the event list is now organized into three lifecycle tabs (Upcoming/Completed/Archived) with full complete/archive/delete/restore support** — a swipe gesture on Upcoming rows plus an overflow menu present on every row, on every tab, as the one path every action (including delete, deliberately never swipeable) always has. The create/edit form now shows a live, size-agnostic widget preview reusing the real `WidgetRenderModelProvider.preview()` pipeline, confirmed on-device reacting to title, category, and accent-color changes in real time. Real-device work found and fixed one bug: the new tab row didn't scroll like the category row beside it, so 200% font scale wrapped "Archived" into a vertical letter stack. Widget behavior on complete/archive/delete confirmed correct against a real placed widget with no widget-specific code changes needed — the existing render pipeline and cascading-delete design already handled all three correctly |
+| **Overall progress** | ~57% |
 
 ---
 
@@ -83,9 +83,9 @@ Dependencies point downward only. Features never depend on each other.
 ```
 :app  ──────────────► every feature, every core module, :widget:glance
 
-:feature:events    ─┐
-:feature:settings  ─┼──► :core:designsystem, :core:domain, :core:common
-:feature:premium   ─┘    (+ :core:billing)
+:feature:events    ─┬──► :core:designsystem, :core:domain, :core:common
+:feature:settings  ─┤    (+ :widget:engine for :feature:events only, D-059)
+:feature:premium   ─┘    (+ :core:billing for :feature:premium)
 
 :core:designsystem ──► :core:domain          (token-to-text formatting, D-028)
 
@@ -102,6 +102,11 @@ Dependencies point downward only. Features never depend on each other.
 That is deliberate: an accidental `import android.*` in either is a compile error rather than
 something a reviewer has to catch (D-003, D-033).
 
+**Session 11 added one new edge**: `:feature:events → :widget:engine`, so the create/edit form
+can reuse `WidgetRenderModelProvider.preview()` for its live widget preview rather than
+re-deriving countdown or theme logic. Deliberately not `:feature:events → :widget:glance` — see
+D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
+
 **Module status**
 
 | Module | State |
@@ -112,7 +117,7 @@ something a reviewer has to catch (D-003, D-033).
 | `:core:domain` | Model, countdown engine, validation, repository contracts |
 | `:core:database` | Room: 3 entities, 3 DAOs, converters, schema v1 |
 | `:core:data` | Repository implementations, mappers, DataStore preferences |
-| `:feature:events` | Home list, create/edit form, two ViewModels, UI mapper |
+| `:feature:events` | Home list (three lifecycle tabs, swipe + menu actions), create/edit form (live widget preview), two ViewModels, UI mapper |
 | `:widget:engine` | **Render model, theme resolver, progress engine, mapper, provider, lifecycle coordinator** |
 | `:widget:glance` | **First widget, configuration activity, refresh scheduler** |
 | `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
@@ -133,6 +138,15 @@ something a reviewer has to catch (D-003, D-033).
   against real SQLite rather than assumed.
 - **Event CRUD works end to end**: create with validation, list, realtime search, category
   filter, four sort orders, and edit. Driven on a device, not just unit-tested.
+- **Event lifecycle management is complete.** Session 11 organized the list into three tabs
+  (Upcoming/Completed/Archived, `EventLifecycleFilter`, D-058), added complete/archive/restore/
+  delete everywhere — a swipe gesture on Upcoming rows (Complete/Archive) plus an overflow menu
+  present on every row on every tab, the one path every action (including delete, deliberately
+  never a swipe target, D-060) always has. Delete requires real, worded confirmation. Verified
+  on-device across the full lifecycle, including that completing/archiving/deleting a bound
+  event correctly updates, leaves alone, or unbinds its widget respectively, with no
+  widget-specific code needed — the existing render pipeline and cascading FK already did this
+  correctly.
 - **A countdown widget exists, has been through both an audit and a real-device validation
   pass, and now has evidence, not just architecture, behind the claim that it works.** One
   genuinely-2×2 size (fixed Session 8 — see BUG-R009). Session 8 achieved the first real
@@ -158,22 +172,26 @@ something a reviewer has to catch (D-003, D-033).
   category of mistake as BUG-R009) and a `Row`/`fillMaxWidth` layout bug specific to the compact
   size. See `docs/WIDGET_SIZE_MATRIX.md` (the full matrix) and `docs/RESPONSIVE_WIDGET_REVIEW.md`
   (the real-device evidence and Final Report).
+- **The create/edit form now previews the widget it configures.** Session 11 added
+  `EventWidgetPreview`, a compact, inline card reusing `WidgetRenderModelProvider.preview()` — the
+  same pure, no-I/O render path the widget configuration screen's own preview uses (D-048) — so
+  the form's preview can never show something a real widget wouldn't, without depending on the
+  heavier `:widget:glance` module (D-059). Updates live as title, category, and accent color
+  change; confirmed on-device.
 
 ## What does not exist yet
 
-No notifications, no settings, no billing. Within the events feature: no delete or archive
-gesture (TD-008); the create/edit form has an accent-colour picker (Session 9) but no live widget
-preview of its own (the configuration screen has one instead — see `TODO.md`). Within widgets:
-the same-event-two-different-styles case is unit-tested but not verified through real UI, and the
-4×2 (WIDE) size has no real-device visual confirmation at all — Robolectric only (TD-017); the
-`WidgetSizeClass` thresholds are confirmed against exactly one emulator/launcher combination
-(TD-016). No D-008 alarm-based refresh. One open bug: the widget sticks on a loading spinner after
-Force Stop until the app reopens — now at least a branded prompt rather than a generic spinner,
-but does not recover on its own, and per D-052 this stays open by design until Milestone 8
-(BUG-011). Several UI strings are not localised (TD-007). No widget performance, memory, or
-battery number has ever been measured on a device, in any session — the device-heavy sessions so
-far (8, 9, 10) prioritised lifecycle, visual, and responsiveness verification, which had zero or
-near-zero prior evidence, over performance numbers.
+No notifications, no settings, no billing. Within widgets: the same-event-two-different-styles
+case is unit-tested but not verified through real UI, and the 4×2 (WIDE) size has no real-device
+visual confirmation at all — Robolectric only (TD-017); the `WidgetSizeClass` thresholds are
+confirmed against exactly one emulator/launcher combination (TD-016). No D-008 alarm-based
+refresh. One open bug: the widget sticks on a loading spinner after Force Stop until the app
+reopens — now at least a branded prompt rather than a generic spinner, but does not recover on its
+own, and per D-052 this stays open by design until Milestone 8 (BUG-011). Several UI strings are
+not localised (TD-007). No widget performance, memory, or battery number has ever been measured on
+a device, in any session — the device-heavy sessions so far (8, 9, 10, 11) prioritised lifecycle,
+visual, and product-completeness verification, which had zero or near-zero prior evidence, over
+performance numbers.
 
 ## Where the important logic lives
 
@@ -198,26 +216,29 @@ near-zero prior evidence, over performance numbers.
 | How does the configuration screen preview without saving? | `widget/engine/…/provider/WidgetRenderModelProvider.kt` `preview()`, or DECISIONS.md D-048 |
 | How does a widget decide it's 2×1 vs 2×2 vs 4×2? | `widget/glance/…/WidgetSizeClass.kt` `classifyWidgetSize`, or `docs/WIDGET_SIZE_MATRIX.md` |
 | Why do the dp thresholds look larger than the manifest's cell-size formula would suggest? | `WidgetSizeClass.kt`'s doc comment, or DECISIONS.md D-055 |
+| Which of the three lifecycle tabs does an event belong to? | `core/domain/…/repository/EventRepository.kt` `EventLifecycleFilter`, or DECISIONS.md D-058 |
+| How does the create/edit form preview a widget without depending on `:widget:glance`? | `feature/events/…/edit/EditEventViewModel.kt` `refreshPreview`, or DECISIONS.md D-059 |
+| Why is delete never a swipe gesture? | `feature/events/…/home/EventCard.kt`, or DECISIONS.md D-060 |
 
 ---
 
 ## Progress
 
 ```
-Overall                      55%
+Overall                      57%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
 Domain & countdown engine   100%   Milestone 2
 Database & persistence      100%   Milestone 2
-Event CRUD / UI              88%   Milestone 3 (gestures outstanding; colour picker now done)
+Event CRUD / UI             100%   Milestone 3 (Session 11: lifecycle tabs, gestures, live preview)
 Widget engine                98%   Milestone 4.9 (validated on a real device — docs/PRODUCT_REVIEW.md)
 Widget themes & sizes        70%   Milestone 5B of 5 (responsive 2×1/2×2/4×2 delivered; multi-widget polish remains)
 Settings                      0%   Milestone 6
 Notifications                 0%   Milestone 7
 Optimization & a11y           0%   Milestone 8
 Play Store                    0%   Milestone 9
-Testing                      78%   domain, DAO, repository, ViewModel, widget engine, Glance UI
+Testing                      80%   domain, DAO, repository, ViewModel, widget engine, Glance UI
 ```
 
 ---

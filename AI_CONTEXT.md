@@ -31,6 +31,7 @@ instead, and probably already exists there.
 :app ──► every feature, every core module, :widget:glance
 
 :feature:events, :feature:settings, :feature:premium ──► :core:designsystem, :core:domain, :core:common
+:feature:events ──► :widget:engine also                     (D-059: reuses preview(), not :widget:glance)
 :core:designsystem ──► :core:domain                         (D-028: token-to-text formatting)
 
 :widget:glance ──► :widget:engine, :core:designsystem, :core:common
@@ -64,17 +65,22 @@ concluded no local emulator existed — that conclusion came from `which emulato
 works, alongside an existing `Pixel_9` AVD. `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`
 launched directly gave Session 8 a fully stable device for the whole session. Try this first.
 
-## What exists right now (Milestone 5B of 9, complete — full Milestone 5 still open)
+## What exists right now (Milestone 3 finishing pass + Milestone 5B of 9, both complete)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
-  four repository interfaces.
+  four repository interfaces. `EventFilter.lifecycle: EventLifecycleFilter` (D-058) picks exactly
+  one of three exclusive buckets (Upcoming/Completed/Archived) — read its KDoc before assuming
+  the old `includeArchived`/`includeCompleted` booleans still exist; they don't.
 - **Persistence**: Room (3 entities, cascading foreign keys, schema v1 committed), DataStore
   preferences, repository implementations — all integration-tested against real SQLite via
   Robolectric, not mocked.
-- **App UI**: home list with search/sort/filter, create/edit form with validation, and now an
-  accent-colour picker (Dynamic + eight presets, D-050). No delete or archive gesture yet
-  (TD-008).
+- **App UI**: home list with search/sort/filter/three lifecycle tabs, create/edit form with
+  validation, an accent-colour picker (Dynamic + eight presets, D-050), and now a live widget
+  preview of its own (`EventWidgetPreview`, D-059). Complete/archive/restore/delete are reachable
+  two ways on every row — a swipe gesture on Upcoming rows, and an overflow menu present on every
+  row, on every tab, that is the one path every action (including delete, never a swipe target,
+  D-060) always has (Session 11, closing TD-008).
 - **Widget**: `CountdownGlanceWidget`, now genuinely responsive across three sizes — 2×1, 2×2,
   4×2 (`SizeMode.Exact`, D-053) — with 21 total Style × Size compositions
   (`CountdownWidgetLayouts.kt`), each with its own information hierarchy rather than a stretched
@@ -109,6 +115,16 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   `Row`/`fillMaxWidth` layout bug specific to the new compact size. One real, named gap: the 4×2
   (WIDE) size has no real-device visual confirmation, Robolectric only (TD-017) — three
   device-automation attempts to force a real WIDE placement did not succeed within the session.
+- **Confirmed Session 11**: the full event lifecycle (create → edit → complete → archive →
+  restore → delete, plus cancel-delete) works correctly on a real device, both via swipe and via
+  the overflow menu; the menu's accessibility is confirmed against the real semantics tree, not
+  just visually — the card's merged description and the overflow button's own independent "More
+  actions for X" description both appear as separate nodes. A real placed widget's behaviour
+  across completing, archiving, and deleting its bound event was confirmed correct with **zero
+  widget-specific code changes** — the existing render pipeline and cascading foreign key already
+  handled all three correctly. One real bug found and fixed within the session: the new tab row
+  didn't scroll like the category row beside it, so 200% font scale wrapped "Archived" into a
+  vertical letter stack.
 - Still not measured on any device, by any session: update latency, memory, CPU, battery, or
   TalkBack output — see `docs/PRODUCT_REVIEW.md` for what was prioritized instead and why.
 
@@ -194,6 +210,14 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
   measurements (D-055). The lesson compounds: even a formula that was correct for one purpose
   (declaring a footprint) is not automatically correct for a different purpose (classifying a
   runtime size) — verify each specific claim against a real device, not the previous verification.
+- **A layout copied from a sibling needs the sibling's whole behavior copied too, not just its
+  look.** Session 11's new tab row visually matched the existing category filter row but omitted
+  its `horizontalScroll` — invisible at 100% font scale, and only surfaced at 200%, where three
+  fixed-width chips with nowhere to grow forced "Archived" to wrap one letter per line instead of
+  scrolling off-screen. Found by the session's own large-font-scale device check, the same
+  category of gap BUG-R011 (Session 9) was in: a constant tuned for one condition applied
+  unconditionally to another. Worth checking every reused layout pattern for the *whole* behavior
+  it was copied for, not just its static appearance.
 
 ## How to verify the project still works
 
@@ -201,7 +225,7 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
 ./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug
 ```
 
-Current baseline: 245 tests, 0 failures, 0 lint errors (17 accepted warnings, all documented in
+Current baseline: 259 tests, 0 failures, 0 lint errors (17 accepted warnings, all documented in
 `KNOWN_ISSUES.md`), `:core:domain` line coverage above 95% (currently 97.0%).
 
 Build output is noisy — every module logs two deprecation warnings per compile, a side effect of
@@ -230,7 +254,7 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (57 as of Session 10) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (61 as of Session 11) with reason, alternatives, tradeoffs. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render/refresh flow, both lifecycles, Glance's sharp edges, forward compatibility. |
 | `docs/WIDGET_REVIEW.md` | The Milestone 4.5 audit (Session 7, no device — see its own banner; largely superseded by the docs below). |
 | `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, real device evidence. |

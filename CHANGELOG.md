@@ -11,7 +11,64 @@ Milestone 9, so the version stays at `0.x`.
 ## [Unreleased]
 
 Nothing yet. The rest of Milestone 5 (real WIDE device confirmation, same-event multi-style
-verification, remaining polish) begins next, pending approval — see `TODO.md` P0.
+verification) begins next, pending approval — see `TODO.md` P0.
+
+---
+
+## [0.4.6] — 2026-08-09 — Milestone 3 finishing pass: event management polish
+
+Session 11. Closed the two gaps Milestone 3 (Session 4) left open — no live widget preview in the
+create/edit form, no UI gesture for archive/complete/delete — now that both had what they were
+waiting for: a real widget renderer to preview against, and a settled event-list design to add
+gestures to. Explicitly scoped smaller than Sessions 9/10: product polish, not new architecture.
+
+### Added
+- **Three lifecycle tabs** — Upcoming, Completed, Archived — replacing the single unfiltered
+  list. `EventLifecycleFilter` (`core:domain`) is a new exclusive selector on `EventFilter`,
+  replacing the two independent `includeArchived`/`includeCompleted` inclusion flags, which could
+  only ever express "don't hide X," never "show only X" (D-058).
+- **Complete, archive, restore, and delete, reachable two ways on every row**: a swipe gesture on
+  Upcoming rows (swipe one direction to complete, the other to archive) and an overflow menu
+  present on every row, on every tab, offering every action valid for that row's tab — including
+  delete, which is never a swipe target on any tab (D-060).
+- **A worded delete confirmation dialog** (`Delete "<title>"? This countdown and its reminders
+  will be deleted. Any widgets showing it will return to the unconfigured state.`), naming the
+  real event and describing only what the app actually does.
+- **Four tab-and-filter-aware empty states**, each with its own copy; the Upcoming tab's carries
+  a "Create countdown" call to action alongside the existing FAB.
+- **A live widget preview in the create/edit form** (`EventWidgetPreview`), reusing
+  `WidgetRenderModelProvider.preview()` — the exact pure, no-I/O render path the widget
+  configuration screen's own preview already uses (D-048) — through a new, deliberately narrow
+  `:feature:events → :widget:engine` dependency (D-059). Updates live as title, category, and
+  accent color change.
+- `EditEventViewModelTest.kt` — this ViewModel's first-ever unit tests, covering the new preview's
+  reactivity and confirming nothing it computes is ever persisted before `onSave()`.
+
+### Fixed
+- **The new tab row didn't scroll like the category row beside it**, so 200% font scale wrapped
+  "Archived" into a vertical one-letter-per-line stack instead of scrolling off-screen. Found on
+  a real device during this session's own font-scale verification; fixed by adding the same
+  `horizontalScroll` the category row already had.
+
+### Changed
+- The card's accessibility semantics no longer merge the whole card into one description — the
+  descriptive content (emoji, title, category, countdown) keeps its single merged sentence, but
+  the new overflow button is scoped out of it, so it remains an independently focusable TalkBack
+  target ("More actions for `<title>`") rather than being swallowed by the card-wide description.
+
+### Tests
+259 tests, 0 failures (up from 245) — `core:database` +2 (lifecycle bucket queries), `core:data`
++1, `feature:events` +11 (tabs, empty states, and the new `EditEventViewModelTest.kt`). `:core:domain`
+line coverage unchanged at 97.0%, gated at 95%. Lint: 0 errors, 17 warnings, unchanged since
+Session 9.
+
+### Known gaps (not fixed by design)
+- `EventCard`'s swipe gesture uses Material 3's `confirmValueChange`, deprecated as of the
+  Compose BOM's resolved `material3` 1.4.0 — still functions correctly on-device, no drop-in
+  replacement API exists yet (TD-018).
+- The empty Upcoming tab does not distinguish a genuine first launch from "everything is
+  completed or archived" — both show the same copy, a deliberate scope reduction per the brief's
+  own "do not over-design these states" instruction (D-061).
 
 ---
 

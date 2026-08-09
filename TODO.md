@@ -5,18 +5,20 @@ scheduled but not imminent.
 
 ---
 
-## P0 — Blocks Session 11
+## P0 — Blocks Session 12
 
-- [ ] **Approve Milestone 6 (or further Milestone 5 work) after Session 10's responsive-system
-      report.** Read `docs/RESPONSIVE_WIDGET_REVIEW.md`'s Final Report before deciding.
-- [ ] **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — the one
-      significant gap Session 10's own Final Report names explicitly. Three device-automation
-      attempts this session did not succeed; try a physical device or a cleared single-widget home
-      screen next.
+- [ ] **Approve Milestone 6, or further Milestone 5 work, after Session 11's Core Product
+      completion report.** Event CRUD/UI is now considered 100% for V1 (Session 11's own Final
+      Report answers this explicitly) — confirm before starting Notifications or Settings.
+- [ ] **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — still
+      the one significant Milestone 5 gap, carried over from Session 10. Not attempted again this
+      session, which was explicitly scoped to event management, not widget sizing.
 
 Resolved in prior sessions (kept here only as a pointer, not re-litigated): 2×1/4×2 size work
 approved and delivered (Session 10); BUG-011 decided — no further work until Milestone 8 (D-052);
-the countdown label policy confirmed permanent (D-051).
+the countdown label policy confirmed permanent (D-051); archive/complete/delete gestures delivered
+with a full accessible menu alternative (Session 11, TD-008 resolved); create/edit live widget
+preview delivered (Session 11).
 
 ---
 
@@ -31,17 +33,11 @@ the countdown label policy confirmed permanent (D-051).
 - [ ] Verify emoji rendering on a physical device — a real emulator now exists and is stable, but
       emoji glyph coverage is specifically a launcher/OEM font concern the emulator can't stand in
       for (LIM-006).
-- [ ] Live widget preview **in the create/edit form itself** — Session 9 built a live preview for
-      the widget *configuration* screen (`WidgetPreviewCard`, D-049, now size-aware per D-057),
-      which is arguably the more valuable surface since it previews the actual per-widget
-      style/toggle/accent choices, but the create/edit form (`CreateEventScreen`) still has no
-      preview of its own. Lower priority now that the configuration screen has one; revisit if
-      user feedback specifically wants it earlier in the flow.
-- [ ] Archive, complete, and delete gestures on the list (TD-008). The ViewModel methods exist
-      and are tested; only the gesture is missing.
 - [ ] **Re-measure `WidgetSizeClass` thresholds on a physical device and a second launcher**
       (TD-016) — this session's real numbers (172×224dp for 2×2, 172×104dp for 2×1) are confirmed
       for exactly one emulator/launcher combination; nothing guarantees a different host agrees.
+- [ ] Migrate `EventCard`'s swipe gesture off the deprecated `confirmValueChange` parameter
+      (TD-018, Session 11) — low priority, still functions correctly, no drop-in replacement API.
 
 ---
 
@@ -84,14 +80,16 @@ the countdown label policy confirmed permanent (D-051).
       `:core:analytics`, `:core:billing`).
 - [ ] **TD-005 (Low)** — build output noise; disappears with TD-001.
 - [ ] **TD-006 (Low)** — title search is ASCII-case-insensitive only.
-- [ ] **TD-008 (Low)** — no archive/complete/delete gesture. Scheduled for the rest of Milestone 5.
 - [ ] **TD-009 (Low)** — the date picker's UTC conversion is comment-guarded but untested.
-- [ ] **TD-016 (Medium, new Session 10)** — `WidgetSizeClass` thresholds are calibrated against
+- [ ] **TD-016 (Medium, Session 10)** — `WidgetSizeClass` thresholds are calibrated against
       one emulator's one launcher, not confirmed portable. See P1 above.
-- [ ] **TD-017 (Medium, new Session 10)** — 4×2 (`WIDE`) has no real-device visual confirmation,
+- [ ] **TD-017 (Medium, Session 10)** — 4×2 (`WIDE`) has no real-device visual confirmation,
       Robolectric only. See P0 above.
+- [ ] **TD-018 (Low, new Session 11)** — `EventCard`'s swipe gesture uses a deprecated Material 3
+      parameter (`confirmValueChange`); works correctly, no drop-in replacement exists yet.
 
-Resolved this session: TD-012 (`resizeMode="none"` — moot now that resizing is fully supported,
+Resolved this session: TD-008 (archive/complete/delete gesture, full accessible menu alternative).
+Resolved in Session 10: TD-012 (`resizeMode="none"` — moot now that resizing is fully supported,
 D-053/D-056). Resolved in Session 9: TD-011 (system-tracked corner radius, D-045), TD-014
 (widget-picker preview), TD-015 (unused vertical space). See `KNOWN_ISSUES.md` Resolved section
 for full detail.
@@ -113,6 +111,9 @@ for full detail.
 - [ ] No test for `WidgetConfigurationViewModel` directly — its cancel/confirm/no-orphan
       behaviour was verified on-device in Session 5 (which is how BUG-R005 was found), not by a
       unit test. Worth adding one now that the real behaviour is understood precisely.
+      (`EditEventViewModel`, the form-side sibling of this same "preview never persists" pattern,
+      closed the equivalent gap for itself in Session 11 — `EditEventViewModelTest.kt` — but the
+      widget configuration screen's own ViewModel remains untested by this same standard.)
 - [ ] No real-device instrumented test exists for the widget lifecycle end to end — every
       individual step now has manual real-device confirmation (Session 8) or unit-test coverage,
       but nothing automates the full chain against a real `AppWidgetHost`. Now that a stable local

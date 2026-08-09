@@ -182,18 +182,6 @@ while most of its text is not.
 
 ---
 
-### TD-008 — Archive, complete, and delete have no UI gesture
-**Severity:** Low · **Opened:** Session 4
-
-`EventsViewModel` exposes `onArchivedChange`, `onCompletedChange`, and `onDelete`, all covered by
-tests, but nothing on the home screen calls them. There is no swipe action, no long-press menu,
-and no overflow on the card.
-
-Deliberate: the gesture design belongs with the widget work, since a card that previews a widget
-should not sprout a swipe affordance that the widget cannot have. Scheduled for Milestone 5.
-
----
-
 ### TD-013 — CORRECTED Session 8, was never a real gap
 
 Session 7 concluded, from reading Glance 1.1.1's `Text` API surface (`javap` on the AAR showed
@@ -254,6 +242,28 @@ than this session's two-widgets-side-by-side test setup left.
 before attempting the resize, so a free column reliably exists. `WIDE_MIN_WIDTH_DP` (TD-016) should
 be re-confirmed at the same time, since both gaps share the same root cause (no real `WIDE`
 measurement yet).
+
+---
+
+### TD-018 — `EventCard`'s swipe gesture uses a deprecated Material 3 API
+**Severity:** Low · **Opened:** Session 11
+
+`rememberSwipeToDismissBoxState`'s `confirmValueChange` parameter (used to trigger Complete/Archive
+on a full swipe and to veto the box from actually dismissing) is deprecated as of Material 3
+1.4.0, the version this session's Compose BOM resolves to. The deprecation message points at a
+different pattern entirely — dynamic anchors on the underlying `AnchoredDraggableState`, via
+`androidx.compose.foundation.samples.AnchoredDraggableDynamicAnchorsSample` — not a like-for-like
+replacement parameter.
+
+**Why not fixed.** `confirmValueChange` still compiles, still functions correctly (verified
+on-device this session: both swipe directions trigger the right action and the row settles
+correctly), and produces no lint warning — only a Kotlin compiler deprecation note. Migrating to
+dynamic anchors is a genuinely different API shape, not a drop-in rename, and was judged more
+engineering than a "product polish" session should spend on a working, non-broken gesture.
+
+**Resolution path.** Revisit when Material 3 actually removes `confirmValueChange` (not merely
+deprecates it), or opportunistically the next time `EventCard`'s swipe behaviour is touched for
+an unrelated reason.
 
 ---
 
@@ -352,6 +362,17 @@ if the device configuration changes while the screen is open).
 ---
 
 ## Resolved
+
+### TD-008 — Archive, complete, and delete had no UI gesture *(resolved Session 11)*
+
+Open since Session 4. `EventsViewModel` had exposed `onArchivedChange`, `onCompletedChange`, and
+`onDelete` — all tested — since Milestone 3, with nothing on the home screen calling them.
+Session 11 (Milestone 5's product-polish pass) closed this: `EventCard` now offers both a swipe
+gesture (`UPCOMING` rows only — swipe end-to-start to complete, start-to-end to archive) and an
+overflow menu present on every row, on every tab, offering every action valid for that tab's
+lifecycle bucket. The menu is not a fallback for the swipe; per the session's explicit
+accessibility requirement, it is the one path every action — including delete, deliberately never
+a swipe target — always has (D-060).
 
 ### BUG-R012 — A widget silently drew the wrong size's layout instead of the size it was actually resized to *(found and fixed Session 10)*
 

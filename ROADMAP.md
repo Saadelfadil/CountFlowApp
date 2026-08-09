@@ -9,7 +9,7 @@ Living document. Update the status column as milestones move.
 | 0 | Research & architecture | **Completed** | 1 |
 | 1 | Project foundation | **Completed** | 2 |
 | 2 | Database, repositories, countdown engine | **Completed** | 3 |
-| 3 | Event CRUD | **Completed** | 4 |
+| 3 | Event CRUD | **Completed** (finishing pass: lifecycle tabs, gestures, live preview) | 4, 11 |
 | 4 | Widget engine | **Completed** | 5–6 |
 | 4.5 | Widget stabilization | **Completed** | 7 |
 | 4.9 | Real product validation | **Completed** | 8 |
@@ -78,6 +78,47 @@ in the domain; `CountdownLabel` and category formatting through plural resources
 **Not delivered:** the live widget preview in the form, and the accent colour picker — both
 deferred to Milestone 5, where the widget renderer they should preview will actually exist.
 Archive, complete, and delete exist on the ViewModel but have no UI gesture yet.
+
+### Session 11 — finishing pass: event management polish
+
+Both gaps this milestone left open in Session 4 finally had what they were waiting for: the
+accent colour picker landed in Session 9 once the widget renderer existed, and the live preview
+landed here, once the whole point of deferring it — a real `WidgetRenderModelProvider` to preview
+against — had existed for six sessions. A deliberately smaller session than 9 or 10: product
+polish on an already-built screen, not new architecture.
+
+**Delivered:** the event list reorganized into three lifecycle tabs — Upcoming, Completed,
+Archived (`EventLifecycleFilter`, D-058), replacing the two independent inclusion flags
+`EventFilter` had carried unused-in-the-UI since Milestone 2; complete, archive, restore, and
+delete reachable two ways on every row — a swipe gesture on Upcoming rows (Complete one direction,
+Archive the other) and an overflow menu present on every row, on every tab, as the one path every
+action always has, closing TD-008 (open since Session 4) with the accessible alternative the
+brief explicitly required, not a swipe-only shortcut (D-060); a worded delete confirmation dialog
+naming the real event and the real cascade behaviour, never a bare swipe-to-delete; four
+tab-and-filter-aware empty states; and the create/edit form's own live widget preview
+(`EventWidgetPreview`), reusing `WidgetRenderModelProvider.preview()` through a new, deliberately
+narrow `:feature:events → :widget:engine` dependency rather than the heavier `:widget:glance`
+module (D-059), confirmed on-device updating live as title, category, and accent color change.
+
+**Verified on a real device, not just unit-tested:** the full lifecycle (create → edit → complete
+→ archive → restore → delete, plus cancel-delete); both swipe directions and the menu's non-swipe
+alternative (confirmed via the real accessibility semantics tree — the card's merged description
+and the overflow button's own independent "More actions for X" description); a real placed
+widget's behaviour across completing, archiving, and deleting its bound event, with **no
+widget-specific code needed at all** — the existing render pipeline (D-039's forced-background
+palette, D-051's label policy) already renders "Completed" correctly, archiving already leaves a
+widget untouched by design (`Event.isArchived`'s own long-standing doc comment), and the existing
+cascading foreign key already unbinds a deleted event's widgets back to the unconfigured state;
+light and dark mode; and 200% font scale, which found one real bug — the new tab row didn't scroll
+horizontally like the category row beside it, so "Archived" wrapped into a vertical letter stack —
+found and fixed within the session.
+
+245 → 259 tests, 0 failures. `:core:domain` unchanged at 97.0% (nothing this session touched
+`:core:domain`'s testable surface beyond the new `EventLifecycleFilter` enum). `EditEventViewModel`
+gained its first-ever unit tests, closing a gap `TODO.md` had named since the ViewModel existed.
+
+**Not delivered, by explicit scope:** no widget sizing work (TD-016/TD-017 remain exactly where
+Session 10 left them), no notifications, no billing, no premium gating, no Milestone 6 work.
 
 ---
 
