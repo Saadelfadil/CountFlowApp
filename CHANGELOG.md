@@ -28,6 +28,27 @@ emulator/launcher UI-automation fragility, not a code regression (no widget code
 Session 12). 340 tests unchanged, 0 failures. Owner action required before the next milestone can
 target a real submission — see `TODO.md` P0 and `docs/RELEASE_CHECKLIST.md`.
 
+**Physical-device QA fix #1 (Samsung Galaxy A55 / One UI).** The first real physical-device testing
+this project has had found two real UI defects in `WidgetConfigurationActivity`, both fixed:
+
+### Fixed
+- **BUG-R016** — the Customize Widget screen could not be vertically scrolled; controls below "Show
+  on widget" (Target date, Percentage) were unreachable on real hardware. Fixed with
+  `Modifier.verticalScroll`; the Style/Progress/Accent-color rows' own horizontal scrolling is
+  unaffected (the two axes are orthogonal).
+- **BUG-R017** — the live preview's 4×2 (WIDE) card clipped its progress-percentage text, because
+  its fixed aspect-ratio height gave the same vertical content stack less room than 2×2's ratio
+  does. Fixed by making the preview card's height a *minimum* (`heightIn(min = ...)`) rather than a
+  hard `aspectRatio()`, so it grows instead of clipping. The real placed widget was not affected and
+  was not changed.
+
+Confirmed on the `Pixel_9` emulator: full scroll reachability including 200% font scale, horizontal
+scrolling still correct, Save always reachable, 2×2 preview unchanged. Live 4×2 preview confirmation
+was not obtained on the emulator (widget-picker automation fragility, consistent with TD-017); the
+fix rests on the reported physical-device symptom and the sizing mechanism's own correctness. No
+version bump — same reasoning as the audit above; this is a debug-build fix for physical-device QA,
+not a new release. 340 tests unchanged, 0 failures.
+
 ---
 
 ## [0.4.9] — 2026-08-10 — Milestone 6: essential settings

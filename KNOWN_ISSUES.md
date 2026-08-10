@@ -430,6 +430,64 @@ if the device configuration changes while the screen is open).
 
 ## Resolved
 
+### BUG-R017 — The 4×2 (WIDE) live widget preview clipped its progress percentage *(found and fixed via Samsung Galaxy A55 / One UI physical-device evidence)*
+
+The first real physical-device testing this project has had (a Samsung Galaxy A55, One UI) found
+that `WidgetConfigurationActivity`'s live preview card, when showing a widget at its real current
+4×2 (`WidgetSizeClass.WIDE`) footprint, cut off the progress percentage text at the bottom of the
+card. The real, placed home-screen Glance widget did not have this problem.
+
+Root cause: `WidgetPreviewCard` used a single fixed `Modifier.aspectRatio(...)` to size the card for
+every size class, sized from real on-device measurements (`WIDGET_SIZE_MATRIX.md`). For WIDE
+(320:224, wider than tall), that ratio gives roughly 108dp of usable content height at the preview's
+fixed 200dp width — but the same vertical stack of content every non-compact size class shows
+(identity row, headline, unit, secondary line, progress bar, percentage) needs roughly 134dp,
+comfortably inside STANDARD's much taller 2×2 ratio but not WIDE's shorter one. The real Glance
+widget never hit this because its actual WIDE compositions are genuinely different layouts, not a
+scaled copy of 2×2 (by design, `WIDGET_SIZE_MATRIX.md`) — this preview deliberately stays one
+simplified card rather than reproducing that per-size layout work (see `WidgetPreviewCard`'s own
+class doc), so its fixed-ratio sizing had no equivalent way to make room.
+
+**Fixed** by replacing the fixed `aspectRatio()` with `BoxWithConstraints` +
+`Modifier.heightIn(min = maxWidth / ratio)`: the card is still exactly the ratio-derived height for
+any content that already fits within it (2×1, 2×2, and most 4×2 content — pixel-identical to
+before, confirmed on-device for the 2×2 case), but grows taller instead of clipping for content that
+genuinely needs more room. This guarantees no clipping for any style/title/toggle combination,
+present or future, rather than narrowing the margin with a WIDE-specific spacing trim that might
+still fail for a longer title. The real Glance widget was not touched — no evidence it was ever
+affected, per the fix's own scope. Confirmed on the `Pixel_9` emulator: the 2×2 preview renders
+unchanged. Live WIDE-specific confirmation on the emulator was not obtained — real widget placement
+through the emulator's launcher widget-picker proved too fragile for reliable automation across many
+attempts (the same category of difficulty already documented for TD-017); the fix's correctness for
+WIDE rests on the reported physical-device symptom plus the `heightIn(min=)` mechanism's own
+correctness (a standard, non-experimental Compose sizing idiom), not a fresh live screenshot at that
+size. See `docs/WIDGET_SIZE_MATRIX.md` for the real per-size layout differences this preview
+intentionally does not reproduce.
+
+### BUG-R016 — Customize Widget screen could not be vertically scrolled, stranding controls below "Show on widget" *(found and fixed via Samsung Galaxy A55 / One UI physical-device evidence)*
+
+The first real physical-device testing this project has had (a Samsung Galaxy A55, One UI) found
+that `WidgetConfigurationActivity`'s Customize step — the preview, Style row, Progress row, Accent
+color row, and four "Show on widget" toggles — is taller than the viewport on real hardware, and the
+screen had no vertical scrolling at all. "Target date" and "Percentage," the last two toggles, could
+not reliably be reached.
+
+Root cause: `CustomizeStep`'s outer `Column` used `Modifier.fillMaxSize().padding(16.dp)` with no
+scroll modifier — content simply ran past the bottom of the screen with no way to reach it. This had
+never surfaced on the `Pixel_9` emulator across many prior sessions, presumably because its viewport
+happened to be tall enough for this specific control set; a real device's usable height (further
+reduced by One UI's own chrome) was not.
+
+**Fixed** by adding `Modifier.verticalScroll(rememberScrollState())` and changing
+`fillMaxSize()` to `fillMaxWidth()`, so the column's height comes from its own content (which
+`verticalScroll` can then scroll through) rather than being forced to exactly match the viewport.
+Confirmed on the `Pixel_9` emulator: the full control set, including "Target date" and "Percentage,"
+is now reachable by scrolling; the Style row's `horizontalScroll` still works correctly with no
+vertical-scroll interference (confirmed by swiping the Style row horizontally without the page
+scrolling vertically — the two axes are orthogonal, as expected); "Save" (in the `TopAppBar`, never
+inside the scrollable column) remained reachable throughout; 200% font scale remained fully usable,
+scrolling to reveal every control.
+
 ### BUG-R015 — The app's `versionCode`/`versionName` had been frozen at `1`/`"0.1.0"` since Milestone 1 *(found and fixed Session 14)*
 
 `AndroidApplicationConventionPlugin`'s `defaultConfig` set `versionCode = 1` and `versionName =

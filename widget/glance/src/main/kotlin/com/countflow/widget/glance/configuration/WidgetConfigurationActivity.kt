@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
@@ -284,9 +285,18 @@ private fun CustomizeStep(
     onAccentColorChange: (AccentColor?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Vertically scrollable (found on a Samsung Galaxy A55 / One UI: this step's controls run
+    // taller than the available viewport on real hardware, so anything below "Show on widget"
+    // was unreachable — KNOWN_ISSUES.md BUG-R016). fillMaxWidth(), not fillMaxSize(): the column's
+    // height should come from its own content so verticalScroll has something real to scroll,
+    // not from a height forced to exactly match the viewport. Orthogonal to the Style/Progress/
+    // accent-color rows' own horizontalScroll() below — vertical drag scrolls this column,
+    // horizontal drag on those rows scrolls them, and Compose's scroll modifiers only claim their
+    // own axis, so the two never contend for the same gesture.
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
