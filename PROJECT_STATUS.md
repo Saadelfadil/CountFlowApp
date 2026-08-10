@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | Essential Settings (Milestone 6 scope, Session 14) now **complete and real-device verified**; Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) still open |
-| **Last session** | Session 14 — 2026-08-10 |
-| **Build status** | ✅ `assembleDebug` succeeds |
+| **Current milestone** | Final MVP Release Audit (Session 15) complete: **MVP NOT READY** for public submission — two owner-action blockers (signing key, privacy-policy URL), no code-level blocker found |
+| **Last session** | Session 15 — 2026-08-10 |
+| **Build status** | ✅ `assembleDebug`, `assembleRelease` (unsigned), `bundleRelease` (unsigned) all succeed |
 | **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9, all documented) |
-| **Tests** | 340 passing, 0 failing (up from 334). `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 14: users can now choose System/Light/Dark theme and toggle Material You dynamic color, see whether CountFlow's notifications will actually reach them, jump straight to Android's own notification settings, and see an accurate app version — all real-device verified.** `PreferencesRepository`'s existing `ThemeMode`/`useDynamicColor` fields (stored and tested since Milestone 2, never read until now) now drive `CountFlowTheme` directly from `MainActivity`, confirmed to persist across a full process kill and to leave placed widgets' own styling completely untouched (D-069). Notification status reads `NotificationManagerCompat.areNotificationsEnabled()` — correct on every Android version, not just 13+ — and refreshes on every screen resume via `LifecycleResumeEffect`, confirmed flipping both directions after leaving and returning from Android's real notification settings with no CountFlow restart (D-070). About reads the installed package's real version (`PackageManager`, not `BuildConfig`); a stale `versionCode`/`versionName` frozen at Milestone 1 was corrected in the process (D-072). Privacy Policy and Open-source licenses ship as visible, honestly-disabled placeholders, not fake links (D-073) |
-| **Overall progress** | ~65% |
+| **Tests** | 340 passing, 0 failing (unchanged from Session 14 — this session wrote no production code). `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ **Session 15: a full, critical MVP release audit — feature freeze, no new product code.** Verified: release build succeeds and leaks no debug-only code; every permission and exported component is justified; zero network requests exist anywhere in the codebase; zero analytics/ads SDK; Room migration/FK/no-destructive-fallback all correct; the reminder pipeline was re-verified live end-to-end (created, permission granted, alarm scheduled, fired, correct "Expired" content, tap-to-open, no duplicate); a clean install through first event creation has no dead ends. Found and classified real gaps rather than hiding them to reach "MVP COMPLETE": two release **BLOCKERs** (no signing key, no privacy-policy URL — both owner actions), and HIGH findings on cold-start time (~2.5–2.8 s measured on a debug build, real number, needs a release-build re-measurement), 4×2 WIDE still unconfirmed on a real launcher after every session that has attempted it, and this session's own widget-picker automation not succeeding in placing a fresh widget. Full findings: `docs/MVP_RELEASE_AUDIT.md`; factual privacy basis: `docs/PRIVACY_DATA_INVENTORY.md`; practical follow-up: `docs/RELEASE_CHECKLIST.md` |
+| **Overall progress** | ~66% |
 
 ---
 
@@ -38,6 +38,9 @@ Read in this order when picking the project up cold:
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system specifically: data/render/refresh flow, binding and configuration lifecycles, Glance sharp edges, forward compatibility. Read this before changing anything under `widget/`. |
 | `docs/WIDGET_REFRESH_ARCHITECTURE.md` | The production background refresh system: next-transition calculation, coalescing, alarm lifecycle, system receivers, timezone/reboot/Force Stop behavior, battery reasoning, real-device evidence (Session 12). Read this before changing anything under `refresh/`. |
 | `docs/NOTIFICATION_ARCHITECTURE.md` | Basic event reminders: trigger-time calculation, timezone policy, idempotent delivery, the coalesced-alarm scheduler, permission flow, real-device evidence (Session 13). Read this before changing anything under `:core:notifications`. |
+| `docs/MVP_RELEASE_AUDIT.md` | The Final MVP Release Audit: every finding classified BLOCKER/HIGH/MEDIUM/LOW/POST-MVP, across 15 phases (release build, manifest, dependencies, data, widgets, background reliability, reminders, accessibility, performance, privacy, security, metadata, localisation, install/upgrade, engineering gate) (Session 15). Read this before any Play Store submission. |
+| `docs/PRIVACY_DATA_INVENTORY.md` | Factual inventory of what CountFlow stores, processes, and transmits — the basis for the eventual Play Data Safety declaration and Privacy Policy (Session 15). |
+| `docs/RELEASE_CHECKLIST.md` | Practical, checkbox-oriented pre-submission checklist (Session 15). |
 | `docs/WIDGET_REVIEW.md` | The Milestone 4.5 stabilization audit (Session 7, no device — largely superseded by the two below). |
 | `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, all backed by real device evidence. |
 | `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots (`docs/screenshots/`) of every major widget state, with the exact recipe to reproduce each (Session 8 baseline). |
@@ -227,6 +230,17 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
   version, read from `PackageManager` rather than `:app`'s `BuildConfig` (D-072); Privacy Policy
   and Open-source licenses render as honest, visibly-disabled placeholders rather than fake links
   or a new dependency pulled in just to enumerate licenses (D-073).
+- **A full, critical MVP release audit exists, with every finding classified and nothing hidden to
+  claim readiness.** Session 15 was feature-freeze: no product code was written. The release build
+  succeeds cleanly (debug, unsigned release APK, unsigned release AAB), leaks no debug-only code
+  into release, and every manifest permission/exported component is individually justified. Zero
+  network requests exist anywhere in the codebase and zero analytics/advertising SDK is present —
+  confirmed by direct inspection, not assumption (`docs/PRIVACY_DATA_INVENTORY.md`). The reminder
+  pipeline was re-verified live, end to end, on a genuine clean install. Two real release
+  **blockers** were found and not downplayed — no signing key, no privacy-policy URL, both owner
+  actions — alongside HIGH findings on cold-start time (measured, not reasoned: ~2.5–2.8 s on a
+  debug build) and 4×2 WIDE remaining unconfirmed on a real launcher after every session that has
+  attempted it. Full findings, classified BLOCKER/HIGH/MEDIUM/LOW/POST-MVP: `docs/MVP_RELEASE_AUDIT.md`.
 
 ## What does not exist yet
 
@@ -298,7 +312,7 @@ a different kind of verification with zero or near-zero prior evidence over prof
 ## Progress
 
 ```
-Overall                      65%
+Overall                      66%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
@@ -316,7 +330,11 @@ Notifications                 90%  Milestone 7 (Session 13: basic 30/7/1-day/day
 Optimization & a11y           25%  Milestone 8 (Session 12: background refresh infrastructure delivered and
                                      device-verified — Chronometer ticking, R8, Baseline Profiles, full a11y
                                      pass, and real performance numbers all remain)
-Play Store                    0%   Milestone 9
+Release readiness             20%  Milestone 8.9 (Session 15: full release audit complete — release build,
+                                     manifest, dependencies, data, security, privacy, metadata, localisation
+                                     all verified clean; two owner-action blockers found, not yet resolved —
+                                     see docs/MVP_RELEASE_AUDIT.md)
+Play Store                    0%   Milestone 9 (Firebase, AdMob, billing, store assets — none started)
 Testing                      80%   domain, DAO, repository, ViewModel, widget engine, Glance UI
 ```
 

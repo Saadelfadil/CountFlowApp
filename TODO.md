@@ -5,19 +5,34 @@ scheduled but not imminent.
 
 ---
 
-## P0 — Blocks Session 15
+## P0 — Blocks a real Play Store submission (Session 15's audit verdict: MVP NOT READY)
 
-- [ ] **Approve Final MVP Release Audit, Billing/Live Updates, or further Milestone 5/8 work,
-      after Session 14's essential-settings completion report.** Event CRUD, responsive widgets,
-      widget customization, background refresh, basic reminders, and now essential settings are
-      all complete and real-device verified — confirm the next milestone before starting it.
-- [ ] **Get a real, final privacy-policy URL and wire it into `AboutUiState.privacyPolicyUrl`**
-      (Session 14, D-073) — a genuine release blocker, not an engineering task. The About screen's
-      Privacy Policy row ships correctly disabled ("Not yet available") until this exists; no
-      placeholder or fake URL was substituted.
-- [ ] **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — still
-      the one significant Milestone 5 gap, carried over from Session 10. Not attempted this
-      session either, which was explicitly scoped to settings, not widget sizing.
+Full reasoning for every item below: `docs/MVP_RELEASE_AUDIT.md`. These are release blockers, not
+"blocks next session" in the usual sense — Session 16 can proceed with engineering work regardless,
+but none of it should be mistaken for making the app submittable until these are resolved.
+
+- [ ] **Owner: get a real production signing keystore, or enroll in Play App Signing.** No signing
+      configuration exists anywhere in the repo (confirmed by search) — `assembleRelease` and
+      `bundleRelease` both succeed but produce unsigned artifacts. Cannot upload to Play without
+      this. Engineering will not create or configure this without the real key/credentials.
+- [ ] **Owner: get a real, final privacy-policy URL and wire it into `AboutUiState.privacyPolicyUrl`**
+      (Session 14, D-073; restated as Session 15's own top-level finding, not downgraded) — a
+      genuine release blocker, not an engineering task. The About screen's Privacy Policy row ships
+      correctly disabled ("Not yet available") until this exists; no placeholder or fake URL was
+      substituted.
+- [ ] **Decide: invest in getting real on-device `WIDE` (4×2) confirmation, or accept shipping on
+      Robolectric-only evidence.** TD-016/TD-017, now unresolved across every session that has
+      attempted it (8, 9, 10, 15) — Session 15's own attempt also failed to get a widget placed at
+      all before reaching the resize step, due to launcher/emulator widget-picker automation
+      fragility. A physical device is the brief's own recommended next attempt.
+- [ ] **Re-measure cold start on a signed release build, on real (or at least idle) hardware.**
+      Session 15 measured ~2.5–2.8 s on a *debug* build under session load — a real number, not
+      reasoned, but with enough caveats (debug overhead, emulator, loaded session) that it should
+      not be treated as the release build's actual number either way.
+- [ ] **Approve the next engineering milestone** once the above are resolved or explicitly
+      accepted: Billing/Live Updates (Milestone 9), or the remaining Milestone 5 widget-sizing loose
+      ends. Event CRUD, responsive widgets, widget customization, background refresh, basic
+      reminders, and essential settings are all complete and real-device verified.
 
 Resolved in prior sessions (kept here only as a pointer, not re-litigated): 2×1/4×2 size work
 approved and delivered (Session 10); the countdown label policy confirmed permanent (D-051);
@@ -26,9 +41,9 @@ TD-008 resolved); create/edit live widget preview delivered (Session 11); the co
 background refresh scheduler D-008 always planned, delivered and real-device verified (Session 12,
 D-062/D-063); basic event reminders (30/7/1-day/day-of), delivered and real-device verified
 (Session 13, D-065 through D-068); essential settings (appearance, notification status, About),
-delivered and real-device verified (Session 14, D-069 through D-073). BUG-011 (Force Stop
-recovery) remains open by explicit decision — see below; nothing this session changes that
-decision.
+delivered and real-device verified (Session 14, D-069 through D-073); a full MVP release audit,
+delivered (Session 15, `docs/MVP_RELEASE_AUDIT.md`). BUG-011 (Force Stop recovery) remains open by
+explicit decision — see below; nothing since has changed that decision.
 
 ---
 
@@ -106,6 +121,20 @@ Milestone 6's essential scope (theme, dynamic color, notification status, About)
       Robolectric only. See P0 above.
 - [ ] **TD-018 (Low, new Session 11)** — `EventCard`'s swipe gesture uses a deprecated Material 3
       parameter (`confirmValueChange`); works correctly, no drop-in replacement exists yet.
+- [ ] **TD-019 (Low, new Session 15)** — `androidx-glance-preview`/`androidx-glance-appwidget-preview`
+      are declared `debugImplementation` in `widget/glance/build.gradle.kts` but nothing uses a
+      Glance `@Preview` annotation. Zero release-build impact; safe to remove whenever convenient.
+- [ ] **TD-020 (Low, new Session 15)** — `androidx-test-espresso-core`/`androidx-test-ext-junit` are
+      declared `androidTestImplementation` in `app/build.gradle.kts` but no `androidTest` source set
+      exists anywhere in the repo yet. Not dead weight so much as declared ahead of the testing-gap
+      this project already tracks (see "Testing gaps" below) — remove only if instrumented tests are
+      deliberately decided against, not by default.
+- [ ] **TD-021 (Medium, new Session 15)** — `isMinifyEnabled = false` / `isShrinkResources = false`
+      remain in effect for release builds (standing since Milestone 1, "turned on with the R8
+      rules pass in Milestone 8" — not yet reached, tracked as P3 work above). A real release build
+      today ships unobfuscated and unshrunk. Not previously given its own tracking number; assigned
+      one here because `docs/MVP_RELEASE_AUDIT.md` (Session 15) flags it MEDIUM for
+      release-readiness and it should be visible without cross-referencing that document.
 
 Resolved this session: TD-008 (archive/complete/delete gesture, full accessible menu alternative).
 Resolved in Session 10: TD-012 (`resizeMode="none"` — moot now that resizing is fully supported,
@@ -154,6 +183,18 @@ for full detail.
       its classification logic (`WidgetHeadline.isNumeric`), not the visual wrapping itself, which
       needs a real device screenshot to see at all. Same class of gap as the `ColorProvider`
       testing hole found in Session 8 (BUG-R010).
+- [ ] **The `Pixel_9` emulator's launcher widget picker is unreliable for scripted UI automation**
+      (Session 15) — not just for 4×2 WIDE resizing (TD-017's original finding) but for basic
+      widget placement too: search-filtered and full-browse taps repeatedly landed on a neighboring
+      app's entry instead of CountFlow's, across many real attempts. A physical device, or a
+      dedicated Espresso/UiAutomator instrumented test (see the instrumented-test gap above) would
+      likely be more reliable than ad hoc `adb shell input tap` coordinate guessing for this specific
+      interaction going forward.
+- [ ] **TalkBack has been verified via the accessibility-tree semantics it reads from
+      (`uiautomator dump` showing correct `checkable`/`clickable`/role attributes), not by literally
+      enabling the screen reader and listening to narration** — true for Session 11's `EventCard`
+      work and Session 14/15's Settings screen alike. Worth a dedicated pass with TalkBack actually
+      switched on before a real release, even though the underlying semantics are confirmed correct.
 
 ---
 

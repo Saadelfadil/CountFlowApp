@@ -68,7 +68,11 @@ reaches the UI without a dedicated ViewModel, why widgets are unaffected by it, 
 notification status stays correct across every Android version — read `PROJECT_STATUS.md`'s
 "Where important logic lives" table and DECISIONS.md D-069 through D-073 (Session 14); there is no
 separate architecture doc for Settings, since the whole system is a handful of small, self-
-explanatory classes in `:feature:settings`.
+explanatory classes in `:feature:settings`. **Before assuming this project is ready for Play Store
+submission**, read `docs/MVP_RELEASE_AUDIT.md` (Session 15) — a full, feature-freeze release audit
+that found two genuine release blockers (no signing key, no privacy-policy URL, both owner
+actions) and classified every other finding BLOCKER/HIGH/MEDIUM/LOW/POST-MVP; its companion
+`docs/PRIVACY_DATA_INVENTORY.md` is the factual basis for a future Play Data Safety declaration.
 
 **If you need a device this session, check for a local one before assuming you need a remote
 one.** Sessions 5–7 fought a flaky remote device at `127.0.0.1:6555` and Session 7 wrongly
@@ -77,7 +81,7 @@ concluded no local emulator existed — that conclusion came from `which emulato
 works, alongside an existing `Pixel_9` AVD. `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`
 launched directly gave Session 8 a fully stable device for the whole session. Try this first.
 
-## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12; Milestone 7's basic event reminders delivered, Session 13; Milestone 6's essential settings delivered, Session 14)
+## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12; Milestone 7's basic event reminders delivered, Session 13; Milestone 6's essential settings delivered, Session 14; Milestone 8.9's Final MVP Release Audit delivered, Session 15 — verdict MVP NOT READY, two owner-action blockers)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
@@ -189,6 +193,25 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   every row without clipping. One real defect found and fixed: the app's `versionCode`/`versionName`
   had been frozen at `1`/`"0.1.0"` since Milestone 1, invisible until this session's About screen
   read it back (BUG-R015 / D-072).
+- **Confirmed Session 15 (Final MVP Release Audit, feature freeze, no product code written)**: the
+  release build succeeds and leaks no debug-only code into it (`PreviewActivity` and every other
+  debug-scoped class absent from the release APK's dex, confirmed by direct search, not assumed);
+  every manifest permission and exported component is individually justified; **zero network
+  requests exist anywhere in the codebase** (no HTTP client library at all) and **zero analytics/
+  advertising SDK** (`:core:analytics`/`:core:billing` are genuinely empty, not just unused) —
+  `docs/PRIVACY_DATA_INVENTORY.md` has the full accounting. The reminder pipeline was re-verified
+  live end to end on a genuine clean install: alarm scheduled, fired, correct real-time "Expired"
+  content (not stale), tap-to-open landed on the right event, no duplicate. Cold start was
+  *measured*, not reasoned, at ~2.5–2.8 s across three runs — real, on a debug build, over the
+  700 ms target by a wide margin, flagged HIGH pending a release-build remeasurement rather than
+  either dismissed or treated as certain doom. **Two genuine release blockers found and not
+  downplayed**: no signing key exists, no privacy-policy URL exists (both owner actions). **Not
+  obtained this session**: fresh real-device confirmation of widget placement or 4×2 WIDE — the
+  emulator's launcher widget-picker proved too fragile for reliable automation across many real
+  attempts (the same category of difficulty Session 10 already documented for WIDE specifically,
+  TD-017, now also observed for basic placement) — stated plainly, not a discovered regression,
+  since no widget code has changed since Session 12. Full findings, classified BLOCKER/HIGH/MEDIUM
+  /LOW/POST-MVP: `docs/MVP_RELEASE_AUDIT.md`. **Verdict: MVP NOT READY** for public submission.
 - Still not measured on any device, by any session: update latency, memory, CPU, or TalkBack
   output. Battery now has a *reasoned* answer (Session 12, alarm-count-based, not
   profiler-measured — `docs/WIDGET_REFRESH_ARCHITECTURE.md` §11); see `docs/PRODUCT_REVIEW.md` for
@@ -357,6 +380,9 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render flow, both lifecycles, Glance's sharp edges, forward compatibility. §5 (refresh flow) is now a summary — see the file below for the real system. |
 | `docs/WIDGET_REFRESH_ARCHITECTURE.md` | The production background refresh system in one file: next-transition calculation, coalescing, alarm lifecycle, system receivers, timezone/reboot/Force Stop behavior, battery reasoning, real-device evidence (Session 12). |
 | `docs/NOTIFICATION_ARCHITECTURE.md` | The MVP reminder notification system in one file: reminder model, trigger-time calculation, all-day/timed zone policy, idempotent delivery, the coalesced alarm scheduler, permission flow, notification channel, lifecycle behavior, boot/timezone recovery, battery reasoning, real-device evidence (Session 13). |
+| `docs/MVP_RELEASE_AUDIT.md` | The Final MVP Release Audit: every finding across 15 phases, classified BLOCKER/HIGH/MEDIUM/LOW/POST-MVP. Read this before any Play Store submission (Session 15). |
+| `docs/PRIVACY_DATA_INVENTORY.md` | Factual inventory of what CountFlow stores, processes, and transmits — zero network requests, zero analytics/ads. Basis for a future Play Data Safety declaration (Session 15). |
+| `docs/RELEASE_CHECKLIST.md` | Practical, checkbox-oriented pre-submission checklist (Session 15). |
 | `docs/WIDGET_REVIEW.md` | The Milestone 4.5 audit (Session 7, no device — see its own banner; largely superseded by the docs below). |
 | `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, real device evidence. |
 | `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots of every major widget state, with the recipe to reproduce each (Session 8 baseline). |

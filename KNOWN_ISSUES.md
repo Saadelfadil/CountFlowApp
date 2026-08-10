@@ -281,6 +281,56 @@ an unrelated reason.
 
 ---
 
+### TD-019 — Unused debug-only Glance preview dependencies
+**Severity:** Low · **Opened:** Session 15 (Final MVP Release Audit)
+
+`androidx-glance-preview` and `androidx-glance-appwidget-preview` are declared as
+`debugImplementation` in `widget/glance/build.gradle.kts`, but no `@Preview`/`@AppWidgetPreview`
+annotation exists anywhere in the module (confirmed by grep — zero matches). Dead weight in the
+debug build graph only; `debugImplementation` scoping means **zero impact on the release build**,
+confirmed directly by searching the release APK's dex files for the relevant classes (`docs/
+MVP_RELEASE_AUDIT.md` Phase 1) — neither appears.
+
+**Resolution path.** Remove both lines whenever `widget/glance/build.gradle.kts` is next touched
+for an unrelated reason. Not release-blocking; not worth a dedicated session.
+
+---
+
+### TD-020 — Unused Android instrumented-test dependencies
+**Severity:** Low · **Opened:** Session 15 (Final MVP Release Audit)
+
+`androidx-test-espresso-core` and `androidx-test-ext-junit` are declared
+(`androidTestImplementation`) in `app/build.gradle.kts`, but no `androidTest` source set exists
+anywhere in the repository — confirmed by `find . -path "*/src/androidTest/*"` returning nothing.
+Unlike TD-019, this is not pure dead weight so much as a dependency declared ahead of a testing gap
+this project has tracked since early sessions ("No Compose UI tests for the app's own screens,"
+`TODO.md` Testing gaps) — the intent was presumably to have Espresso ready when that gap closes.
+
+**Resolution path.** Either write the instrumented tests this dependency anticipates, or remove it
+if instrumented testing is deliberately decided against for this project. Not release-blocking.
+
+---
+
+### TD-021 — Release builds ship unminified and unshrunk
+**Severity:** Medium · **Opened:** Milestone 1 · **First given a tracking number:** Session 15 (Final MVP Release Audit)
+
+`isMinifyEnabled = false` and `isShrinkResources = false` in `AndroidApplicationConventionPlugin`'s
+`release` build type — a standing decision since the project's first session ("Turned on with the
+R8 rules pass in Milestone 8 so the first release build is verifiable without maintaining keep
+rules for a codebase that does not exist yet"). Confirmed still in effect this session: a real
+`assembleRelease` build produces no `mapping.txt`, and the release APK (30.5 MB) is smaller than
+debug (42.1 MB) only because of missing debug symbols/tooling, not R8 shrinking.
+
+**Why not fixed yet.** Milestone 8's R8-keep-rules pass has not happened (`TODO.md` P3) — turning
+minification on without a keep-rules pass risks silently stripping something real (reflection-based
+Room/Hilt/Glance code paths, for example), which is a worse outcome than an unminified release APK.
+
+**Resolution path.** Budget the R8 keep-rules pass alongside the rest of Milestone 8's remaining
+scope (Baseline Profiles, macrobenchmarks, accessibility pass) — see `TODO.md` P3. Do not flip
+`isMinifyEnabled` on without one.
+
+---
+
 ### TD-009 — The date picker converts through UTC
 **Severity:** Low · **Opened:** Session 4
 

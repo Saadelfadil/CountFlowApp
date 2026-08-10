@@ -10,8 +10,23 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. Final MVP Release Audit, Billing/Live Updates, or further Milestone 5/8 work begins
-next, pending approval — see `TODO.md` P0.
+**Session 15 — Final MVP Release Audit (Milestone 8.9).** No version bump: this session shipped no
+production code, only a full release-readiness audit and three new documents
+(`docs/MVP_RELEASE_AUDIT.md`, `docs/PRIVACY_DATA_INVENTORY.md`, `docs/RELEASE_CHECKLIST.md`). The
+installable app is functionally identical to `0.4.9`. **Verdict: MVP NOT READY** for public Play
+Store submission — two owner-action blockers found (no signing key, no privacy-policy URL), no
+code-level blocker. Full findings, classified BLOCKER/HIGH/MEDIUM/LOW/POST-MVP, in
+`docs/MVP_RELEASE_AUDIT.md`. Confirmed clean this session: the release build succeeds and leaks no
+debug-only code; every manifest permission and exported component is justified; zero network
+requests and zero analytics/advertising SDK exist anywhere in the codebase; the Room migration/
+foreign-key/no-destructive-fallback behavior is correct; the reminder pipeline was re-verified live
+end to end on a genuine clean install. Real, measured (not reasoned) findings: cold start
+~2.5–2.8 s on a debug build (target is 700 ms; needs a release-build/real-hardware remeasurement);
+4×2 WIDE remains unconfirmed on a real launcher after every session that has attempted it (TD-017);
+this session's own widget-picker automation did not succeed in placing a fresh widget, due to
+emulator/launcher UI-automation fragility, not a code regression (no widget code has changed since
+Session 12). 340 tests unchanged, 0 failures. Owner action required before the next milestone can
+target a real submission — see `TODO.md` P0 and `docs/RELEASE_CHECKLIST.md`.
 
 ---
 

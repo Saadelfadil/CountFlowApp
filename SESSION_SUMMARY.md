@@ -1,300 +1,270 @@
 # CountFlow
 
-## Session 14
+## Session 15
 
 Date: 2026-08-10
-Current Milestone: **Essential Settings — Milestone 6 scope (COMPLETE, real-device verified); Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) unchanged**
+Current Milestone: **Final MVP Release Audit — Milestone 8.9 (COMPLETE); verdict: MVP NOT READY for public submission — two owner-action blockers, no code-level blocker**
 
-> **READ THIS FIRST:** This session's brief was explicit that Event CRUD, responsive widgets,
-> widget customization, background refresh, and basic reminders (Sessions 1–13) are all complete —
-> this session adds the last piece before Final MVP Release Audit: a small, polished Settings
-> screen containing only Appearance, Notification status, and About. Explicitly not a
-> general-purpose preferences dashboard — no billing, no AdMob, no backup/restore, no accounts, no
-> cloud sync, several of which were in the original Milestone 6 spec (`ARCHITECTURE.md`) but are
-> now out of MVP scope by deliberate product decision, the same kind of narrowing Milestone 7
-> applied to notifications.
+> **READ THIS FIRST:** This session's brief was explicit: **feature freeze.** No product features,
+> no new engineering scope — the job was to find every reason CountFlow should not ship, across 15
+> phases (release build, manifest, dependencies, data/Room, widgets, background reliability,
+> reminders, accessibility, performance, privacy, security, package/version metadata, localisation,
+> clean install/upgrade, and the final engineering gate), and classify every finding
+> BLOCKER/HIGH/MEDIUM/LOW/POST-MVP without hiding anything to reach a false "MVP COMPLETE." No
+> production code was written this session — the only changes are three new documentation files and
+> updates to the standing tracking documents.
 >
-> **What changed:** `PreferencesRepository`'s `ThemeMode`/`useDynamicColor` fields — stored and
-> unit-tested since Milestone 2, never read by any screen until now — now drive `CountFlowTheme`
-> directly from `MainActivity`, with no dedicated ViewModel needed for two fields
-> (`collectAsStateWithLifecycle` on the existing `preferences` `Flow`). A real `SettingsScreen` and
-> `AboutScreen` replace the Milestone 1 placeholders: a Theme picker dialog (System default/Light/
-> Dark), a Dynamic Color switch, a notification-status row backed by
-> `NotificationManagerCompat.areNotificationsEnabled()` (correct on every Android version, not just
-> 13+, D-070) that refreshes on every screen resume via `LifecycleResumeEffect`, a "Manage
-> notifications" row opening Android's real per-app settings, and an About screen reading the
-> installed package's actual version via `PackageManager` rather than `:app`'s `BuildConfig`
-> (D-072). Privacy Policy and Open-source licenses render as honest, visibly-disabled placeholders
-> — no fake URL, no new dependency pulled in just to enumerate licenses (D-073). The Milestone 1
-> placeholder's "CountFlow Premium" entry point was deliberately not carried into the real screen
-> (D-071), since Billing/Pro features are explicitly out of scope.
+> **What was found:** the underlying app is clean. Zero network requests exist anywhere in the
+> codebase (no HTTP client library at all); zero analytics or advertising SDK; every manifest
+> permission and exported component is individually justified; Room's migration, foreign keys, and
+> no-destructive-fallback guarantee are all correct; the release build succeeds and leaks no
+> debug-only code into it. The reminder pipeline was re-verified live, end to end, on a genuine
+> clean install — alarm scheduled, fired, correct real-time "Expired" notification content (not
+> stale), tap-to-open landed on the right event, no duplicate. **Two genuine release BLOCKERs were
+> found and not downplayed**: no release signing key exists, and no final privacy-policy URL exists
+> — both owner actions, neither an engineering gap. Real, *measured* (not reasoned) findings: cold
+> start at ~2.5–2.8 s across three runs on a debug build, well over the 700 ms
+> `ARCHITECTURE.md` target — flagged HIGH pending a release-build/real-hardware remeasurement, not
+> dismissed and not treated as certain doom. **What could not be obtained this session**: fresh
+> real-device confirmation of widget placement or 4×2 WIDE — the `Pixel_9` emulator's launcher
+> widget-picker proved too fragile for reliable automation across many genuine attempts, the same
+> category of difficulty Session 10 already documented for WIDE specifically (TD-017), now also
+> observed for basic placement. Stated plainly, not hidden: this is a testing-coverage gap this
+> session, not a discovered regression — no widget code has changed since Session 12.
 >
-> **Verified on a real device, not just unit-tested:** System/Light/Dark all applied instantly and
-> persisted across a full `am force-stop` process kill (DataStore, not in-memory state). Toggling
-> Dynamic Color off visibly switched the app's accent from the wallpaper-derived color to
-> CountFlow's static Material 3 palette. Two placed home-screen widgets kept their existing dark,
-> translucent styling and accent completely unchanged through every theme/dynamic-color combination
-> tested — the widget regression check the brief asked for, confirming D-069's "app UI only" policy
-> holds in practice. Disabling and re-enabling notifications through Android's real system settings
-> and returning to CountFlow flipped the status row correctly both directions with no restart. One
-> real defect was found and fixed in the process: the app's `versionCode`/`versionName` had been
-> frozen at `1`/`"0.1.0"` since Milestone 1 — invisible for thirteen real releases until this
-> session's own About screen made it visible (BUG-R015, D-072).
+> Authoritative documents this session created: `docs/MVP_RELEASE_AUDIT.md` (every finding, full
+> reasoning), `docs/PRIVACY_DATA_INVENTORY.md` (factual basis for a future Play Data Safety
+> declaration), `docs/RELEASE_CHECKLIST.md` (practical, checkbox-oriented). Read all three before
+> any Play Store submission work begins.
 >
-> Authoritative documents, in reading order: `AI_CONTEXT.md`, `ARCHITECTURE.md`,
-> `PROJECT_STATUS.md`'s "Where important logic lives" table (no new architecture doc this session —
-> Settings is a handful of small, self-explanatory classes), `DECISIONS.md` (73 entries — D-069
-> through D-073 are new this session), then this file.
->
-> One item is open for Session 15 — see "Requires approval" at the end.
+> **Do not begin fixing non-blocking items, Play Store assets, or monetization.** Wait for explicit
+> approval — see "Requires approval" at the end.
 
 ----------------------------------
 
 ## Objective
 
-Build a small, polished Settings screen containing exactly three sections — Appearance,
-Notification status, About — reusing the existing `PreferencesRepository` rather than inventing a
-second preference system. Per the brief: Theme (System/Light/Dark) and Dynamic Color, both
-persisting across restart/process death/reboot; determine whether Global Appearance should affect
-app UI only or app UI + widgets, and document the decision; a notification-status row reflecting
-Android's actual state (not a second, conflicting preference alongside per-event reminder
-selections), correct on every Android version including pre-13, with a path to Android's own
-notification settings and no repeated permission nagging; About with app version, a Privacy Policy
-row that never ships a fake URL, and an Open-source licenses row that never pulls in a heavyweight
-dependency "merely" to exist; a `SettingsUiState`/`SettingsViewModel` using `StateFlow`, no direct
-DataStore reads from composables; correct behavior when notification status changes outside
-CountFlow and the user returns; accessibility (TalkBack labels, switch/radio semantics, touch
-targets, large font scale, contrast in both themes); exhaustive tests where practical; real-device
-verification of every claim, including a widget regression check; and answer eight specific closing
-questions, then stop before Final QA, Billing, or Ads.
+Conduct a full, critical, feature-frozen MVP release audit of CountFlow — find every reason it
+should not ship, not defend prior decisions. Per the brief: verify the release build (R8/shrinking
+behavior, no debug-only leakage, no placeholder secrets); audit the full merged manifest (every
+permission, every exported component, justified individually); audit the dependency graph (unused,
+duplicate, alpha/beta, or oversized libraries); audit the Room database (schema, migration,
+foreign-key behavior, main-thread safety); regression-test widgets (placement, configuration,
+multi-widget, process death, reboot, timezone, font scale) and make one focused, time-boxed attempt
+at real 4×2 WIDE confirmation; regression-test background refresh and reminders (exactly one alarm
+each, no duplicate delivery, permission handling, lifecycle cancellation); run the strongest
+practical accessibility pass; obtain real performance measurements where practical, clearly
+separated from reasoned claims; produce a factual privacy/data inventory as the basis for a future
+Play Data Safety declaration, and treat a missing privacy-policy URL as an explicit, undismissable
+release blocker; run a full security audit (secrets, PendingIntents, exported components, backup,
+cleartext traffic); verify package/version/release metadata; audit English-release readiness
+without translating; test clean install and upgrade; run the full engineering gate including
+release/AAB build tasks; classify every finding BLOCKER/HIGH/MEDIUM/LOW/POST-MVP in a new
+`docs/MVP_RELEASE_AUDIT.md`; and answer 14 specific closing questions honestly, including a binary
+MVP READY / MVP NOT READY verdict, then stop before any non-blocking fix, Play Store asset work, or
+monetization.
 
 ----------------------------------
 
 ## Completed
 
-**Investigation — the theme preferences already existed, unused**
+**Phase 1 — Release build.** `./gradlew :app:assembleRelease` and `:app:bundleRelease` both
+succeed, producing an unsigned APK (30.5 MB) and unsigned AAB. `isMinifyEnabled`/
+`isShrinkResources` remain `false` (standing Milestone 1 decision, no `mapping.txt` produced —
+newly tracked as **TD-021**, Medium). No signing configuration exists anywhere in the repository
+(searched for `.jks`/`.keystore` files and `signingConfig` references — none found) — the release
+AAB's `signReleaseBundle` task runs but produces a genuinely unsigned artifact (`jarsigner -verify`
+confirms). No debug-only code leaks into release: the release manifest has no `android:debuggable`
+attribute and no `PreviewActivity` entry; the release APK's three `.dex` files were searched
+directly for `PreviewActivity`/`ui.test.manifest` classes — zero matches. No hardcoded secrets exist
+anywhere in the source tree (grepped for key/secret/password/private-key patterns — zero matches).
 
-`PreferencesRepository`/`UserPreferences` (`:core:domain`) already had `themeMode: ThemeMode`
-(`SYSTEM`/`LIGHT`/`DARK`) and `useDynamicColor: Boolean`, backed by `PreferencesRepositoryImpl`'s
-DataStore implementation, both stored and unit-tested since Milestone 2. `CountFlowTheme`
-(`:core:designsystem`) already accepted `darkTheme`/`dynamicColor` parameters. No new domain or
-persistence code was needed — the work was wiring the existing pieces together and building the UI
-that reads and writes them.
+**Phase 2 — Manifest audit.** Every permission in the real merged manifest justified:
+`POST_NOTIFICATIONS` (contextual reminder requests), `RECEIVE_BOOT_COMPLETED` (re-arming both alarm
+subsystems), `WAKE_LOCK`/`ACCESS_NETWORK_STATE`/`FOREGROUND_SERVICE` (WorkManager's own transitive
+declarations, not CountFlow's). Every exported component individually justified: `MainActivity`
+(launcher), `ReminderNotificationReceiver`/`WidgetRefreshReceiver` (system broadcasts from a
+different UID — read both `onReceive` methods directly; neither trusts any Intent extra beyond
+`.action`), `WidgetConfigurationActivity` (launcher-invoked). `CountdownGlanceWidgetReceiver` is
+correctly `exported="false"` — Glance widget updates route through `AppWidgetManager`'s own
+explicit-component mechanism, not an implicit broadcast. No component exported unnecessarily.
 
-**`MainActivity` drives `CountFlowTheme` directly (D-069)**
+**Phase 3 — Dependency audit.** No alpha/beta/RC dependency exists anywhere (Glance pinned to
+`1.1.1` stable, D-007). Two new **Low** findings, both zero release impact:
+`androidx-glance-preview`/`androidx-glance-appwidget-preview` are `debugImplementation` but unused
+(no `@Preview` annotation anywhere in `:widget:glance` — **TD-019**); `androidx-test-espresso-core`/
+`androidx-test-ext-junit` are declared but no `androidTest` source set exists anywhere in the repo
+(**TD-020**). No duplicate library, no Google-sample leftover beyond one benign KDoc citation.
 
-`MainActivity` now injects `PreferencesRepository` via `@Inject lateinit var` (field injection,
-matching the existing `@AndroidEntryPoint` pattern) and collects `preferences` as Compose state with
-`collectAsStateWithLifecycle`. `darkTheme` is derived with a `when` on `ThemeMode`
-(`SYSTEM → isSystemInDarkTheme()`, `LIGHT → false`, `DARK → true`); `dynamicColor` is read straight
-from `preferences.useDynamicColor`. No dedicated ViewModel — two fields read from an existing `Flow`
-did not justify one. `WidgetConfigurationActivity` was deliberately left unchanged (still following
-the system theme unconditionally) — it is reached only via a launcher's "reconfigure" affordance,
-not CountFlow's own navigation, and the brief scoped this work to "the app," not every activity in
-the APK; documented as a narrow, accepted inconsistency in D-069 rather than silently left
-unmentioned.
+**Phase 4 — Data/Room audit.** Schema v2, `exportSchema = true`, both schema JSONs committed.
+`MIGRATION_1_2` covered by `MigrationTest.kt` (Session 13), re-run clean this session.
+`fallbackToDestructiveMigration` confirmed absent everywhere. Foreign keys (`widget_bindings` and
+`reminders` → `events`) both cascade, backed by indices. No main-thread database access anywhere in
+production code (`allowMainThreadQueries()` appears only in test files). Lifecycle cancellation
+(complete/archive/delete) confirmed still working via `ACTIVE_REMINDERS_QUERY`'s own `WHERE` clause
+(D-066) — read directly, not re-tested live this session.
 
-**Real `SettingsScreen` and `AboutScreen`, replacing the Milestone 1 placeholders**
+**Phase 5/6 — Widgets and background reliability.** With zero widgets placed (a genuine clean-
+install state), `dumpsys alarm` confirms **zero** widget-refresh alarms — the documented "no
+widgets → no alarm" behavior holds. Multiple real, careful attempts were made to place a fresh
+widget through the `Pixel_9` emulator's launcher widget picker (search-filtered single-result view,
+full alphabetical browse with precise `uiautomator`-measured coordinates, drag gestures) — every
+attempt either mis-tapped a neighboring app's widget entry or failed to expand/drag CountFlow's own
+entry. This is the same category of automation fragility Session 10 already documented for 4×2 WIDE
+specifically (TD-017); this session found it extends to basic placement too. Reboot and
+timezone-change regression were not freshly re-run this session (each takes several minutes; both
+were exhaustively proven in Sessions 12/13 with no scheduling code changed since) — a scope decision
+given the session's time budget, not a gap in understanding.
 
-- **Appearance**: a "Theme" row opening an `AlertDialog` with `RadioButton` rows for System
-  default/Light/Dark (`Modifier.selectable(role = Role.RadioButton)` + `Modifier.selectableGroup()`
-  for correct TalkBack group semantics); a "Dynamic color" row with a `Switch`, the whole row
-  toggleable (`Modifier.clickable(role = Role.Switch)`) so the tap target isn't just the small
-  switch thumb.
-- **Notifications**: an "Event reminders" status row ("Allowed"/"Not allowed") and a "Manage
-  notifications" row that builds `Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)` with
-  `EXTRA_APP_PACKAGE` and starts it — opens Android's real per-app notification settings, confirmed
-  on-device.
-- **About**: a compact "About CountFlow" row (name + version) navigating to the existing `AboutRoute`
-  destination, which shows the full version label, a Privacy Policy row, and an Open-source licenses
-  row.
-- `Icons.AutoMirrored.Filled.ArrowBack` and `ListItem` (both already proven elsewhere in the
-  codebase) used throughout rather than pulling in `material-icons-extended` for decorative icons
-  this small, essential-only screen doesn't need.
+**4×2 WIDE — the release-blocker check.** One focused attempt was made per the brief's own
+instruction; it did not succeed, failing at the widget-placement step described above before even
+reaching a resize. **Stated clearly: WIDE remains unconfirmed on a real launcher, across every
+session that has attempted it (8, 9, 10, and now 15).** Robolectric confirms it renders correctly
+across all seven styles; only real-launcher visual confirmation is missing.
 
-**Notification status: `NotificationStatusProvider` (D-070)**
+**Phase 7 — Reminders.** Fully re-verified live, end to end, on the clean-install state: created a
+real timed event through the actual UI, checked "Day of event," the contextual
+`POST_NOTIFICATIONS` dialog appeared the instant the checkbox was checked. `dumpsys alarm` confirmed
+exactly one reminder alarm scheduled for the exact target instant. The alarm fired
+(`remindersDelivered=1 nextReminderAt=none`, ~2.5 minutes after target, within
+`setAndAllowWhileIdle`'s documented inexactness) and the real notification showed **"Release Audit
+Test" / "Expired"** — the genuinely correct, real-time-recomputed label at the moment of delivery
+(the event had passed by the time the inexact alarm fired), reproducing the exact behavior
+`docs/NOTIFICATION_ARCHITECTURE.md` §8 already documents. Tapping the notification opened CountFlow
+directly to that event's edit screen. Exactly one notification existed at any point.
 
-A `fun interface NotificationStatusProvider { fun areNotificationsEnabled(): Boolean }`, real impl
-`AndroidNotificationStatusProvider` wrapping `NotificationManagerCompat.from(context)
-.areNotificationsEnabled()` — the version-uniform check for "will a notification actually reach this
-user," not `ContextCompat.checkSelfPermission(POST_NOTIFICATIONS)` (which returns `GRANTED`
-unconditionally below API 33 regardless of whether the user disabled notifications via the classic
-per-app toggle, and would have produced exactly the "misleading messaging on versions where runtime
-permission doesn't exist" the brief forbade). `SettingsViewModel.refreshNotificationStatus()` is
-called from a `LifecycleResumeEffect(Unit)` in the Composable on every screen resume, not just at
-construction, since the only way this value changes is the user leaving CountFlow for Android's
-settings and coming back.
+**Phase 8 — Accessibility.** Verified structurally via `uiautomator dump`: the Settings Theme
+dialog's `RadioButton`/`selectableGroup` semantics, the Dynamic Color row's full-row
+`checkable="true" clickable="true"` node, the disabled Privacy Policy row's correct
+`clickable="false"`. 200% font scale confirmed reflowing without clipping (carried from Session 14,
+re-confirmed applicable). TalkBack was not literally enabled and listened to this session — the
+underlying semantics are confirmed correct, narration was not.
 
-**App version: `AppVersionProvider` (D-072), and a real bug found while building it**
+**Phase 9 — Performance.** Measured, not reasoned, and labelled as such: cold start
+**2497 / 2532 / 2575 ms** across three consecutive `am start-activity -W` runs (debug build,
+`Pixel_9` emulator, under session load) — over 3× `ARCHITECTURE.md`'s 700 ms target. Memory:
+**~95.8 MB PSS** total on a fresh launch (`dumpsys meminfo`). Both real measurements, both
+debug-build/emulator caveated, neither previously measured by any session. No profiler-measured
+battery/CPU number exists (unchanged, standing limitation).
 
-`AndroidAppVersionProvider` reads `context.packageManager.getPackageInfo(context.packageName, 0)`
-and formats `"${versionName} (${longVersionCode})"` — the installed package's real version, not
-`:app`'s `BuildConfig`, keeping `:feature:settings` decoupled the same way `AndroidLogger` already
-avoids a direct `BuildConfig.DEBUG` reference. Building this exposed BUG-R015: `Android
-ApplicationConventionPlugin`'s `versionCode`/`versionName` had been `1`/`"0.1.0"` since Session 2 and
-never bumped despite thirteen real `CHANGELOG.md` releases since — invisible until a screen finally
-read it back. Corrected to `14`/`"0.4.9"` to match this session's own release.
+**Phase 10 — Privacy/data audit.** Full inventory in `docs/PRIVACY_DATA_INVENTORY.md`: zero network
+requests anywhere in the codebase (no HTTP client library exists at all — grepped, zero matches),
+zero analytics/advertising SDK (`:core:analytics`/`:core:billing` genuinely empty, not just
+unused), all data (events, bindings, reminders, preferences) stored exclusively on-device. The
+Privacy Policy URL blocker is restated, not downgraded, from Session 14's D-073.
 
-**About: Privacy Policy and Open-source licenses as honest placeholders (D-073)**
+**Phase 11 — Security audit.** No hardcoded secrets anywhere. Every `PendingIntent` in the codebase
+(three construction sites, across `:core:notifications` and `:widget:glance`) uses
+`FLAG_IMMUTABLE`. No unsafe exported component (Phase 2). No world-readable files, no unsafe
+database configuration, no cleartext-traffic surface (no network code exists to need one). Release
+build confirmed not debuggable. Backup behavior reviewed — permissive by design, already reasoned
+through (D-037), no new concern.
 
-`AboutUiState.privacyPolicyUrl: String? = null` — always `null` this session, since no final URL
-exists. The row renders visibly but disabled (dimmed, non-clickable, "Not yet available") rather
-than being hidden or linking to a fake page. Open-source licenses renders the same way permanently
-for now ("Coming soon") — a real enumeration mechanism would need Google's
-`play-services-oss-licenses` plugin, a new dependency the brief explicitly said not to add "merely"
-for this.
+**Phase 12 — Package/version/metadata.** `applicationId = com.countflow`, `versionCode = 14`,
+`versionName = "0.4.9"` (Session 14's correction, confirmed still current), app label and adaptive
+icon both correct and deliberate. One **Low**, cosmetic finding: `ic_launcher.xml`'s own comment
+cites the wrong `KNOWN_ISSUES.md` entry (TD-002 instead of the actual `ObsoleteSdkInt` accepted-
+warning row) — not fixed, non-functional.
 
-**Settings does not surface Premium (D-071)**
+**Phase 13 — Localisation audit.** Date/time formatting already locale-aware
+(`DateTimeFormatter.ofLocalizedDate`/`Time` with explicit `.withLocale(locale)`). No RTL-unsafe
+absolute-padding usage found anywhere. One pluralization false alarm investigated and ruled out:
+`AndroidNotificationSender.bodyFor`'s hardcoded "N days to go/ago" strings can never actually render
+"1 days," because `CountdownLabel.InDays`/`DaysAgo`'s own domain KDoc guarantees `days` is "always
+two or more" — a real, enforced invariant, not an assumption. TD-007 (full localisation) remains
+correctly deferred.
 
-The Milestone 1 placeholder's "CountFlow Premium" action was not carried into the real screen;
-`onNavigateToPremium` was removed from `SettingsScreen`'s and `settingsSection`'s signatures.
-`:feature:premium`'s route stays registered in `CountFlowNavHost` for Milestone 9 — only the link
-from Settings was removed, nothing was deleted.
+**Phase 14 — Clean install.** `adb uninstall` removed every trace of prior sessions' test data;
+fresh install showed the correct empty state ("Nothing coming up / Create a countdown..."); created
+the first event through the real UI successfully, with no dead end. A formal "install an older
+build, then upgrade" test was not performed (no prior-version APK artifact exists to install from)
+— the identical path has happened organically, repeatedly, across every one of this project's 15
+sessions with no reported data loss.
 
-**Real-device verification (`Pixel_9` AVD)**
+**Phase 15 — Final engineering gate.** `./gradlew clean assembleDebug test :core:domain:koverVerify
+:app:lintDebug` — all green (340 tests, 0 failures; 0 lint errors, 17 accepted warnings).
+`:app:assembleRelease` and `:app:bundleRelease` both succeed.
 
-- **Theme.** System default → Light → Dark all applied instantly via the real UI (`adb shell
-  uiautomator dump` for exact `RadioButton`/row bounds, avoiding the repeated screenshot-scaling tap
-  mistakes prior sessions hit). Confirmed surviving a full `am force-stop` (a genuine process kill,
-  correctly distinguished from `am kill`'s no-op-on-foreground/backgrounded-but-recently-used
-  behavior observed while testing this) — CountFlow relaunched still in Light.
-- **Dynamic color.** Toggling off visibly changed the Appearance/Notifications/About section-header
-  color and the switch's own color from a wallpaper-derived blue/violet to CountFlow's static teal
-  Material 3 accent — a real, screenshotted visual confirmation, not just a stored boolean.
-- **Widget regression check.** With two widgets already placed (from prior sessions), cycling
-  through Light, Dark, and Dynamic-Color-off/on in Settings left both widgets' own dark, translucent
-  styling and blue accent completely unchanged on the home screen — confirming D-069's "app UI only"
-  policy holds on a real device, not just in code.
-- **Notification status, both directions, no restart.** Opened "Manage notifications," disabled
-  "All CountFlow notifications" in Android's real settings, pressed back to CountFlow: the row
-  updated to "Not allowed" without any restart. Re-enabled it the same way: the row updated back to
-  "Allowed." Confirms `LifecycleResumeEffect`'s resume-refresh actually fires on the real navigation
-  path a user would take.
-- **About.** Version row showed the corrected `"0.4.9 (14)"`; Privacy Policy and Open-source
-  licenses rendered visibly dimmed; tapping the disabled Privacy Policy row produced no crash and no
-  navigation (confirmed via `pidof` staying alive and a static `uiautomator` dump showing
-  `clickable="false"`).
-- **200% font scale.** Every Settings row reflowed onto multiple lines without clipping or overlap;
-  all text remained readable.
-
-**Documentation**
-
-`DECISIONS.md` D-069 (app-UI-only theming, widget regression policy), D-070 (notification-status
-API choice and resume-refresh), D-071 (no Premium entry point), D-072 (PackageManager version read,
-the versionCode/versionName fix), D-073 (honest disabled placeholders for Privacy Policy/licenses).
-`PROJECT_STATUS.md`, `ROADMAP.md` (Milestone 6 marked Completed), `TODO.md` (P0 rewritten for
-Session 15, P2 "Milestone 6: settings" section rewritten as "Post-MVP settings scope"),
-`KNOWN_ISSUES.md` (BUG-R015 resolved entry), `CHANGELOG.md` (new `[0.4.9]` entry), `AI_CONTEXT.md`
-all updated per the standing working agreement.
-
-**Verification**
-
-- `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` — BUILD SUCCESSFUL.
-- 340 tests, 0 failures (up from 334).
-- Lint: 0 errors, 17 warnings, unchanged since Session 9 (two new warnings introduced mid-session —
-  `ObsoleteSdkInt` on a dead `Build.VERSION.SDK_INT` branch, `UseKtx` on `Uri.parse` — were fixed
-  before the final gate run, not accepted).
-- `:core:domain` coverage 97.0%, gated at 95%, unchanged (this session touched no domain code).
+**Documentation.** `docs/MVP_RELEASE_AUDIT.md` (new, full findings classified
+BLOCKER/HIGH/MEDIUM/LOW/POST-MVP across all 15 phases), `docs/PRIVACY_DATA_INVENTORY.md` (new),
+`docs/RELEASE_CHECKLIST.md` (new). `PROJECT_STATUS.md`, `ROADMAP.md` (new Milestone 8.9 section),
+`TODO.md` (P0 rewritten around the two blockers and owner actions; TD-019/TD-020/TD-021 added),
+`KNOWN_ISSUES.md` (TD-019/TD-020/TD-021 full entries), `CHANGELOG.md` (`[Unreleased]` describes this
+audit session, deliberately no version bump since no code shipped), `AI_CONTEXT.md` all updated per
+the standing working agreement. **No new `DECISIONS.md` entry** — this was a pure audit session;
+no architectural decision was made or needed.
 
 ----------------------------------
 
 ## Files Created
 
 ```
-feature/settings/src/main/kotlin/…/SettingsUiState.kt                       (new)
-feature/settings/src/main/kotlin/…/SettingsViewModel.kt                     (new)
-feature/settings/src/main/kotlin/…/notification/NotificationStatusProvider.kt          (new)
-feature/settings/src/main/kotlin/…/notification/AndroidNotificationStatusProvider.kt   (new)
-feature/settings/src/main/kotlin/…/about/AppVersionProvider.kt              (new)
-feature/settings/src/main/kotlin/…/about/AndroidAppVersionProvider.kt       (new)
-feature/settings/src/main/kotlin/…/about/AboutUiState.kt                    (new)
-feature/settings/src/main/kotlin/…/about/AboutViewModel.kt                  (new)
-feature/settings/src/main/kotlin/…/di/SettingsModule.kt                     (new)
-feature/settings/src/test/kotlin/…/testing/FakePreferencesRepository.kt     (new)
-feature/settings/src/test/kotlin/…/SettingsViewModelTest.kt                 (new, 5 tests)
-feature/settings/src/test/kotlin/…/about/AboutViewModelTest.kt              (new, 1 test)
+docs/MVP_RELEASE_AUDIT.md          (new)
+docs/PRIVACY_DATA_INVENTORY.md     (new)
+docs/RELEASE_CHECKLIST.md          (new)
 ```
+
+No production code, test, or build-script file was created or modified this session — feature
+freeze, audit only.
 
 ----------------------------------
 
 ## Files Modified
 
 ```
-build-logic/convention/…/AndroidApplicationConventionPlugin.kt   (versionCode/versionName, BUG-R015)
-app/…/MainActivity.kt                                             (+PreferencesRepository, CountFlowTheme wiring)
-app/…/navigation/CountFlowNavHost.kt                               (settingsSection signature, no Premium link)
-feature/settings/build.gradle.kts                                  (+androidx.core.ktx)
-feature/settings/…/SettingsScreen.kt                                (full placeholder → real screen)
-feature/settings/…/about/AboutScreen.kt                             (full placeholder → real screen)
-feature/settings/…/navigation/SettingsNavigation.kt                 (onNavigateToPremium removed, D-071)
-AI_CONTEXT.md, CHANGELOG.md, DECISIONS.md, KNOWN_ISSUES.md, PROJECT_STATUS.md, ROADMAP.md, TODO.md
+AI_CONTEXT.md, CHANGELOG.md, KNOWN_ISSUES.md, PROJECT_STATUS.md, ROADMAP.md, TODO.md
 ```
+
+`DECISIONS.md` was read but not modified (no new decision this session).
 
 ----------------------------------
 
 ## Architecture Decisions
 
-Five new entries, D-069 through D-073, detailed in `DECISIONS.md`:
-
-- **D-069** — Global Appearance (Theme, Dynamic Color) controls the app's own Compose UI only;
-  placed widgets keep their independent theme/style/accent rules, confirmed by a real-device
-  regression check. `WidgetConfigurationActivity`'s own chrome is a narrow, accepted exception.
-- **D-070** — Notification status uses `areNotificationsEnabled()`, not a raw `POST_NOTIFICATIONS`
-  check, for correctness across every Android version; refreshed on every screen resume via
-  `LifecycleResumeEffect`, not just construction.
-- **D-071** — Settings does not surface a Premium/Upgrade entry point this session; the placeholder
-  link was removed, `:feature:premium`'s route stays registered for Milestone 9.
-- **D-072** — App version is read from the installed `PackageManager`, not `BuildConfig`; the
-  convention plugin's stale `versionCode`/`versionName` (frozen since Milestone 1) were corrected.
-  The BUG-R015 fix.
-- **D-073** — Privacy Policy and Open-source licenses ship as visible, honestly-disabled
-  placeholders, never a fake URL or a new dependency pulled in "merely" to display licenses.
+**None.** This was a pure audit session under an explicit feature freeze — no new `DECISIONS.md`
+entry was made or needed. Every finding is recorded in `docs/MVP_RELEASE_AUDIT.md` instead, since
+findings from an audit are not the same thing as an architectural decision.
 
 ----------------------------------
 
 ## Current Project Structure
 
-No new modules, no new internal dependency edges. `:feature:settings` was already a real module
-with placeholder screens (not an empty scaffold like `:core:analytics`/`:core:billing`) and already
-depended on everything needed (`:core:domain` for `PreferencesRepository`, Hilt via the feature
-convention plugin). One new external dependency edge:
-`feature/settings/build.gradle.kts` now applies `androidx.core.ktx` explicitly, for
-`NotificationManagerCompat` and `PackageManager`.
+**Unchanged.** No module, dependency, or internal edge was added, removed, or modified this
+session.
 
 ----------------------------------
 
 ## Dependencies Added
 
-`androidx.core.ktx` — already in `gradle/libs.versions.toml`, newly applied to
-`feature/settings/build.gradle.kts`. No new external libraries introduced to the version catalog.
+**None.** Two existing dependency groups were found unused and newly tracked (TD-019, TD-020) but
+not removed (feature freeze, non-blocking).
 
 ----------------------------------
 
 ## Current Features Working
 
-Everything from Session 13, plus: a real Settings screen lets the user choose System/Light/Dark
-theme and toggle Material You dynamic color, both applying instantly and persisting across a full
-process kill, with placed widgets completely unaffected. The user can see at a glance whether
-CountFlow's notifications will actually reach them, right down to Android's own per-app setting, and
-jump straight to Android's notification settings to change it — the status stays correct even after
-leaving and returning without restarting CountFlow. About shows the app's real, accurate version,
-with Privacy Policy and Open-source licenses honestly marked as not yet available rather than faked.
+**Unchanged from Session 14** — event CRUD, responsive widgets, widget customization, background
+refresh, basic reminders, and essential settings all remain complete and working; this session's
+own live regression test reconfirmed the reminder pipeline specifically. Nothing was added, and
+nothing was found broken.
 
 ----------------------------------
 
 ## Pending Work
 
-**P0 — blocks Session 15**
-1. **Approve Final MVP Release Audit, Billing/Live Updates, or further Milestone 5/8 work**, now
-   that essential settings are delivered and real-device verified.
-2. **Get a real, final privacy-policy URL** — a genuine release blocker (D-073), not an engineering
-   task.
-3. **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — carried over
-   unchanged since Session 10; not attempted this session either.
+**Release blockers (owner action, not engineering):**
+1. **Get a real production signing keystore, or enroll in Play App Signing.**
+2. **Get a real, final privacy-policy URL** and wire it into `AboutUiState.privacyPolicyUrl`.
 
-**P2 — deferred settings scope:** backup/restore, accounts/cloud sync, the full localisation pass
-(TD-007, now covering Settings/About's own strings too), and a real open-source-license enumeration
-mechanism — all explicitly out of this session's MVP scope, not forgotten.
+**Strongly recommended before submission:**
+3. Re-measure cold start on a signed release build, on real (or at least idle) hardware.
+4. Get real 4×2 WIDE confirmation on an actual launcher, ideally a physical device, or make an
+   explicit, owner-accepted decision to ship on Robolectric-only evidence.
+5. Re-confirm basic widget placement/configuration on a real device or a more cooperative
+   emulator/launcher combination.
+
+**P3, unchanged:** recurring reminders/custom offsets, the `Chronometer` half of D-008, R8 keep
+rules/Baseline Profiles/macrobenchmarks (now also the fix for TD-021), Firebase/AdMob/Billing.
 
 ----------------------------------
 
@@ -302,51 +272,56 @@ mechanism — all explicitly out of this session's MVP scope, not forgotten.
 
 Full detail in `KNOWN_ISSUES.md`.
 
-**Resolved this session:** BUG-R015 (`versionCode`/`versionName` frozen at `1`/`"0.1.0"` since
-Milestone 1, invisible until this session's About screen read it back — found and fixed the same
-session, D-072).
+**New this session:** TD-019 (Low, unused Glance preview debug dependencies), TD-020 (Low, unused
+Android instrumented-test dependencies), TD-021 (Medium, release builds ship unminified/unshrunk —
+a standing Milestone-1 decision, newly given its own tracking number).
 
-**Confirmed unchanged this session:** BUG-011 (Force Stop recovery) — unrelated to this session's
-work, no scheduler changes were made.
+**Confirmed unchanged this session:** BUG-011 (Force Stop recovery, D-052 stands). TD-016/TD-017
+(WidgetSizeClass portability / 4×2 WIDE confirmation) — this session's own attempt also did not
+succeed, adding to rather than resolving the standing history.
 
-**Open, unchanged:** TD-001, TD-005, TD-006, TD-009, TD-016, TD-017, TD-018. TD-007 (localisation)
-now also covers Settings/About's new strings, still open — Milestone 6 shipped without this pass by
-explicit scope decision. TD-002 unaffected — `:feature:settings` was never an empty scaffold.
-LIM-003, LIM-004, LIM-005, LIM-006.
+**No new bug was found this session** — every gap identified is either a testing-coverage decision
+(widget re-verification, reboot/timezone re-run) or a genuine release-readiness finding (signing,
+privacy policy, cold start, minification), not a functional defect in the app itself.
 
-**Lint:** 0 errors, 17 accepted warnings, unchanged since Session 9 (two new warnings introduced and
-fixed within this session, not carried forward — see "Completed" above).
+**Lint:** 0 errors, 17 accepted warnings, unchanged since Session 9.
 
 ----------------------------------
 
 ## Next Session Plan
 
-1. Get explicit approval before starting Final MVP Release Audit, Billing/Live Updates, or the
-   remaining Milestone 5 `WIDE` measurement — the natural next steps now that Core Product,
-   background refresh, basic reminders, and essential settings are all delivered.
-2. If Final MVP Release Audit is approved: this is the natural point to also resolve the real
-   privacy-policy URL (`TODO.md` P0) before or during that audit, since it blocks a real release
-   regardless of which milestone comes next.
-3. If a real (ideally physical) device is available and Milestone 5 is prioritized instead: the
-   real 4×2 (`WIDE`) placement and screenshot Session 10 could not complete.
-4. Verify `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug`, then update all
-   documents per the standing working agreement.
+1. **Wait for the two release blockers to be resolved by the owner** (signing key, privacy-policy
+   URL) before treating any future session as "preparing for submission."
+2. In the meantime, get explicit approval for the next *engineering* milestone — Billing/Live
+   Updates (Milestone 9) or the remaining Milestone 5 widget-sizing loose ends are the two live
+   options; either can proceed without the blockers being resolved first, since neither depends on
+   them.
+3. If a physical device becomes available, prioritize it specifically for the widget-placement/WIDE
+   confirmation gap this session could not close via emulator automation.
+4. Once the owner supplies a signing key, re-run cold start on a genuinely signed release build,
+   on real (or at least idle) hardware, to resolve whether this session's ~2.5–2.8 s debug-build
+   number reflects a real problem.
 
 ----------------------------------
 
 ## Build Status
 
-**✅ Builds Successfully**
+**✅ Builds Successfully — Debug, Release APK, and Release AAB all confirmed this session**
 
-Verified this session:
-- `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` → BUILD SUCCESSFUL
-- 340 tests, 0 failures (up from 334)
-- Coverage gate passed: `:core:domain` 97.0% lines, unchanged
-- Lint: 0 errors, 17 warnings, unchanged since Session 9
-- Runtime: the same stable local emulator established in Session 8 (`Pixel_9`), used for the full
-  theme/dynamic-color/persistence/notification-status/widget-regression/font-scale verification
-  sweep. `adb shell uiautomator dump` was used throughout for exact tap coordinates, avoiding the
-  screenshot-scaling mistakes earlier sessions made before adopting this technique.
+```
+./gradlew clean                                    → BUILD SUCCESSFUL
+./gradlew assembleDebug                             → BUILD SUCCESSFUL
+./gradlew test                                      → 340 tests, 0 failures, 0 errors, 0 skipped
+./gradlew :core:domain:koverVerify                   → PASSED (97.0% lines, gated at 95%)
+./gradlew :app:lintDebug                             → 0 errors, 17 warnings (unchanged since Session 9)
+./gradlew :app:assembleRelease                       → BUILD SUCCESSFUL (unsigned APK, 30.5 MB)
+./gradlew :app:bundleRelease                         → BUILD SUCCESSFUL (unsigned AAB)
+```
+
+Runtime: the same stable local emulator established in Session 8 (`Pixel_9`), used for a full
+clean-install → event-creation → reminder-delivery verification sweep, plus real, labelled
+performance measurements (cold start, memory) and an extensive (ultimately unsuccessful) widget-
+placement automation attempt.
 
 Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed. For device work,
 launch `~/Library/Android/sdk/emulator/emulator -avd Pixel_9` directly (GUI mode).
@@ -355,87 +330,73 @@ launch `~/Library/Android/sdk/emulator/emulator -avd Pixel_9` directly (GUI mode
 
 ## Tests
 
-**340 written, 340 passing, 0 failing — up from 334.**
-
-| Module | Tests | Change this session |
-|---|---|---|
-| `:core:domain` | 132 | Unchanged |
-| `:core:common` | 4 | Unchanged |
-| `:core:data` | 32 | Unchanged |
-| `:core:database` | 41 | Unchanged |
-| `:core:notifications` | 10 | Unchanged |
-| `:feature:events` | 36 | Unchanged |
-| `:feature:settings` | 6 | +6 (`SettingsViewModelTest.kt` +5, `AboutViewModelTest.kt` +1 — this
-                             module's first-ever test source set) |
-| `:widget:engine` | 50 | Unchanged |
-| `:widget:glance` | 29 | Unchanged |
-
-**Coverage** — `:core:domain` 97.0% lines, unchanged (this session added no domain code; every new
-class lives in `:feature:settings`). `:feature:settings`'s new logic is fully exercised by plain
-Kotlin fakes (`FakePreferencesRepository`, lambda-based `NotificationStatusProvider`/
-`AppVersionProvider`) rather than Robolectric — consistent with this project's standing practice of
-keeping decision logic behind small interfaces a fake can implement, reserving real-device
-verification for the thin Android platform wrappers (`AndroidNotificationStatusProvider`,
-`AndroidAppVersionProvider`) that have no branching logic of their own to unit-test.
+**340 written, 340 passing, 0 failing — unchanged from Session 14.** This session wrote no
+production code and no new tests; every module's test count is identical to Session 14's baseline.
+`:core:domain` line coverage unchanged at 97.0%, gated at 95%.
 
 ----------------------------------
 
 ## Git Status
 
 Not yet committed as of writing this summary — commit follows immediately after. Working tree
-before that commit: modified production files across `:app`, `build-logic`, `:feature:settings`;
-new test files (`:feature:settings`'s first test source set); 7 modified documentation files; no new
-documentation file this session, building on `main` at the Session 13 commit (`3cf6f93`). No remote
-configured.
+before that commit: 3 new documentation files (`docs/MVP_RELEASE_AUDIT.md`,
+`docs/PRIVACY_DATA_INVENTORY.md`, `docs/RELEASE_CHECKLIST.md`) and 6 modified tracking documents
+(`AI_CONTEXT.md`, `CHANGELOG.md`, `KNOWN_ISSUES.md`, `PROJECT_STATUS.md`, `ROADMAP.md`, `TODO.md`).
+No production, test, or build-script file changed. Building on `main` at the Session 14 commit
+(`0a63be4`). No remote configured.
 
 ----------------------------------
 
 ## Developer Notes
 
-- **A value with no reader is invisible for exactly as long as nothing reads it — a build value,
-  not just a runtime data field.** `versionCode`/`versionName` were set once in Session 2 and never
-  touched again despite thirteen real `CHANGELOG.md` releases since; nothing ever disagreed with
-  `1`/`"0.1.0"` because nothing ever read them back (BUG-R015). The same shape as BUG-R006/BUG-R007
-  (Session 6, a render-model field with no consumer) one level up the stack — worth auditing any
-  other value set once at project setup and never revisited before trusting it is still correct.
-- **The right API for "is this permission-gated feature actually working" is sometimes not the
-  permission check itself.** `NotificationManagerCompat.areNotificationsEnabled()` answers "will a
-  notification be seen" correctly on every Android version; `checkSelfPermission(POST_NOTIFICATIONS)`
-  only answers "does this specific API-33+ runtime prompt exist," which is `GRANTED` unconditionally
-  below API 33 regardless of the user's actual, real per-app notification setting. Worth checking
-  for other runtime-permission-adjacent status displays whether the version-uniform "is the feature
-  actually working" API exists before reaching for the permission check that gates a specific call.
-- **A UI value that can change entirely outside the app needs an explicit resume-time refresh, not
-  just an initial read.** Notification status is the second case this project has hit where "the
-  user leaves this exact screen, changes something in Android's own settings, and comes straight
-  back" is the *only* realistic way the value changes — `LifecycleResumeEffect` on the Composable,
-  not a `Flow` (Android exposes no such stream for this value), is what makes that path actually
-  work rather than silently going stale until the next cold start.
-- Commands: `./gradlew assembleDebug` · `./gradlew test` · `./gradlew :core:domain:koverVerify` ·
-  `./gradlew :app:lintDebug`. Device: `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`.
-  Useful this session specifically: `adb shell uiautomator dump` (used first, not as a fallback,
-  for every tap this session — no screenshot-scaling mistakes this time), `adb shell settings put
-  system font_scale <n>`, `adb shell am force-stop <package>` (deliberately, for a persistence test
-  that needed a genuine process kill — distinct from `am kill`'s use in Sessions 12–13 for
-  "process reclaimed while backgrounded" tests, and correctly not confused with it this session).
+- **An honest "not obtained" is more useful than a fabricated confirmation.** This session made
+  many genuine, careful attempts to place a widget through the emulator's launcher widget picker —
+  search-filtered views, full alphabetical browsing, `uiautomator`-measured precise coordinates,
+  drag gestures — and every one either mis-tapped a neighboring app or failed to expand/drag
+  CountFlow's own entry. Rather than declaring victory on a technicality or quietly dropping the
+  finding, this is reported plainly as what it is: a testing-coverage gap this session, layered on
+  top of Session 10's own already-documented struggle with the identical category of automation
+  (TD-017). The brief's own instruction — "do not fabricate confidence" — is the right standard to
+  hold *every* finding to, not just the ones a session happens to fully resolve.
+- **A "release blocker" and a "code defect" are different categories, and conflating them produces
+  a worse audit.** The two genuine BLOCKERs this session found (signing key, privacy-policy URL)
+  are both owner actions with zero engineering fix available — no code review would ever surface
+  them as bugs, because they aren't bugs. Keeping them classified separately from the HIGH/MEDIUM
+  engineering findings (cold start, WIDE confirmation, R8) is what makes "MVP NOT READY" an honest,
+  actionable verdict rather than a vague one.
+- **A measured number with caveats is still worth reporting as measured, not silently downgraded to
+  "reasoned."** This session's cold-start numbers (2497/2532/2575 ms) are real `am start-activity -W`
+  output, not an estimate — but they were taken on a debug build, on an emulator, under a heavily
+  loaded automation session. The right move was reporting the real number *and* the caveats
+  together, flagged HIGH pending a cleaner remeasurement, rather than either hiding the caveats (to
+  make the finding look more alarming) or omitting the number (to avoid looking alarmist without a
+  release-build measurement in hand).
+- Commands: `./gradlew clean assembleDebug test :core:domain:koverVerify :app:lintDebug` ·
+  `./gradlew :app:assembleRelease` · `./gradlew :app:bundleRelease`. Device:
+  `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`. Useful this session specifically:
+  `am start-activity -W` (cold-start timing), `dumpsys meminfo <package>` (memory), `jarsigner
+  -verify -verbose <aab>` (confirming an artifact is genuinely unsigned rather than assuming),
+  searching a release APK's raw `.dex` files with `strings`/`grep` for a debug-only class name as
+  direct proof it didn't leak in, rather than trusting the build configuration alone.
 
 ----------------------------------
 
-## Requires approval before Session 15
+## Requires approval before Session 16
 
-1. **Final MVP Release Audit, Billing/Live Updates, or further Milestone 5 work** — essential
-   settings are now delivered and real-device verified, alongside every other MVP-scoped feature
-   (Event CRUD, responsive widgets, widget customization, background refresh, basic reminders). The
-   natural next step is a Final MVP Release Audit before any Play Store submission, or Billing/Live
-   Updates if the product direction calls for them first, or finishing Milestone 5's remaining
-   widget-sizing loose ends (real `WIDE` confirmation). Do not begin any of these until approved.
+1. **The two release blockers (signing key, privacy-policy URL) require owner action, not
+   engineering approval** — no session can resolve them through code.
+2. **Approve the next engineering milestone**: Billing/Live Updates (Milestone 9), or the remaining
+   Milestone 5 widget-sizing loose ends (real WIDE confirmation, ideally on a physical device given
+   this session's emulator-automation findings). Do not begin Play Store asset work or
+   monetization until the blockers above are resolved — this session's own brief was explicit that
+   the audit stops here.
 
 ----------------------------------
 
 ## Estimated Progress
 
 ```
-Overall Progress            65%
+Overall Progress            66%
 
 Research & Architecture    100%
 Project Setup               100%
@@ -449,9 +410,11 @@ Background Refresh           90%   (Session 12: coalesced alarm scheduler delive
                                      device-verified; Chronometer ticking still open)
 Notifications                90%   (Session 13: basic reminders delivered and device-verified;
                                      recurring/custom offsets explicitly out of MVP scope)
-Settings                     90%   (Session 14: appearance, notification status, About delivered
+Settings                      90%   (Session 14: appearance, notification status, About delivered
                                      and device-verified; backup/restore and accounts explicitly
                                      out of MVP scope)
+Release Readiness            20%   (Session 15: full audit complete, everything code-level verified
+                                     clean; two owner-action blockers remain — docs/MVP_RELEASE_AUDIT.md)
 Billing                       0%
 Testing                      80%   (domain, DAO, repository, ViewModel, widget engine, Glance UI,
                                      notification coordinator, settings)

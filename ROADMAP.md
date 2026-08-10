@@ -17,6 +17,7 @@ Living document. Update the status column as milestones move.
 | 6 | Settings | **Completed** (appearance, notification status, About; backup/restore and accounts explicitly out of MVP scope) | 14 |
 | 7 | Notifications | **Completed** (basic reminders; recurring/custom offsets explicitly out of MVP scope) | 13 |
 | 8 | Optimization | **In Progress** (background refresh infrastructure pulled forward and delivered; R8, Baseline Profiles, macrobenchmarks, full a11y pass remain) | 12 |
+| 8.9 | Final MVP Release Audit | **Completed** (verdict: MVP NOT READY — two owner-action blockers, no code-level blocker) | 15 |
 | 9 | Play Store ready | Not Started | — |
 
 ---
@@ -509,6 +510,52 @@ Force Stop semantics.
 299 tests, 0 failures (up from 259) — 20 new in `:core:domain`, 16 new in `:widget:engine`, 4 new
 in `:core:common`. `:core:domain` line coverage unchanged at 97.0%, gated at 95%. Lint: 0 errors,
 17 warnings, unchanged since Session 9.
+
+---
+
+## Milestone 8.9 — Final MVP Release Audit · Completed (Session 15)
+
+Feature freeze. No product code written. The job was to find every reason CountFlow should not
+ship, across 15 phases: release build, manifest, dependencies, data/Room, widgets, background
+reliability, reminders, accessibility, performance, privacy, security, package/version metadata,
+localisation, clean install/upgrade, and the final engineering gate. The same shape of audit
+Milestone 4.5 and 4.9 were for the widget system specifically, applied here to the whole app before
+any Play Store work begins — the established pattern for this project's pre-milestone stabilization
+passes.
+
+**Delivered:** `docs/MVP_RELEASE_AUDIT.md` (every finding classified BLOCKER/HIGH/MEDIUM/LOW/
+POST-MVP, nothing hidden to reach a false "MVP COMPLETE"), `docs/PRIVACY_DATA_INVENTORY.md` (the
+factual basis for a future Play Data Safety declaration and Privacy Policy — zero network requests
+anywhere in the codebase, zero analytics/advertising SDK, confirmed by direct code inspection, not
+assumption), `docs/RELEASE_CHECKLIST.md` (practical, checkbox-oriented).
+
+**Headline finding:** two genuine release **BLOCKERs**, both owner actions, not engineering
+defects — no release signing key exists, and no final privacy-policy URL exists (already tracked
+since Session 14, D-073; restated here as this session's own top-level finding, not downgraded).
+No crash, data-loss, or security blocker was found anywhere in the codebase.
+
+**Confirmed on-device, fresh, this session:** the reminder pipeline was re-verified live end to end
+on a genuine clean install — event created, contextual permission granted, exactly one alarm
+scheduled, fired correctly (~2.5 minutes after target, within `setAndAllowWhileIdle`'s documented
+inexactness), notification content correctly showed the real-time "Expired" label (not a stale
+"Today"), tap-to-open landed on the correct event, no duplicate delivery. Cold start was measured
+(not reasoned) at ~2.5–2.8 s across three runs — a real number, on a debug build, on the emulator,
+under session load — significantly over the 700 ms `ARCHITECTURE.md` target, flagged HIGH pending a
+release-build/real-hardware remeasurement rather than either dismissed or treated as certain.
+
+**Not delivered, honestly:** this session could not obtain fresh real-device confirmation of widget
+placement or the still-outstanding 4×2 WIDE size (TD-016/TD-017) — the emulator's launcher
+widget-picker proved too fragile for reliable UI automation, the same category of difficulty
+Session 10 already documented for WIDE specifically, now also observed for basic placement. No
+widget code has changed since Session 12, so this is a testing-coverage gap this session, not
+evidence of a regression — stated plainly rather than papered over.
+
+**Tests:** unchanged at 340 (this session wrote no production code, only three new documentation
+files). Full engineering gate re-run clean: `assembleDebug`, `test`, `koverVerify`, `lintDebug`,
+`assembleRelease`, `bundleRelease` all succeed.
+
+**Verdict: MVP NOT READY** for public Play Store submission, specifically and only because of the
+two owner-action blockers above.
 
 ---
 
