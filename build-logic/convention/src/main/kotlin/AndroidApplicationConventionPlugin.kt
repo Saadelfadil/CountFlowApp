@@ -23,8 +23,13 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
 
             defaultConfig {
                 targetSdk = libs.int("targetSdk")
-                versionCode = 1
-                versionName = "0.1.0"
+                // Bumped alongside CHANGELOG.md — see its version history for what shipped in
+                // each increment. Kept in sync manually since there is no release-automation
+                // pipeline yet; the About screen (Session 14) reads these two values back from
+                // the installed package, not from a hardcoded string, so this is the one place
+                // that needs updating per release.
+                versionCode = 14
+                versionName = "0.4.9"
             }
 
             buildTypes {

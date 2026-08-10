@@ -9,7 +9,6 @@ import com.countflow.feature.events.navigation.HomeRoute
 import com.countflow.feature.events.navigation.eventsSection
 import com.countflow.feature.events.navigation.navigateToCreateEvent
 import com.countflow.feature.events.navigation.navigateToEditEvent
-import com.countflow.feature.premium.navigation.navigateToPremium
 import com.countflow.feature.premium.navigation.premiumSection
 import com.countflow.feature.settings.navigation.navigateToAbout
 import com.countflow.feature.settings.navigation.navigateToSettings
@@ -57,7 +56,6 @@ fun CountFlowNavHost(
         )
         settingsSection(
             onNavigateToAbout = navController::navigateToAbout,
-            onNavigateToPremium = navController::navigateToPremium,
             onNavigateBack = navController::popBackStack,
         )
         premiumSection(
