@@ -5,23 +5,24 @@ scheduled but not imminent.
 
 ---
 
-## P0 — Blocks Session 13
+## P0 — Blocks Session 14
 
-- [ ] **Approve Notifications (Milestone 7), or further Milestone 5/8 work, after Session 12's
-      background-refresh completion report.** Widgets now refresh reliably in the background with
-      real-device evidence (`docs/WIDGET_REFRESH_ARCHITECTURE.md`) — confirm before starting
-      Notifications, since the brief explicitly stopped short of it pending this approval.
+- [ ] **Approve Settings (Milestone 6), Billing/Live Updates, or further Milestone 5/8 work, after
+      Session 13's basic reminders completion report.** Reminders now deliver reliably with
+      real-device evidence (`docs/NOTIFICATION_ARCHITECTURE.md`) — confirm the next milestone
+      before starting it.
 - [ ] **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — still
       the one significant Milestone 5 gap, carried over from Session 10. Not attempted this
-      session either, which was explicitly scoped to background refresh, not widget sizing.
+      session either, which was explicitly scoped to reminders, not widget sizing.
 
 Resolved in prior sessions (kept here only as a pointer, not re-litigated): 2×1/4×2 size work
 approved and delivered (Session 10); the countdown label policy confirmed permanent (D-051);
 archive/complete/delete gestures delivered with a full accessible menu alternative (Session 11,
 TD-008 resolved); create/edit live widget preview delivered (Session 11); the coalesced-alarm
 background refresh scheduler D-008 always planned, delivered and real-device verified (Session 12,
-D-062/D-063). BUG-011 (Force Stop recovery) remains open by explicit decision — see below; the new
-scheduler does not change that decision.
+D-062/D-063); basic event reminders (30/7/1-day/day-of), delivered and real-device verified
+(Session 13, D-065 through D-068). BUG-011 (Force Stop recovery) remains open by explicit
+decision — see below; neither scheduler changes that decision.
 
 ---
 
@@ -56,13 +57,11 @@ scheduler does not change that decision.
 
 ---
 
-## P3 — Milestones 7 to 9
+## P3 — Milestones 8 to 9
 
-- [ ] Notifications. `Reminder.scheduledTime` already computes fire times by calendar rather
-      than millisecond offset, so DST will not drift them. Session 12's coalesced-alarm
-      infrastructure (`AlarmScheduler`, `WidgetRefreshReceiver`'s pattern) is the mechanism the
-      brief already expects this to share rather than adding a second wakeup source — see
-      `docs/WIDGET_REFRESH_ARCHITECTURE.md`.
+- [ ] Recurring reminders and custom offsets, if ever prioritized — explicitly out of Session 13's
+      MVP scope (`docs/NOTIFICATION_ARCHITECTURE.md`'s own scope note). Would need a real product
+      decision on UI shape, not just an engineering extension of `ReminderType`.
 - [ ] The remaining half of D-008: a launcher-ticked `Chronometer` for the final 24 hours
       (`CountdownStatus.needsLiveTicking` already marks these), giving second-level ticking on top
       of the coalesced-alarm scheduler delivered in Session 12 (`docs/WIDGET_REFRESH_ARCHITECTURE.md`).
@@ -80,8 +79,8 @@ scheduler does not change that decision.
 - [ ] **TD-001 (High)** — migrate off `android.builtInKotlin=false` / `android.newDsl=false`
       before any AGP 10 upgrade. Budget a full session.
 - [ ] **TD-007 (Medium)** — localise the remaining UI strings. Scheduled for Milestone 6.
-- [ ] **TD-002 (Low)** — three empty scaffold modules remain (`:core:notifications`,
-      `:core:analytics`, `:core:billing`).
+- [ ] **TD-002 (Low)** — two empty scaffold modules remain (`:core:analytics`, `:core:billing`).
+      `:core:notifications` filled in Session 13 and is no longer part of this entry.
 - [ ] **TD-005 (Low)** — build output noise; disappears with TD-001.
 - [ ] **TD-006 (Low)** — title search is ASCII-case-insensitive only.
 - [ ] **TD-009 (Low)** — the date picker's UTC conversion is comment-guarded but untested.
@@ -145,6 +144,7 @@ for full detail.
 ## Continuous
 
 - [ ] Update all documents — including `AI_CONTEXT.md`, `docs/WIDGET_ARCHITECTURE.md`,
+      `docs/WIDGET_REFRESH_ARCHITECTURE.md`, `docs/NOTIFICATION_ARCHITECTURE.md`,
       `docs/WIDGET_REVIEW.md`, `docs/PRODUCT_REVIEW.md`, `docs/SCREENSHOT_GUIDE.md`,
       `docs/WIDGET_DESIGN_GUIDE.md`, and `docs/WIDGET_DESIGN_REVIEW.md` — at the end of every
       session.
@@ -177,3 +177,11 @@ for full detail.
       unnoticed until Session 12's first real device timezone test. Worth checking any other
       `@Singleton`-scoped value sourced from "the current X" (not just time/zone) for the same
       construction-time-freeze risk before assuming a live system read stays live.
+- [ ] **A value's own "zone-pinned" design intent does not automatically propagate to every
+      calculation derived from it.** `EventTarget` has been correctly zone-pinned for a timed
+      event since D-014 (Milestone 2), but `Reminder.scheduledTime`, added the same milestone,
+      still used the device's current zone unconditionally for its own calendar-day subtraction —
+      unnoticed for eleven sessions because nothing before Session 13 both activated a reminder on
+      a timed event *and* exercised a real device timezone change (D-065). Worth checking any other
+      "N days/hours before X" calculation for the same "which zone does this specific derived
+      calculation use" question, independently of what zone the value it derives from uses.

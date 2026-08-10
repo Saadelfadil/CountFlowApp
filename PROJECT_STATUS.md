@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | Background refresh infrastructure (Milestone 8 scope, pulled forward, Session 12) now **complete and real-device verified**; Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) still open |
-| **Last session** | Session 12 — 2026-08-09 |
+| **Current milestone** | Basic Event Reminders (Milestone 7 scope, Session 13) now **complete and real-device verified**; Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) still open |
+| **Last session** | Session 13 — 2026-08-10 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9, all documented) |
-| **Tests** | 299 passing, 0 failing (up from 259). `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 12: widgets now refresh reliably in the background, with real-device evidence, not just architecture.** A pure `CountdownEngine.nextTransitionAt` calculator (D-062) decides the exact next instant any bound event's countdown changes; `WidgetRefreshPlanner` coalesces every placed widget to one global `Instant`; `WidgetRefreshCoordinator` + a real `AlarmManager.setAndAllowWhileIdle` alarm (D-063) do the rest — confirmed on-device to fire and redraw a widget with the app backgrounded and its process killed, with no manual reopen. Reboot recovery and timezone-change recovery both confirmed via `dumpsys alarm`; the timezone test found and fixed a real, nine-session-old bug (D-064: a `@Singleton Clock` froze its zone at construction, so a traveller's countdowns would silently stay wrong until the app process restarted). Force Stop remains explicitly unrecovered, per the standing D-052 decision. See `docs/WIDGET_REFRESH_ARCHITECTURE.md` |
-| **Overall progress** | ~59% |
+| **Tests** | 334 passing, 0 failing (up from 299). `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ **Session 13: users can now select 30/7/1-day/day-of reminders per event and reliably receive exactly one local notification at the intended time, with real-device evidence.** Reused the Milestone 2 `Reminder`/`ReminderType` domain model and `ReminderDao`'s active-reminder query almost entirely as-is; found and fixed one real zone bug in the process (D-065): a timed event's reminder used to recompute against the device's current zone instead of the event's own authored zone, meaning a traveller's reminder could silently drift. A new `:core:notifications` module (`ReminderNotificationCoordinator` + a coalesced `AlarmManager` alarm, mirroring Session 12's widget scheduler pattern without sharing its code, D-067) delivers reminders idempotently via a comparison-based resolution field (`deliveredForScheduledTime`), confirmed on-device: fires with the app backgrounded and killed, survives reboot with no duplicate, stays pinned to a timed event's zone across a real device timezone change, fails silently (no crash) when notification permission is denied, and opens the correct event when tapped. See `docs/NOTIFICATION_ARCHITECTURE.md` |
+| **Overall progress** | ~62% |
 
 ---
 
@@ -37,6 +37,7 @@ Read in this order when picking the project up cold:
 | `ARCHITECTURE.md` | The authoritative design. Wins over every other document on conflict. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system specifically: data/render/refresh flow, binding and configuration lifecycles, Glance sharp edges, forward compatibility. Read this before changing anything under `widget/`. |
 | `docs/WIDGET_REFRESH_ARCHITECTURE.md` | The production background refresh system: next-transition calculation, coalescing, alarm lifecycle, system receivers, timezone/reboot/Force Stop behavior, battery reasoning, real-device evidence (Session 12). Read this before changing anything under `refresh/`. |
+| `docs/NOTIFICATION_ARCHITECTURE.md` | Basic event reminders: trigger-time calculation, timezone policy, idempotent delivery, the coalesced-alarm scheduler, permission flow, real-device evidence (Session 13). Read this before changing anything under `:core:notifications`. |
 | `docs/WIDGET_REVIEW.md` | The Milestone 4.5 stabilization audit (Session 7, no device — largely superseded by the two below). |
 | `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, all backed by real device evidence. |
 | `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots (`docs/screenshots/`) of every major widget state, with the exact recipe to reproduce each (Session 8 baseline). |
@@ -95,7 +96,8 @@ Dependencies point downward only. Features never depend on each other.
 
 :core:data ──► :core:domain, :core:database, :core:common
 :core:database ──► :core:domain, :core:common
-:core:notifications, :core:analytics, :core:billing ──► :core:common
+:core:notifications ──► :core:domain, :core:common   (real code since Session 13; deliberately not :core:designsystem, D-068)
+:core:analytics, :core:billing ──► :core:common
 :core:domain ──► nothing
 ```
 
@@ -116,13 +118,14 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
 | `:core:common` | Dispatchers, application scope, logging facade, `Clock` provision (now zone-live, D-064) |
 | `:core:designsystem` | Theme, typography, shapes, token-to-text formatting |
 | `:core:domain` | Model, countdown engine, validation, repository contracts |
-| `:core:database` | Room: 3 entities, 3 DAOs, converters, schema v1 |
+| `:core:database` | Room: 3 entities, 3 DAOs, converters, schema v2 (Session 13: `reminders.delivered_for_scheduled_time`) |
 | `:core:data` | Repository implementations, mappers, DataStore preferences |
 | `:feature:events` | Home list (three lifecycle tabs, swipe + menu actions), create/edit form (live widget preview), two ViewModels, UI mapper |
 | `:widget:engine` | **Render model, theme resolver, progress engine, mapper, provider, lifecycle coordinator, refresh coalescing/orchestration** |
 | `:widget:glance` | **First widget, configuration activity, production alarm-based refresh scheduler** |
 | `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
-| `:core:notifications` `:core:analytics` `:core:billing` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
+| `:core:notifications` | **Reminder scheduling and delivery: coordinator, coalesced alarm, notification sender, channel, receiver, safety net** |
+| `:core:analytics` `:core:billing` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
 
 ---
 
@@ -194,10 +197,27 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
   froze its zone at construction, D-064), fixed and re-verified the same session. Force Stop
   remains explicitly unrecovered (D-052, BUG-011 unchanged). See
   `docs/WIDGET_REFRESH_ARCHITECTURE.md`.
+- **Basic event reminders exist, deliver reliably, and never fire twice, with real-device
+  evidence.** Session 13 turned on the `Reminder`/`ReminderType` domain model and database schema
+  Milestone 2 already built — four fixed offsets (30/7/1 days before, day of event), off by
+  default, one worded checkbox each in the create/edit form. Found and fixed one real correctness
+  bug in the process (D-065): a timed event's reminder used to recompute against whichever zone
+  the device currently happened to be in rather than the event's own authored zone, which could
+  have silently drifted a traveller's reminder — confirmed fixed via a real device timezone
+  change, not just a unit test. A new `:core:notifications` module coalesces every pending
+  reminder to one `AlarmManager` alarm (mirroring, not sharing, Session 12's widget scheduler
+  pattern, D-067) and resolves each reminder against a freshly-computed trigger time rather than a
+  plain delivered flag, so an edited event's date change correctly re-arms an already-fired
+  reminder with no special-case code. Confirmed on-device: delivers with the app backgrounded and
+  its process killed; survives a full reboot with no duplicate; the notification permission is
+  requested only when the first reminder is enabled, never on app launch; a denied permission
+  fails silently with no crash; tapping a delivered notification opens the correct event. See
+  `docs/NOTIFICATION_ARCHITECTURE.md`.
 
 ## What does not exist yet
 
-No notifications, no settings, no billing. Within widgets: the same-event-two-different-styles
+No settings, no billing, no notification history, no recurring or custom-offset reminders — see
+`docs/NOTIFICATION_ARCHITECTURE.md`'s own scope note for the full MVP boundary. Within widgets: the same-event-two-different-styles
 case is unit-tested but not verified through real UI, and the 4×2 (WIDE) size has no real-device
 visual confirmation at all — Robolectric only (TD-017); the `WidgetSizeClass` thresholds are
 confirmed against exactly one emulator/launcher combination (TD-016). Background refresh now
@@ -222,7 +242,7 @@ a different kind of verification with zero or near-zero prior evidence over prof
 | How do all-day and timed events differ? | `core/domain/…/model/EventTarget.kt` |
 | What does the widget display? | `widget/engine/…/model/WidgetRenderModel.kt` |
 | Where are label thresholds set? | `core/domain/…/countdown/CountdownConfig.kt` |
-| What is the schema? | `core/database/schemas/…/1.json` |
+| What is the schema? | `core/database/schemas/…/2.json` |
 | What may be saved? | `core/domain/…/validation/EventValidator.kt` |
 | How does a token become text? | `core/designsystem/…/format/CountdownLabelFormatter.kt` |
 | What does Compose actually consume? | `feature/events/…/model/EventCardUiModel.kt` |
@@ -243,13 +263,17 @@ a different kind of verification with zero or near-zero prior evidence over prof
 | How do N widgets on one event coalesce into one alarm? | `widget/engine/…/refresh/WidgetRefreshPlanner.kt`, or `docs/WIDGET_REFRESH_ARCHITECTURE.md` §4 |
 | How does a background refresh actually happen, end to end? | `widget/engine/…/refresh/WidgetRefreshCoordinator.kt`, or `docs/WIDGET_REFRESH_ARCHITECTURE.md` §5–8 |
 | Why does the injected `Clock`'s zone stay correct across a real timezone change? | `core/common/…/di/TimeModule.kt` `LiveDefaultZoneClock`, or DECISIONS.md D-064 |
+| When does a reminder fire, and why is a timed event's reminder unaffected by device travel? | `core/domain/…/model/Reminder.kt` `scheduledTime`, or DECISIONS.md D-065 |
+| How is a reminder guaranteed to never fire twice? | `core/domain/…/model/Reminder.kt` `isResolvedFor`/`markResolved`, or `docs/NOTIFICATION_ARCHITECTURE.md` §5 |
+| How do N pending reminders coalesce into one alarm? | `core/notifications/…/ReminderNotificationCoordinator.kt`, or `docs/NOTIFICATION_ARCHITECTURE.md` §6 |
+| Why are there two receivers for the same four system broadcasts? | DECISIONS.md D-067, or `docs/NOTIFICATION_ARCHITECTURE.md` §7 |
 
 ---
 
 ## Progress
 
 ```
-Overall                      59%
+Overall                      62%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
@@ -259,7 +283,9 @@ Event CRUD / UI             100%   Milestone 3 (Session 11: lifecycle tabs, gest
 Widget engine                98%   Milestone 4.9 (validated on a real device — docs/PRODUCT_REVIEW.md)
 Widget themes & sizes        70%   Milestone 5B of 5 (responsive 2×1/2×2/4×2 delivered; multi-widget polish remains)
 Settings                      0%   Milestone 6
-Notifications                 0%   Milestone 7
+Notifications                 90%  Milestone 7 (Session 13: basic 30/7/1-day/day-of reminders delivered and
+                                     device-verified — docs/NOTIFICATION_ARCHITECTURE.md; recurring/custom
+                                     offsets and a notification history remain explicitly out of MVP scope)
 Optimization & a11y           25%  Milestone 8 (Session 12: background refresh infrastructure delivered and
                                      device-verified — Chronometer ticking, R8, Baseline Profiles, full a11y
                                      pass, and real performance numbers all remain)

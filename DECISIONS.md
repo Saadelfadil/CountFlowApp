@@ -1574,3 +1574,159 @@ real-device timezone test was the first thing in this project's history to actua
 live timezone change against an already-running process. `LiveDefaultZoneClockTest.kt`
 (`:core:common`, new) is a permanent regression test, asserting directly against
 `TimeZone.setDefault(...)` rather than the device.
+
+---
+
+## D-065 — Reminder trigger time: timed events pin to their own zone, all-day events follow the device; resolution is comparison-based, not a boolean
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 7 (Basic Event Reminders, Session 13)
+
+`Reminder.scheduledTime(event, deviceZone)` — present since Milestone 2, unused until this session
+— had one real bug and needed one new capability. The bug: it used `deviceZone` unconditionally for
+the calendar-day subtraction behind "N days before," for both all-day and timed targets. The fix
+uses the event's own authored zone (`event.target.zone`) for a timed target's subtraction, and
+`deviceZone` only for an all-day one:
+
+```kotlin
+val zone = if (event.target.isAllDay) deviceZone else event.target.zone
+```
+
+The new capability: `deliveredForScheduledTime: Instant?`, a field compared against a *freshly
+computed* `scheduledTime` (`isResolvedFor`), not read as a plain flag — so editing an event to a
+new date makes an old resolution stop matching automatically, with no separate "reset on edit" code
+path. `withPastTriggerResolved` applies the same primitive (`markResolved`) at write time, silently
+resolving (never notifying) a reminder whose trigger has already passed the moment it is activated
+or edited into the past.
+
+**Reason.** A timed target is already zone-pinned by design — `EventTarget`'s own documentation
+states a flight "stays pinned to the zone it was authored in, no matter where the phone is" — but
+before this fix, only the target's own instant honored that; a reminder *about* that instant did
+not, silently recomputing against wherever the device currently was. A traveller who set "seven
+days before my Tokyo flight" while in Tokyo, then flew somewhere else before the reminder fired,
+would have seen it silently shift. Confirmed as a real, not just theoretical, risk by a live
+device timezone change this session: with the bug present, an alarm's absolute instant would have
+shifted by the full zone offset; after the fix, it did not. All-day targets deliberately keep the
+opposite policy, per D-014's own established "follows a traveller" precedent for that target kind
+— this is the one case the brief's own suggested default ("09:00 in the event's timezone") was
+read as *already satisfied* by existing, tested behavior, not requiring a second zone concept.
+
+The idempotency design answers the brief's own explicit requirement — "a reminder must not fire
+twice" — with the smallest addition that makes both the "never re-fire" and "never fire an
+already-past trigger" rules the *same* code path: a reminder resolved for a reason it was never
+actually sent (past at activation) is indistinguishable, from the coordinator's point of view, from
+one resolved because it genuinely fired. Neither needs special-casing.
+
+**Alternatives.** A plain `Boolean isDelivered` flag — rejected: would need explicit clearing on
+every event edit that changes the target, a step easy to forget and impossible to verify by
+inspection the way a comparison against the current computed value is. Storing `deviceZone` at
+`Reminder` construction time and pinning to it forever — rejected: the correct zone for a timed
+event is the *event's*, which is already available via `event.target.zone` on every read; storing a
+device zone snapshot would just reintroduce a staleness risk of the same shape D-064 just fixed
+elsewhere.
+
+**Tradeoffs.** None found. `ReminderTest.kt` (`:core:domain`, new, 21 tests) covers both zone
+policies explicitly, including a same-instant-across-zones assertion for the timed case and a
+genuinely-different-instant assertion for the all-day case.
+
+---
+
+## D-066 — Reminder lifecycle (complete/archive/restore/delete) needs no dedicated cancellation code
+
+**Date:** 2026-08-10 · **Status:** Accepted (documents an existing mechanism, not a new one) · **Milestone:** 7 (Session 13)
+
+`ReminderDao`'s `ACTIVE_REMINDERS_QUERY` (`getActiveReminders`, and its new `Flow` twin
+`observeActiveReminders`) already excludes a reminder whose event is archived or completed, at the
+SQL level — `e.is_archived = 0 AND e.is_completed = 0`, present since Milestone 2. Session 13's
+notification coordinator reads only from this query, so completing or archiving an event removes
+its reminders from scheduling consideration with no code written this session, and restoring
+either flag re-includes them automatically the next time the reactive query re-emits. Deletion
+removes reminder rows outright via the pre-existing cascading foreign key.
+
+**Reason.** Recorded explicitly, not left implicit, because it is exactly the kind of finding this
+project's own `TODO.md` "Continuous" section warns about missing: a query already did the correct
+thing, and the risk was writing *duplicate* lifecycle-cancellation logic in the new coordinator
+without first checking whether the existing data layer already handled it — which would have been
+two independent, potentially-diverging copies of the same rule (D-034's precedent).
+
+**Alternatives.** An explicit `cancelRemindersForEvent(eventId)` call from `EventRepository
+.setCompleted`/`setArchived` — rejected once the query-level exclusion was confirmed sufficient;
+would have been a second mechanism doing what one `WHERE` clause already does correctly, and reactive
+recomputation (§6 of `docs/NOTIFICATION_ARCHITECTURE.md`) means no explicit "please recompute now"
+call is needed regardless.
+
+**Tradeoffs.** None found.
+
+---
+
+## D-067 — Reminder notification scheduling is a separate coordinator and a separate `BroadcastReceiver` from widget refresh, sharing the pattern, not the code
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 7 (Session 13)
+
+`ReminderNotificationCoordinator`/`NotificationAlarmScheduler`/`ReminderNotificationReceiver`
+(`:core:notifications`, new) mirror `WidgetRefreshCoordinator`/`AlarmScheduler`/
+`WidgetRefreshReceiver` (`:widget:glance`, Session 12, D-063) in shape — coalesce to one alarm,
+`setAndAllowWhileIdle`, one receiver for the alarm plus the four system recovery broadcasts, a
+`WorkManager` safety net — without sharing a class or an interface between the two systems.
+Concretely, this means **two** `BroadcastReceiver`s are each independently manifest-registered for
+the identical four actions (`BOOT_COMPLETED`/`TIMEZONE_CHANGED`/`TIME_SET`/`DATE_CHANGED`), and two
+independent `AlarmManager` entries can exist at once, one per subsystem, using different fixed
+`PendingIntent` request codes (widget: `1001`, reminders: `2001`).
+
+**Reason.** The brief drew this line explicitly: share "time calculation patterns, zone
+correctness, coalescing philosophy... platform scheduling knowledge, boot/time/timezone recovery
+strategy," not widget-specific coordinator logic, redraw interfaces, or render models — and,
+conversely, warned against forcing unrelated responsibilities into one class merely to reduce file
+count. Reminder delivery and widget redraw are genuinely different outcomes with different
+correctness properties: redrawing a widget twice from two overlapping triggers is harmless; sending
+a duplicate user-facing notification is a real bug specifically named as unacceptable. Two
+receivers each declaring the same four actions is not duplicated logic — it is the normal, Android-
+supported way for two independent subsystems in one app to each react to "the clock might be wrong
+now," the same relationship any two unrelated apps on the same device already have with each other
+for the identical broadcasts.
+
+**Alternatives.** One shared receiver dispatching to both coordinators — rejected: would require
+either coordinator to know the other exists, or a third abstraction neither currently needs,
+purely to save four lines of manifest XML duplicated across two modules. One shared `AlarmScheduler`
+interface reused by both — rejected on the same "two independent lifecycles" reasoning; a shared
+interface would invite exactly the coupling the brief warned against the moment either system's
+scheduling needs diverge even slightly (which timed-vs-all-day zone handling, §4 of
+`docs/NOTIFICATION_ARCHITECTURE.md`, already shows they do).
+
+**Tradeoffs.** Two alarms, not one, can be armed simultaneously in the common case (an event with
+both a placed widget and an active reminder) — a real, deliberate cost, reasoned through in
+`docs/NOTIFICATION_ARCHITECTURE.md` §11 rather than hidden: at most a couple of wakeups a day, not
+one, in exchange for the two systems staying independently correct and independently testable.
+
+---
+
+## D-068 — `:core:notifications` calls `CountdownEngine` directly for the notification body's label, and does not depend on `:core:designsystem`
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 7 (Session 13)
+
+`AndroidNotificationSender.send` calls `countdownEngine.countdownAt(event, now, zone).label` at the
+moment of delivery — the real, live label `CountdownEngine` would compute for that event right
+then — and maps it to a short, notification-specific string in a small `when` inside the same
+class, rather than depending on `:core:designsystem` to reuse `CountdownLabelFormatter`.
+
+**Reason.** The brief's own rule — "do not duplicate countdown-label business logic inside the
+Android notification implementation" — is about the *decision* (which label applies to an event
+right now), not the final rendered string. Calling the real `CountdownEngine` satisfies that rule
+exactly: the notification can never disagree with what the app or a widget would show for the same
+event at the same instant, confirmed on-device when a `DAY_OF` reminder that fired a few minutes
+late correctly read "Expired," not a stale "Today." `:core:designsystem` was deliberately not added
+as a dependency for the remaining, presentation-only step (the label's *text*) because that module
+carries Compose Material3 as an `api` dependency (D-028) for reasons entirely about serving Compose
+UI and Glance — real weight for a background module whose own `send()` method never touches
+Compose. This is the same "reuse the fact, not the renderer" shape D-059 already used for the
+create/edit form's own preview, applied here to a third consumer.
+
+**Alternatives.** Depend on `:core:designsystem` and call `CountdownLabelFormatter.format(resources,
+label)` directly — technically works (that specific overload takes a plain `Resources`, not a
+Compose scope) but pulls the whole module's Compose dependency graph onto `:core:notifications`'
+classpath for one string lookup. Hand-roll the day-count decision independently in
+`:core:notifications` — rejected outright as the exact duplication the brief named.
+
+**Tradeoffs.** Notification body text is a second, independently maintained (if intentionally
+minimal) string mapping, not the shared `CountdownLabelFormatter` — and, like that formatter's
+callers before Milestone 6, it is not localized, consistent with this project's existing
+TD-007-tracked gap rather than a new one.

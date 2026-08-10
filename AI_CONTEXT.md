@@ -59,7 +59,11 @@ tree, and the 21-combination matrix — read `docs/WIDGET_SIZE_MATRIX.md` and
 `docs/RESPONSIVE_WIDGET_REVIEW.md` (Session 10). For **background refresh** — how a widget stays
 current while the app is not open, the alarm/receiver mechanics, and real device evidence for all
 of it — read `docs/WIDGET_REFRESH_ARCHITECTURE.md` (Session 12); `docs/WIDGET_ARCHITECTURE.md` §5
-is now a summary pointing there, not the source of truth for refresh behavior.
+is now a summary pointing there, not the source of truth for refresh behavior. For **reminder
+notifications** — trigger-time calculation, timezone policy, idempotent delivery, the coalesced
+alarm, permission flow, and real device evidence — read `docs/NOTIFICATION_ARCHITECTURE.md`
+(Session 13); it deliberately does not share code with the widget refresh system, only the
+scheduling *pattern* (D-067).
 
 **If you need a device this session, check for a local one before assuming you need a remote
 one.** Sessions 5–7 fought a flaky remote device at `127.0.0.1:6555` and Session 7 wrongly
@@ -68,7 +72,7 @@ concluded no local emulator existed — that conclusion came from `which emulato
 works, alongside an existing `Pixel_9` AVD. `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`
 launched directly gave Session 8 a fully stable device for the whole session. Try this first.
 
-## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12)
+## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12; Milestone 7's basic event reminders delivered, Session 13)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
@@ -98,6 +102,16 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   (D-048, D-049, D-057). A widget-picker preview via `android:previewLayout` (TD-014, resolved). A
   production, alarm-based refresh scheduler (Session 12, D-062/D-063) keeps every widget current
   in the background, not just while the app is alive — see "Confirmed Session 12" below.
+- **Reminders**: an MVP local-notification system (Session 13, `:core:notifications`,
+  `docs/NOTIFICATION_ARCHITECTURE.md`) reusing the `Reminder`/`ReminderType` domain model and
+  `ReminderEntity`/`ReminderDao` persistence built in Milestone 2 but unused until now. Exactly
+  four selectable offsets (30/7/1-day/day-of) as checkboxes in Create/Edit Event, a coalesced
+  single-next-alarm scheduler (`ReminderNotificationCoordinator`/`NotificationAlarmScheduler`)
+  mirroring Session 12's pattern without sharing its code (D-067), comparison-based idempotent
+  delivery (`deliveredForScheduledTime`, not a boolean flag), contextual `POST_NOTIFICATIONS`
+  permission requesting (never on first launch), and lifecycle cancellation (complete/archive/
+  delete) for free via the existing `ACTIVE_REMINDERS_QUERY`'s SQL-level filtering (D-066) — see
+  "Confirmed Session 13" below.
 - **Confirmed Session 8**: the widget has been placed through the actual system picker and
   launcher, configured, updated live, survived an app update, and survived a full device reboot —
   all screenshotted (`docs/SCREENSHOT_GUIDE.md`). This closed TD-010 after three sessions of
@@ -136,6 +150,17 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   nine-session-old bug (a `@Singleton Clock` that froze its resolved zone at construction, BUG-R013
   / D-064), fixed and re-verified the same session. `docs/WIDGET_REFRESH_ARCHITECTURE.md` has the
   full system and every claim's real-device evidence.
+- **Confirmed Session 13**: a reminder fired reliably with the app backgrounded and its process
+  killed (`am kill`, not Force Stop), delivered exactly once (confirmed both by unit test and a
+  live double-trigger), and tapping it opened the app to the correct event via `onNewIntent`. A
+  full device reboot correctly re-armed a fresh alarm from Room's persisted state and the pending
+  reminder delivered exactly once, with no manual app open. A real timezone change (5-hour shift)
+  correctly recomputed a timed event's trigger — the first attempt at that specific test found a
+  real, same-shape-as-D-064 bug: `Reminder.scheduledTime` used the device's current zone
+  unconditionally instead of the event's own authored zone for timed events (BUG-R014 / D-065),
+  fixed and re-verified the same session. Denying `POST_NOTIFICATIONS` produced no crash, no
+  repeated permission-request loop, and a silently-resolved (never-fired) reminder.
+  `docs/NOTIFICATION_ARCHITECTURE.md` has the full system and every claim's real-device evidence.
 - Still not measured on any device, by any session: update latency, memory, CPU, or TalkBack
   output. Battery now has a *reasoned* answer (Session 12, alarm-count-based, not
   profiler-measured — `docs/WIDGET_REFRESH_ARCHITECTURE.md` §11); see `docs/PRODUCT_REVIEW.md` for
@@ -242,6 +267,19 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
   checking any other `@Singleton`-scoped "current system value" for the same
   construction-time-freeze risk before assuming a live read stays live for the life of the
   process.
+- **A value's own "zone-pinned" design intent does not automatically propagate to every
+  calculation derived from it.** `EventTarget` has been correctly zone-pinned for a timed event
+  since D-014 (Milestone 2) — "a flight from Tokyo stays at Tokyo 14:05 no matter where the phone
+  is." `Reminder.scheduledTime`, added the same milestone but left unused (unscheduled) until
+  Session 13, still used the device's *current* zone unconditionally for its own calendar-day
+  subtraction, for both all-day and timed events alike — unnoticed for eleven sessions because
+  nothing before Session 13 both activated a reminder on a timed event *and* exercised a real
+  device timezone change against it (BUG-R014, D-065). Found the same way BUG-R013 (D-064) was
+  found one session earlier: a real device timezone-change test, not code review. Fixed by making
+  the zone conditional on the event's own kind — `deviceZone` for all-day, `event.target.zone` for
+  timed — exactly as `EventTarget` itself already branches. Worth checking any other "N days/hours
+  before X" calculation for the same "which zone does *this specific derived calculation* use"
+  question, independently of what zone the value it derives from uses.
 
 ## How to verify the project still works
 
@@ -249,7 +287,7 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
 ./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug
 ```
 
-Current baseline: 299 tests, 0 failures, 0 lint errors (17 accepted warnings, all documented in
+Current baseline: 334 tests, 0 failures, 0 lint errors (17 accepted warnings, all documented in
 `KNOWN_ISSUES.md`), `:core:domain` line coverage above 95% (currently 97.0%).
 
 Build output is noisy — every module logs two deprecation warnings per compile, a side effect of
@@ -278,9 +316,10 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (64 as of Session 12) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (68 as of Session 13) with reason, alternatives, tradeoffs. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render flow, both lifecycles, Glance's sharp edges, forward compatibility. §5 (refresh flow) is now a summary — see the file below for the real system. |
 | `docs/WIDGET_REFRESH_ARCHITECTURE.md` | The production background refresh system in one file: next-transition calculation, coalescing, alarm lifecycle, system receivers, timezone/reboot/Force Stop behavior, battery reasoning, real-device evidence (Session 12). |
+| `docs/NOTIFICATION_ARCHITECTURE.md` | The MVP reminder notification system in one file: reminder model, trigger-time calculation, all-day/timed zone policy, idempotent delivery, the coalesced alarm scheduler, permission flow, notification channel, lifecycle behavior, boot/timezone recovery, battery reasoning, real-device evidence (Session 13). |
 | `docs/WIDGET_REVIEW.md` | The Milestone 4.5 audit (Session 7, no device — see its own banner; largely superseded by the docs below). |
 | `docs/PRODUCT_REVIEW.md` | The Milestone 4.9 product-quality verdict: ranked strengths/weaknesses, would-you-ship assessment, real device evidence. |
 | `docs/SCREENSHOT_GUIDE.md` | Real, curated on-device screenshots of every major widget state, with the recipe to reproduce each (Session 8 baseline). |

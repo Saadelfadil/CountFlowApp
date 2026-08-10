@@ -10,8 +10,72 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. Notifications (Milestone 7), or further Milestone 5/8 work, begins next, pending
+Nothing yet. Settings (Milestone 6), or further Milestone 5/8 work, begins next, pending
 approval — see `TODO.md` P0.
+
+---
+
+## [0.4.8] — 2026-08-10 — Milestone 7: basic event reminders
+
+Session 13. Opt-in reminders at four fixed offsets (30/7/1 days before, day of event), local
+notifications only. Deliberately scoped small by the brief — "this is NOT a notification-platform
+project" — no FCM, no server, no notification history, no recurring or custom offsets. Reused the
+Milestone 2 `Reminder`/`ReminderType` domain model and `ReminderDao`'s active-reminder query almost
+entirely as-is; the real work was the scheduling/delivery infrastructure around them, plus one real
+correctness fix found via real-device timezone testing.
+
+### Added
+- **A compact `ReminderSection`** in the create/edit form — four checkboxes, no separate master
+  switch (`Event.remindersEnabled` is derived as "any type selected"). `POST_NOTIFICATIONS` is
+  requested contextually, the instant the first reminder is checked, never on app launch.
+- **`:core:notifications`** (new real module, previously an empty scaffold) —
+  `ReminderNotificationCoordinator` (one full cycle: find what's due, deliver once, schedule the
+  next wakeup), `AndroidNotificationAlarmScheduler` (`AlarmManager.setAndAllowWhileIdle`,
+  coalesced to one alarm), `AndroidNotificationSender` (builds the notification, reusing the real
+  `CountdownEngine` for the body's label rather than a second calculation), `ReminderNotification
+  Receiver` (the alarm plus `BOOT_COMPLETED`/`TIMEZONE_CHANGED`/`TIME_SET`/`DATE_CHANGED`),
+  `ReminderSafetyNetWorker` (periodic backstop). Mirrors, deliberately does not share code with,
+  Session 12's widget refresh scheduler (D-067).
+- **`Reminder.deliveredForScheduledTime`** — a new nullable `Instant` field, compared against a
+  freshly computed trigger time rather than read as a plain flag, making "never fire twice" and
+  "never fire an already-past trigger" the same code path. New Room migration (v1 → v2, this
+  project's first), with a real `MigrationTestHelper` test.
+- **Notification tap deep-links to the correct event** — `MainActivity`'s `onNewIntent` plus a
+  `pendingEventId` fed into `CountFlowNavHost`, reusing the "ask the `PackageManager` for the
+  launcher intent" technique D-035 already established for widget click targets.
+- `docs/NOTIFICATION_ARCHITECTURE.md` — the permanent reference for this system.
+
+### Fixed
+- **BUG-R014** — a timed event's reminder recomputed its "N days before" calendar subtraction
+  against the device's *current* zone instead of the event's own authored zone, unlike the event's
+  own instant, which has been correctly zone-pinned since Milestone 2 (D-014). A traveller's
+  reminder about a zone-pinned event could have silently drifted. Found live during this session's
+  real-device timezone test — the alarm's absolute epoch would have shifted with the bug present;
+  confirmed unchanged after the fix. See DECISIONS.md D-065.
+
+### Confirmed on a real device
+A reminder delivered with the app backgrounded and its process killed (`am kill`, not Force Stop);
+a reactive second coordinator run, triggered by the delivery's own database write, correctly
+redelivered nothing; a full device reboot correctly re-armed the alarm and the reminder fired
+exactly once, no duplicate; a real five-hour device timezone change left a timed reminder's alarm
+epoch unchanged (the BUG-R014 fix, confirmed); a revoked `POST_NOTIFICATIONS` permission produced
+no crash and no notification, with the reminder still marked resolved rather than stuck retrying;
+tapping a delivered notification opened CountFlow directly to the correct event; the contextual
+permission dialog appeared the instant the first reminder checkbox was checked, and not before.
+
+### Known gaps (not fixed by design)
+- Recurring reminders, custom offsets, notification history, and notification action buttons
+  beyond tap-to-open are explicitly out of MVP scope.
+- Notification copy is not localized, consistent with the existing TD-007-tracked gap.
+- BUG-011 (Force Stop recovery) is confirmed unchanged by this session's new scheduler, per the
+  standing D-052 decision — Force Stop cancels this app's `AlarmManager` alarms and `WorkManager`
+  work exactly as it cancels everything else the app scheduled.
+
+### Tests
+334 tests, 0 failures (up from 299) — `:core:domain` +21 (`ReminderTest.kt`), `:core:database` +1
+(the first migration test), `:core:notifications` +10 (its first-ever test source set), `:feature
+:events` +3 (reminder toggle and save behavior). `:core:domain` line coverage unchanged at 97.0%,
+gated at 95%. Lint: 0 errors, 17 warnings, unchanged since Session 9.
 
 ---
 

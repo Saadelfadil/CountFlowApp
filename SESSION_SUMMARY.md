@@ -1,203 +1,274 @@
 # CountFlow
 
-## Session 12
+## Session 13
 
-Date: 2026-08-09
-Current Milestone: **Background refresh infrastructure — Milestone 8 scope, pulled forward (COMPLETE, real-device verified); Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) unchanged**
+Date: 2026-08-10
+Current Milestone: **Basic Event Reminders — Milestone 7 scope (COMPLETE, real-device verified); Settings (Milestone 6) and remaining Milestone 5 gaps (TD-016/TD-017) unchanged**
 
-> **READ THIS FIRST:** This session's brief was explicit that Core Product (Event CRUD/UI,
-> responsive widgets) is done — this session is about *reliability*, not new functionality. The
-> temporary Milestone 4 scheduler only kept widgets current while the app process happened to be
-> alive; this session built the real one D-008 always planned: a coalesced, alarm-based background
-> refresh system, and proved it works with real-device evidence, not just architecture.
+> **READ THIS FIRST:** This session's brief was explicit that Core Product and reliable background
+> widget refresh (Session 12) are both done — this session adds the last major user-facing
+> capability before Settings + Final MVP QA: optional local notifications before an event, exactly
+> four offsets (30/7/1-day/day-of), and nothing more. Explicitly "NOT a notification-platform
+> project."
 >
-> **What changed:** a pure, zone-aware `CountdownEngine.nextTransitionAt` (`:core:domain`, D-062)
-> decides exactly when any event's countdown next meaningfully changes — correctly handling a real
-> bug found by testing (`CountdownLabel.NextWeek` can stay unchanged across several consecutive
-> local midnights, so "check the next midnight" is the wrong algorithm). `WidgetRefreshPlanner`
-> (`:widget:engine`) coalesces every placed widget's bound event to one global instant, deduplicated
-> by event. `WidgetRefreshCoordinator` orchestrates a full redraw-then-reschedule cycle behind two
-> Android-free seams. `:widget:glance` supplies the real mechanics: one `AlarmManager
-> .setAndAllowWhileIdle` alarm (never more than one — a fixed `PendingIntent` request code replaces
-> rather than stacks), one `BroadcastReceiver` for both the alarm firing and the four genuine system
-> recovery broadcasts (boot, timezone, time, date), and a `WorkManager` periodic safety net.
+> **What changed:** the `Reminder`/`ReminderType`/`ReminderEntity`/`ReminderDao` infrastructure
+> built in Milestone 2 but never scheduled turned out to already match the brief almost exactly —
+> the real work was building scheduling/delivery infrastructure around already-correct domain and
+> data layers, plus fixing one genuine bug found along the way. `Reminder.scheduledTime` gained a
+> zone-pinning fix (timed events now use the event's own authored zone, not the device's current
+> one — the identical *shape* of bug Session 12 found for the widget refresh `Clock`, D-064, but in
+> a different code path) and comparison-based idempotency (`deliveredForScheduledTime: Instant?`,
+> not a boolean flag, so editing a date automatically "resets" resolution with zero explicit reset
+> code). A new `:core:notifications` module supplies `ReminderNotificationCoordinator` +
+> `NotificationAlarmScheduler` + `ReminderNotificationReceiver`, mirroring Session 12's
+> coalesced-single-next-alarm pattern deliberately *without* sharing code with the widget refresh
+> system — reminders and widget redraws are different outcomes (D-067). Lifecycle cancellation
+> (complete/archive/delete) needed **zero new code**: the pre-existing `ACTIVE_REMINDERS_QUERY`
+> already excludes disabled/archived/completed state at the SQL level, and Room's cross-table
+> `InvalidationTracker` re-emits the active-reminders `Flow` on every relevant write (D-066). A
+> compact 4-checkbox "Reminders" section was added to Create/Edit Event, with contextual
+> `POST_NOTIFICATIONS` permission requesting (never on first launch — only when the user enables
+> their first reminder) and notification-tap deep-linking to the event via `MainActivity
+> .onNewIntent`, reusing the existing D-035 "ask PackageManager for the launcher intent" technique.
 >
-> **Verified on a real device, not just unit-tested:** a widget transitioned to "Expired" with the
-> app backgrounded and its process killed, with no manual reopen (`dumpsys alarm` showed a real
-> `1`-wakeup alarm fire; logcat showed the refresh cycle run; a screenshot showed the result). A
-> full device reboot correctly restored both placed widgets and re-armed a fresh alarm. A real
-> timezone change correctly recomputed the schedule — and the *first* attempt at that specific test
-> found a real, nine-session-old bug: a `@Singleton Clock` (`Clock.systemDefaultZone()`, present
-> since D-026 in Milestone 2) froze its resolved zone at construction, so an already-running
-> process silently kept computing against the *old* zone even after correctly receiving the
-> `TIMEZONE_CHANGED` broadcast. Fixed (`LiveDefaultZoneClock`, D-064, BUG-R013), regression-tested,
-> and re-verified on the same device the same session.
+> **Verified on a real device, not just unit-tested:** a reminder fired reliably with the app
+> backgrounded and its process killed (`am kill`, not Force Stop — Session 12's own lesson,
+> re-applied correctly this time after one early slip), delivered exactly once (confirmed both by
+> unit test and a live double-trigger), with correct notification content and correct tap-to-event
+> navigation. A full device reboot correctly re-armed a fresh alarm from Room's persisted state and
+> the pending reminder delivered exactly once with no manual app open. A real timezone change (a
+> 5-hour shift) correctly recomputed a timed event's trigger — the *first* attempt at that specific
+> test found a real bug: `Reminder.scheduledTime` used the device's current zone unconditionally
+> instead of the event's own authored zone for timed events (BUG-R014, D-065), fixed and
+> re-verified on the same device the same session. Denying `POST_NOTIFICATIONS` produced no crash,
+> no repeated permission-request loop, and a silently-resolved (never-fired) reminder.
 >
 > Authoritative documents, in reading order: `AI_CONTEXT.md`, `ARCHITECTURE.md`,
-> `docs/WIDGET_REFRESH_ARCHITECTURE.md` (new — the permanent reference for this session's system),
-> `PROJECT_STATUS.md`, `DECISIONS.md` (64 entries — D-062 through D-064 are new this session), then
-> this file.
+> `docs/WIDGET_REFRESH_ARCHITECTURE.md`, `docs/NOTIFICATION_ARCHITECTURE.md` (new — the permanent
+> reference for this session's system), `PROJECT_STATUS.md`, `DECISIONS.md` (68 entries — D-065
+> through D-068 are new this session), then this file.
 >
-> One item is open for Session 13 — see "Requires approval" at the end.
+> One item is open for Session 14 — see "Requires approval" at the end.
 
 ----------------------------------
 
 ## Objective
 
-Build the production background widget refresh system the architecture always planned (D-008),
-replacing the Milestone 4 scheduler that only worked while the app process was alive. Per the
-brief: for every active countdown with a placed widget, determine the *next* moment its displayed
-info meaningfully changes and schedule exactly one refresh for that moment — never blindly refresh
-every widget on a fixed interval; coalesce every placed widget to one system wakeup, not one per
-widget; keep the mechanism zone-aware and calendar-correct (no naive `+24h` midnight math); handle
-reboot, timezone change, and manual clock change without waking the device unnecessarily; do not
-attempt to defeat Android's Force Stop semantics (D-052 stands); exhaustively test the pure
-next-refresh calculator and the coalescing scheduler; verify on a real device that a widget updates
-with the app backgrounded and the process not in use, that reboot recovery works, and that
-timezone-change recovery works; document the battery/wake-frequency reasoning; and answer nine
-specific closing questions, then stop before Notifications or Billing.
+Add optional local notification reminders before an event: exactly four selectable offsets (30
+days, 7 days, 1 day, day of event), no more. Per the brief: investigate and reuse the existing
+`Reminder`/`ReminderType` domain model and `ReminderEntity`/`ReminderDao` persistence before
+creating anything new; add a compact checkbox section to the existing Create/Edit Event screen;
+schedule and delivery notifications reliably while the app is not open, using a coalesced
+single-next-alarm scheduler that shares Session 12's *pattern* but not its widget-specific code;
+guarantee a reminder never fires twice under any combination of reschedule/reboot/timezone-change/
+process-restart; handle Android 13+ `POST_NOTIFICATIONS` permission contextually, never on first
+launch; recalculate scheduling correctly after event edits, lifecycle changes (complete/archive/
+delete/restore), reboot, and timezone change; exhaustively test the trigger-time calculation and
+the coalescing scheduler; verify on a real device that a reminder delivers with the app
+backgrounded and the process not in use, that it never double-fires, that reboot recovery works,
+that timezone-change recovery works, and that permission denial degrades gracefully; document the
+battery/wake-frequency reasoning; and answer ten specific closing questions, then stop before
+Settings, Billing, or Live Updates.
 
 ----------------------------------
 
 ## Completed
 
-**`CountdownEngine.nextTransitionAt` — the pure next-refresh calculator**
+**Investigation — the domain model already matched the brief**
 
-New function in `:core:domain`, `(Event, Instant, ZoneId) → Instant?`. Returns `null` for
-completed or expired (terminal) events. For a still-future event, walks a bounded superset of
-candidate instants — every local midnight up to `min(daysUntilTarget, nearFutureDays + 14)` days
-out, the event's own start instant, and (for timed events) the imminent-threshold instant — and
-returns the earliest one whose label or status actually differs from now. Same-day/past events
-walk exactly one day forward. The `+14`-day buffer exists specifically because of a real bug found
-mid-session: `CountdownLabel.NextWeek`'s window re-anchors to a shifting `today` each day, so the
-label can stay unchanged across several consecutive midnights even while the day count keeps
-decreasing — an initial "just check the next midnight" implementation produced the wrong instant
-for exactly this case, caught by a test that manually traced the label day-by-day. See D-062.
+`Reminder`, `ReminderType`, `ReminderEntity`, `ReminderDao`, and `ReminderRepository` were all
+built in Milestone 2 but never scheduled or surfaced in the UI. `ReminderType` already had the
+required four values; `ReminderDao` already had a query (`ACTIVE_REMINDERS_QUERY`) that filtered
+out disabled reminders, disabled events, archived events, and completed events at the SQL level.
+No duplicate reminder concept was introduced — every new class this session is scheduling/delivery
+infrastructure built *around* this pre-existing, already-correct layer.
 
-**`WidgetRefreshPlanner` — coalescing (`:widget:engine`)**
+**`Reminder.scheduledTime` — the zone-pinning fix (BUG-R014, D-065)**
 
-`nextGlobalRefresh(boundWidgets, now, deviceZone)` reduces every placed widget to one global
-`Instant?` by calling `nextTransitionAt` once per *distinct event* (`distinctBy { it.event.id }`),
-then taking the minimum. N widgets sharing one event cost exactly what one widget would; an event
-with no widgets contributes nothing; no bound widgets at all returns `null`.
+The pre-existing calculation used `deviceZone` unconditionally for both all-day and timed events.
+Per the existing D-014 precedent ("a flight from Tokyo stays at Tokyo 14:05 no matter where the
+phone is"), a timed event's reminder must pin to the event's own authored zone
+(`event.target.zone`), not the device's current zone; only all-day events (which have no inherent
+zone of their own) use `deviceZone`. Fixed as a single-line branch:
+`val zone = if (event.target.isAllDay) deviceZone else event.target.zone`. Found by a real device
+timezone-change test (see "Real-device verification" below), the identical *shape* of bug Session
+12 found in `Clock.systemDefaultZone()` (D-064) but in a completely different code path.
 
-**`WidgetRefreshCoordinator` + two seams (`:widget:engine`)**
+**Comparison-based idempotency, not a boolean flag**
 
-`refreshAndReschedule()`: read every bound widget from Room, redraw all of them, compute the next
-global instant, then schedule or cancel the one alarm. `AlarmScheduler` and `WidgetRedrawer` are
-two small interfaces keeping this class free of `Context`/`AlarmManager`/Glance, so it is tested
-with plain fakes, not Robolectric. `RefreshOutcome(widgetsRefreshed, nextRefreshAt)` is what every
-real caller logs.
+`Reminder` gained `deliveredForScheduledTime: Instant? = null`, compared against a freshly
+computed `scheduledTime` on every read (`isResolvedFor`), instead of a plain `isDelivered:
+Boolean`. This makes editing an event's date automatically "reset" resolution with zero explicit
+reset code — the old delivered timestamp simply stops matching the new computed trigger.
+`markResolved` sets it after a real send; `withPastTriggerResolved` pre-emptively marks a reminder
+resolved (without ever sending) if its computed trigger is already in the past at the moment of
+activation or edit, satisfying "never fire an already-past trigger" with the same mechanism the
+coordinator's own due-now check relies on.
 
-**Android mechanics (`:widget:glance`)**
+**Room schema migration v1→v2 — the project's first real migration**
 
-- `AndroidAlarmScheduler` — the real `AlarmManager`, via `setAndAllowWhileIdle` (no exact-alarm
-  permission needed, survives Doze, inexact by at most a few minutes), always targeting the same
-  explicit `PendingIntent` (fixed request code) so a reschedule replaces rather than stacks.
-- `GlanceWidgetRedrawer` — `CountdownGlanceWidget().updateAll(context)`.
-- `WidgetRefreshReceiver` — one `@AndroidEntryPoint BroadcastReceiver` for both the alarm firing
-  (`ACTION_REFRESH`, delivered only via the explicit `PendingIntent` above — no manifest entry
-  needed) and the four genuine system recovery broadcasts (`BOOT_COMPLETED`, `TIMEZONE_CHANGED`,
-  `TIME_SET`, `DATE_CHANGED`, all manifest-registered). Every reason runs the identical
-  `refreshAndReschedule()` cycle via `goAsync()` + the app's `ApplicationScope`. Also calls
-  `TimeZone.setDefault(null)` specifically on `ACTION_TIMEZONE_CHANGED` (added mid-session — see
-  D-064 below).
-- `WidgetRefreshSafetyNetWorker` — a `WorkManager` periodic backstop (`Duration.ofHours(6)`
-  interval, 2h flex), enqueued with `ExistingPeriodicWorkPolicy.KEEP` so a process restart never
-  resets its timer.
-- `GlanceWidgetRefreshScheduler` rewritten: still prunes orphaned bindings at startup unchanged,
-  now subscribes to `observeEventsWithWidgets()` and calls `refreshCoordinator.refreshAndReschedule()`
-  on every emission (replacing the old direct `updateAll` call), and enqueues the safety net.
-- `WidgetGlanceModule` gains two `@Binds`: `AlarmScheduler → AndroidAlarmScheduler`,
-  `WidgetRedrawer → GlanceWidgetRedrawer`.
-- Manifest: `RECEIVE_BOOT_COMPLETED` permission, the new receiver's four-action `<intent-filter>`.
-- `widget/glance/build.gradle.kts`: `androidx.work.runtime.ktx`, `androidx.hilt.work`,
-  `ksp(androidx.hilt.compiler)` — previously only `:app` had these.
+Added `reminders.delivered_for_scheduled_time` as an additive nullable column
+(`@ColumnInfo(defaultValue = "NULL")`). `MIGRATION_1_2` adds the column via `ALTER TABLE reminders
+ADD COLUMN delivered_for_scheduled_time INTEGER DEFAULT NULL` (the explicit SQL-level `DEFAULT
+NULL` was required — omitting it produced a schema-validation mismatch against the annotation's
+declared default). Required `core/database/build.gradle.kts` to add
+`sourceSets { getByName("test") { assets.srcDirs("$projectDir/schemas") } }` so `MigrationTestHelper`
+could find the exported schema JSON — this project's Room Gradle plugin config alone didn't wire
+that for Robolectric-based migration tests. `MigrationTest.kt` (new) inserts a v1 row via raw SQL,
+runs the migration, and confirms every original column survives with the new column reading NULL.
 
-**BUG-R013 — a `@Singleton Clock` froze its zone at construction (found and fixed this session)**
+**`ReminderRepository.observeActiveReminders()` + `ActiveReminder` join type**
 
-`TimeModule.providesClock()` had returned `Clock.systemDefaultZone()` since D-026 (Milestone 2).
-`Clock.systemDefaultZone()` snapshots `ZoneId.systemDefault()` once, at construction, into an
-immutable `Clock`; bound `@Singleton`, that snapshot never updates for the life of the process.
-Found live during real-device timezone testing (see "Real-device verification" below), not by
-inspection: a correctly-received `TIMEZONE_CHANGED` broadcast triggered a correctly-run refresh
-cycle that nonetheless recomputed the exact same absolute alarm instant as before the change — the
-new zone was never actually being read. Fixed with `LiveDefaultZoneClock` (`core/common/…/di/
-TimeModule.kt`), whose `getZone()` calls `ZoneId.systemDefault()` fresh on every read instead of
-caching it, plus `TimeZone.setDefault(null)` in `WidgetRefreshReceiver` on `ACTION_TIMEZONE_CHANGED`
-to bust the underlying JVM-level cache `ZoneId.systemDefault()` itself reads through. Rebuilt and
-reinstalled the APK, re-ran the exact same timezone test, and confirmed the recomputed alarm now
-correctly shifted by the full zone offset. See D-064.
+New domain type `ActiveReminder(reminder: Reminder, event: Event)` (analogous to the existing
+`BoundWidget`). `ReminderDao.observeActiveReminders(): Flow<List<ReminderEntity>>` reuses the
+extracted `ACTIVE_REMINDERS_QUERY`; `ReminderRepositoryImpl` maps each emission through a per-row
+`EventDao.getEvent()` lookup (a manual join, not a Room `@Relation`, since filtering needs to
+happen at the WHERE-clause level, not just at display time). Because the underlying query joins
+`reminders` and `events`, Room's `InvalidationTracker` automatically re-emits this `Flow` on
+writes to *either* table — giving reactive rescheduling for every lifecycle trigger the brief
+listed (create, edit, complete, archive, restore, delete) with **zero new receiver or callback
+code**, mirroring `EventRepository.observeEventsWithWidgets()`'s role in the widget scheduler
+(D-066).
+
+**`:core:notifications` — coalesced scheduler, deliberately separate from widget refresh (D-067)**
+
+- `ReminderNotificationCoordinator.processDueAndReschedule()` — reads a fresh one-shot snapshot
+  (`observeActiveReminders().first()`), sends any reminder whose trigger has passed and marks it
+  resolved, then computes the single earliest still-future trigger across everything remaining and
+  schedules exactly one alarm for it (or cancels if none remain). Mirrors
+  `WidgetRefreshCoordinator`'s "always re-read fresh state" discipline from Session 12.
+- `NotificationAlarmScheduler` / `AndroidNotificationAlarmScheduler` — `setAndAllowWhileIdle`,
+  request code `2001` (Session 12's widget alarm uses `1001` — different codes so the two
+  subsystems never collide or replace each other), targets `ReminderNotificationReceiver`.
+- `AndroidNotificationSender` — builds the real notification. Calls the real
+  `CountdownEngine.countdownAt(event, now, zone).label` for the body's underlying decision (reusing
+  the actual countdown-label logic, not duplicating it) but keeps its own minimal
+  notification-specific text mapping rather than depending on `:core:designsystem`'s
+  `CountdownLabelFormatter`, since that module carries Compose Material3 as an `api` dependency
+  purely for UI/Glance consumers (D-068, reusing D-059's "reuse the fact, not the renderer"
+  precedent). Tap intent built via `context.packageManager.getLaunchIntentForPackage(...)` —
+  reusing D-035's technique to avoid a `:core:notifications → :app` dependency inversion.
+- `ReminderNotificationReceiver` — one `@AndroidEntryPoint BroadcastReceiver` for both the alarm
+  firing (`ACTION_REMINDER_ALARM`, explicit `PendingIntent` only) and the four system recovery
+  broadcasts (`BOOT_COMPLETED`, `TIMEZONE_CHANGED`, `TIME_SET`, `DATE_CHANGED`) — a second,
+  independent receiver registered for the identical four broadcasts as Session 12's
+  `WidgetRefreshReceiver`, which is the normal, Android-supported way for two independent
+  subsystems to each react to "the clock might be wrong now," not duplicated logic. Also calls
+  `TimeZone.setDefault(null)` on `ACTION_TIMEZONE_CHANGED`, same JVM-cache-busting fix Session 12
+  needed for D-064.
+- `ReminderSafetyNetWorker` — `@HiltWorker` periodic backstop, 6h interval / 2h flex, unique work
+  name `reminder_safety_net`, mirroring `WidgetRefreshSafetyNetWorker`'s shape exactly.
+- `AndroidNotificationReminderScheduler.start()` — enqueues the safety net and subscribes to
+  `observeActiveReminders().onEach { coordinator.processDueAndReschedule() }.launchIn(applicationScope)`,
+  called once from `CountFlowApplication.onCreate()`.
+- One MVP notification channel ("Event reminders," `IMPORTANCE_DEFAULT`), created idempotently.
+
+**Permission handling**
+
+Android 13+ `POST_NOTIFICATIONS` is requested *contextually* — only when the user enables their
+first reminder on the Create/Edit Event screen, via `rememberLauncherForActivityResult` +
+`ActivityResultContracts.RequestPermission`, never at app launch. If denied: no crash, the
+selection is not silently discarded, no repeated nagging. `AndroidNotificationSender.send()` guards
+with `ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+PackageManager.PERMISSION_GRANTED` — the guard Android Lint's `MissingPermission` detector
+specifically pattern-matches on (an earlier attempt using
+`NotificationManagerCompat.areNotificationsEnabled()` did not satisfy lint, despite being
+semantically equivalent). `@SuppressLint("InlinedApi")` on `send()` with an explanatory comment,
+since the permission's string *value* has always existed and is safe to inline even though the
+symbolic constant was added in API 33.
+
+**Create/Edit Event UI**
+
+A compact "Reminders" section (4 `Checkbox` rows: 30 days / 7 days / 1 day / day of) inserted after
+the existing target-error text, not a new screen. `EditEventUiState` gained
+`selectedReminderTypes: Set<ReminderType>`. `EditEventViewModel.load()` fetches and maps existing
+reminders; `onReminderTypeToggle` updates the selection; `onSave()` calls
+`reminderRepository.replaceRemindersForEvent(...)` with reminders built via
+`Reminder.withPastTriggerResolved(...)` so a past-trigger selection resolves silently rather than
+firing immediately; `remindersEnabled` on the saved `Event` reflects whether any type is selected.
+
+**Notification tap → event deep link**
+
+`MainActivity` reads a `pendingEventId` extra in both `onCreate` and the new `onNewIntent`
+override (the realistic delivery path for a tap while the app process still exists, since
+`FLAG_ACTIVITY_CLEAR_TOP` reuses the single running activity in this single-activity app).
+`CountFlowNavHost` consumes it via a `LaunchedEffect` that navigates to Edit Event and clears the
+pending id.
 
 **Real-device verification (`Pixel_9` AVD)**
 
-- **Background refresh, app not reopened.** Edited "QuickTest"'s target to `22:55:00` today
-  through the real UI; `dumpsys alarm` confirmed a real `RTC_WAKEUP` alarm at that exact instant.
-  Backgrounded the app (`KEYCODE_HOME`) and killed the process (`adb shell am kill` — the normal
-  low-memory-reclaim path, confirmed distinct from Force Stop, which would have cancelled the
-  alarm outright; an earlier attempt in this session that accidentally used `am force-stop`
-  demonstrated exactly that cancellation, `Reason=pi_cancelled` in `dumpsys alarm`, and had to be
-  redone). Confirmed the process dead via `pidof`, confirmed the alarm survived the kill, then
-  waited past the scheduled time. Logcat showed the alarm fire and the full cycle run
-  (`WidgetRefreshReceiver: reason=... widgetsRefreshed=2 nextRefreshAt=...`); `dumpsys alarm`'s
-  `Top Alarms` recorded `1 wakeups` for the refresh tag — a genuine device wake, not a coincidental
-  redraw. A home-screen screenshot confirmed the "QuickTest" widget had transitioned to "Expired"
-  on its own; the unrelated "Swiss Conference" widget was correctly left unchanged.
-- **Reboot recovery.** `adb reboot`; CountFlow was never manually reopened afterward. Both widgets
-  reappeared with correct data — process-start logs confirmed this happened through the widget-
-  restore/`BOOT_COMPLETED` path, not a manual launch. `dumpsys alarm` confirmed a fresh alarm was
-  scheduled post-boot — proof of real recovery, since `AlarmManager` state does not survive a
-  genuine reboot.
-- **Timezone-change recovery (found and fixed BUG-R013 in the process).** `adb shell cmd alarm
-  set-timezone America/New_York` (from `Africa/Casablanca`, a 5-hour shift). First attempt exposed
-  the stale-zone `Clock` bug above. After the fix, the identical test correctly produced a
-  ~5-hour-shifted alarm (confirmed via `dumpsys alarm`), with exactly one
-  `com.countflow.widget.action.REFRESH` entry — no stale old-zone alarm left behind
-  (`grep -c` = `1`).
+- **Background delivery.** Created a short-window test event, selected a reminder through the real
+  UI (`adb shell uiautomator dump` was used to read real element bounds directly after repeated
+  screenshot-scaling mistakes made tapping the "Day of event" checkbox unreliable — the same
+  ground-truth technique now worth reaching for first on any future stubborn tap target).
+  Permission was requested contextually on first toggle, granted, and `dumpsys alarm` confirmed a
+  real alarm scheduled under request code `2001`. Backgrounded the app and killed the process with
+  `am kill` (not `am force-stop` — an early slip in this session repeated Session 12's exact
+  original mistake before self-correcting; `am force-stop` cancels the pending alarm outright,
+  which is the wrong test for "process not in use"). The notification arrived without reopening
+  CountFlow, with correct content (reusing the real countdown label text), and tapping it opened
+  the app directly to the correct event.
+- **No duplicate delivery.** Confirmed via unit test (`ReminderNotificationCoordinatorTest`) and a
+  live double-trigger against the real device: firing the coordinator's cycle twice against the
+  same due reminder delivered it exactly once, the second cycle no-op'ing correctly because
+  `isResolvedFor` now matched.
+- **Reboot recovery.** With a future reminder pending, rebooted the emulator without manually
+  reopening CountFlow. The pending reminder schedule was restored via `BOOT_COMPLETED` →
+  `ReminderNotificationReceiver` → `processDueAndReschedule()`, and the reminder delivered exactly
+  once at its correct time — no duplicate.
+- **Timezone-change recovery (found and fixed BUG-R014 in the process).** `adb shell cmd alarm
+  set-timezone <tz>` for a 5-hour shift. The first attempt exposed the stale-zone bug in
+  `Reminder.scheduledTime` above; after the fix, the identical test correctly recomputed the timed
+  event's trigger pinned to its own authored zone, with no stale old-zone alarm left behind and
+  exactly one logical reminder eventually delivered.
+- **Permission-denied.** `adb shell pm revoke <pkg> android.permission.POST_NOTIFICATIONS`. No
+  crash; the reminder selection UI remained understandable; no repeated permission-request loop;
+  the reminder was marked resolved at its trigger time without ever notifying, per the permission
+  guard's designed behavior.
 
 **Documentation**
 
-`docs/WIDGET_REFRESH_ARCHITECTURE.md` (new) — the permanent reference for this system: module
-split, `nextTransitionAt`'s algorithm and the plateau bug it handles, coalescing, the alarm and
-its exact-vs-inexact tradeoff, the receiver's four-actions-one-class design, the safety net,
-real-device evidence for every claim (§9), Force Stop's explicitly-unchanged behavior (§10),
-battery/wake-frequency reasoning (§11), and known limitations (§12). `docs/WIDGET_ARCHITECTURE.md`
-§5 rewritten as a summary pointing there; §2's file tables and §10's known-limitations updated.
-`DECISIONS.md` D-062 (the plateau-walk algorithm), D-063 (the module split, coalescing, and
-`AlarmManager`/receiver/safety-net mechanics), D-064 (the `LiveDefaultZoneClock` fix). `PROJECT_
-STATUS.md`, `ROADMAP.md` (new Milestone 8 "In Progress" section), `TODO.md`, `KNOWN_ISSUES.md`
-(BUG-R013 resolved entry, BUG-011 updated to confirm the new scheduler does not change its status,
-LIM-002 updated), `CHANGELOG.md`, `AI_CONTEXT.md` all updated per the standing working agreement.
+`docs/NOTIFICATION_ARCHITECTURE.md` (new) — the permanent reference for this system: reminder
+model, trigger-time calculation, all-day/timed zone policy, persistence, the coalesced scheduler,
+permission flow, notification channel, delivery/idempotency, lifecycle behavior, boot recovery,
+timezone behavior, battery implications, known limitations, real-device evidence. `DECISIONS.md`
+D-065 (zone-pinning + idempotency), D-066 (lifecycle-for-free via query filtering), D-067 (separate
+coordinator/receivers from widget refresh), D-068 (no `:core:designsystem` dependency). `PROJECT_
+STATUS.md`, `ROADMAP.md` (Milestone 7 marked Completed), `TODO.md`, `KNOWN_ISSUES.md` (BUG-R014
+resolved entry, TD-002 updated), `CHANGELOG.md` (new `[0.4.8]` entry), `AI_CONTEXT.md` all updated
+per the standing working agreement.
 
 **Verification**
 
-- `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` — BUILD SUCCESSFUL (run
-  twice: once before the D-064 fix, once after, both green).
-- 299 tests, 0 failures (up from 259).
+- `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` — BUILD SUCCESSFUL.
+- 334 tests, 0 failures (up from 299).
 - Lint: 0 errors, 17 warnings, unchanged since Session 9.
-- `:core:domain` coverage unchanged at 97.0%, gated at 95%.
+- `:core:domain` coverage 97.0%, gated at 95%, unchanged.
 
 ----------------------------------
 
 ## Files Created
 
 ```
-docs/WIDGET_REFRESH_ARCHITECTURE.md                                          (new)
-core/domain/src/test/kotlin/…/countdown/CountdownEngineNextTransitionTest.kt (new, 20 tests)
-core/common/src/test/kotlin/…/di/LiveDefaultZoneClockTest.kt                 (new — first test
-                                                                                source set for
-                                                                                :core:common)
-widget/engine/…/refresh/AlarmScheduler.kt                                    (new)
-widget/engine/…/refresh/WidgetRedrawer.kt                                    (new)
-widget/engine/…/refresh/RefreshOutcome.kt                                    (new)
-widget/engine/…/refresh/WidgetRefreshPlanner.kt                              (new)
-widget/engine/…/refresh/WidgetRefreshCoordinator.kt                          (new)
-widget/engine/src/test/kotlin/…/refresh/WidgetRefreshPlannerTest.kt          (new, 7 tests)
-widget/engine/src/test/kotlin/…/refresh/WidgetRefreshCoordinatorTest.kt      (new, 9 tests)
-widget/glance/…/refresh/AndroidAlarmScheduler.kt                             (new)
-widget/glance/…/refresh/GlanceWidgetRedrawer.kt                              (new)
-widget/glance/…/refresh/WidgetRefreshReceiver.kt                             (new)
-widget/glance/…/refresh/WidgetRefreshSafetyNetWorker.kt                      (new)
+core/domain/src/test/kotlin/…/model/ReminderTest.kt                         (new, 21 tests)
+core/database/src/test/kotlin/…/MigrationTest.kt                            (new, 1 test —
+                                                                                first migration
+                                                                                test in the project)
+core/notifications/…/NotificationReminderScheduler.kt                       (new)
+core/notifications/…/NotificationAlarmScheduler.kt                          (new)
+core/notifications/…/NotificationSender.kt                                  (new)
+core/notifications/…/ReminderCycleOutcome.kt                                (new)
+core/notifications/…/ReminderNotificationCoordinator.kt                     (new)
+core/notifications/…/AndroidNotificationAlarmScheduler.kt                   (new)
+core/notifications/…/AndroidNotificationSender.kt                          (new)
+core/notifications/…/ReminderNotificationReceiver.kt                        (new)
+core/notifications/…/ReminderSafetyNetWorker.kt                             (new)
+core/notifications/…/AndroidNotificationReminderScheduler.kt                (new)
+core/notifications/…/di/NotificationsModule.kt                              (new)
+core/notifications/src/main/res/drawable/ic_notification.xml                (new)
+core/notifications/src/test/kotlin/…/ReminderNotificationCoordinatorTest.kt (new, 10 tests)
+feature/events/src/test/kotlin/…/testing/FakeReminderRepository.kt          (new)
+docs/NOTIFICATION_ARCHITECTURE.md                                           (new)
 ```
 
 ----------------------------------
@@ -205,76 +276,100 @@ widget/glance/…/refresh/WidgetRefreshSafetyNetWorker.kt                      (
 ## Files Modified
 
 ```
-core/common/…/di/TimeModule.kt                          (LiveDefaultZoneClock, D-064)
-core/domain/…/countdown/CountdownEngine.kt               (nextTransitionAt + KDoc, D-062)
-widget/glance/build.gradle.kts                           (+WorkManager, +hilt-work)
-widget/glance/src/main/AndroidManifest.xml                (RECEIVE_BOOT_COMPLETED, new receiver)
-widget/glance/…/di/WidgetGlanceModule.kt                  (+2 @Binds: AlarmScheduler, WidgetRedrawer)
-widget/glance/…/refresh/GlanceWidgetRefreshScheduler.kt   (uses coordinator, enqueues safety net)
-AI_CONTEXT.md, CHANGELOG.md, DECISIONS.md, KNOWN_ISSUES.md, PROJECT_STATUS.md, ROADMAP.md, TODO.md,
-docs/WIDGET_ARCHITECTURE.md
+core/domain/…/model/Reminder.kt                          (zone-pinning fix + idempotency, D-065)
+core/domain/…/repository/ReminderRepository.kt            (+observeActiveReminders, +ActiveReminder)
+core/database/…/entity/ReminderEntity.kt                  (+delivered_for_scheduled_time column)
+core/database/…/CountFlowDatabase.kt                       (VERSION 1 → 2)
+core/database/…/Migrations.kt                              (+MIGRATION_1_2)
+core/database/…/dao/ReminderDao.kt                          (extracted ACTIVE_REMINDERS_QUERY,
+                                                                +observeActiveReminders)
+core/database/build.gradle.kts                              (test asset schemas source set)
+core/data/…/mapper/ReminderMapper.kt                        (+deliveredForScheduledTime mapping)
+core/data/…/repository/ReminderRepositoryImpl.kt            (+observeActiveReminders, +EventDao)
+core/notifications/build.gradle.kts                          (hilt plugin, WorkManager, hilt-work)
+app/…/CountFlowApplication.kt                                (+NotificationReminderScheduler.start())
+app/…/MainActivity.kt                                        (+pendingEventId, +onNewIntent)
+app/…/navigation/CountFlowNavHost.kt                          (+pendingEventId consumption)
+feature/events/…/edit/EditEventUiState.kt                    (+selectedReminderTypes)
+feature/events/…/edit/EditEventViewModel.kt                  (load/save reminders, buildReminders)
+feature/events/…/edit/CreateEventScreen.kt                    (Reminders checkbox section,
+                                                                 contextual permission launcher)
+feature/events/build.gradle.kts                               (+androidx.activity.compose)
+feature/events/src/test/…/edit/EditEventViewModelTest.kt      (+3 tests)
+AI_CONTEXT.md, CHANGELOG.md, DECISIONS.md, KNOWN_ISSUES.md, PROJECT_STATUS.md, ROADMAP.md, TODO.md
 ```
 
 ----------------------------------
 
 ## Architecture Decisions
 
-Three new entries, D-062 through D-064, detailed in `DECISIONS.md`:
+Four new entries, D-065 through D-068, detailed in `DECISIONS.md`:
 
-- **D-062** — `nextTransitionAt` walks a bounded set of midnight candidates, not just "the next
-  one" — the fix for the `NextWeek` plateau bug.
-- **D-063** — Widget refresh scheduling splits across `:core:domain`/`:widget:engine`/
-  `:widget:glance`, coalesces to one alarm, and uses `setAndAllowWhileIdle` — the full production
-  scheduler design, module split, and Android mechanics.
-- **D-064** — `LiveDefaultZoneClock` replaces `Clock.systemDefaultZone()` — a `@Singleton` clock
-  must not freeze the device's zone at construction. The BUG-R013 fix.
+- **D-065** — `Reminder.scheduledTime` pins to the event's own authored zone for timed events (not
+  the device's current zone), and idempotency is tracked via `deliveredForScheduledTime: Instant?`
+  compared against a freshly computed trigger, not a boolean flag. The BUG-R014 fix.
+- **D-066** — Reminder lifecycle cancellation (complete/archive/delete/restore) needs no new code:
+  the existing `ACTIVE_REMINDERS_QUERY` already filters at the SQL level, and Room's
+  `InvalidationTracker` makes the active-reminders `Flow` reactive across both joined tables.
+- **D-067** — `ReminderNotificationCoordinator`/`NotificationAlarmScheduler`/
+  `ReminderNotificationReceiver` deliberately do not share an interface or class with Session 12's
+  widget refresh equivalents, despite mirroring the same coalesced-alarm pattern — widget refresh
+  and reminder delivery are different outcomes.
+- **D-068** — `AndroidNotificationSender` calls `CountdownEngine.countdownAt(...).label` directly
+  for its text decision but keeps its own minimal notification-specific text mapping rather than
+  depending on `:core:designsystem`'s `CountdownLabelFormatter`, since that module carries Compose
+  Material3 purely for UI/Glance consumers.
 
 ----------------------------------
 
 ## Current Project Structure
 
-No new modules, and no new *internal* dependency edges — `:widget:glance` already depended on
-`:widget:engine` and `:core:common`, which is where every new class in this session's system
-lives. One new *external* dependency edge: `widget/glance/build.gradle.kts` now applies
-`androidx.hilt.work`'s KSP processor and depends on `androidx.work.runtime.ktx` and
-`androidx.hilt.work` — both already present in the version catalog (previously used only by
-`:app`), now applied to a second module for `WidgetRefreshSafetyNetWorker`'s `@HiltWorker`. See
-`PROJECT_STATUS.md` for the full, unchanged module graph.
+One module filled in, no new modules: `:core:notifications` was an empty scaffold (TD-002) before
+this session and is now a real module, applying the `countflow.android.hilt` convention plugin and
+depending on `:core:domain` (for `Reminder`/`ReminderRepository`/`CountdownEngine`) and
+`:core:common` (for `Clock`). `feature/events/build.gradle.kts` gained one new dependency edge
+(`androidx.activity.compose`) for the permission-request launcher. See `PROJECT_STATUS.md` for the
+full, updated module graph.
 
 ----------------------------------
 
 ## Dependencies Added
 
-Two, both already in `gradle/libs.versions.toml` before this session (used only by `:app` until
-now): `androidx.work.runtime.ktx` and `androidx.hilt.work` (plus its KSP compiler), newly applied
-to `widget/glance/build.gradle.kts`. No new external libraries introduced to the version catalog.
+`androidx.work.runtime.ktx` and `androidx.hilt.work` (plus its KSP compiler) — both already in
+`gradle/libs.versions.toml` since Session 12 (used by `:widget:glance` and `:app`), now newly
+applied to `core/notifications/build.gradle.kts` for `ReminderSafetyNetWorker`'s `@HiltWorker`.
+`androidx.activity.compose` — already in the version catalog, newly applied to
+`feature/events/build.gradle.kts` for `rememberLauncherForActivityResult`. No new external
+libraries introduced to the version catalog.
 
 ----------------------------------
 
 ## Current Features Working
 
-Everything from Session 11, plus: widgets now refresh reliably in the background — a widget
-updates on its own, with the app not open and its process not running, at the exact next moment
-its countdown display would meaningfully change, confirmed on a real device across normal
-background use, a full reboot, and a real timezone change. Exactly one system alarm exists for the
-whole app at any time, regardless of widget count. Force Stop recovery remains explicitly out of
-scope, by standing decision (D-052) — this session's scheduler makes *normal* background operation
-reliable, not a workaround for Android's own Force Stop semantics.
+Everything from Session 12, plus: a user can select up to four reminder offsets (30/7/1-day/
+day-of) per event from a compact checkbox section in Create/Edit Event, and reliably receive
+exactly one correctly-timed local notification per selected reminder — confirmed on a real device
+with the app backgrounded and its process killed, across a full reboot, and across a real timezone
+change. Notification permission is requested contextually, never at launch, and denial degrades
+gracefully with no crash and no nagging. Tapping a delivered notification opens the app directly to
+the relevant event. Completing, archiving, restoring, or deleting an event correctly
+reschedules/cancels its reminders with zero reminder-specific lifecycle code.
 
 ----------------------------------
 
 ## Pending Work
 
-**P0 — blocks Session 13**
-1. **Approve Notifications (Milestone 7), or further Milestone 5/8 work**, now that background
-   refresh infrastructure is delivered and real-device verified.
+**P0 — blocks Session 14**
+1. **Approve Settings (Milestone 6), Billing/Live Updates, or further Milestone 5 work**, now that
+   basic event reminders are delivered and real-device verified.
 2. **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — carried
-   over unchanged from Session 10; not attempted this session either, which was explicitly scoped
-   to background refresh, not widget sizing.
+   over unchanged since Session 10; not attempted this session either, which was explicitly scoped
+   to reminders, not widget sizing.
 
-**P3 — remaining Milestone 8 scope:** the launcher-ticked `Chronometer` half of D-008 (final-24-
-hours second-level ticking); R8 keep rules, Baseline Profiles, macrobenchmarks, a full
-accessibility pass; the first profiler-measured (not reasoned) battery/memory/CPU numbers.
+**P3 — remaining scope:** recurring reminders / custom offsets (explicitly out of this session's
+MVP scope, would need a real product decision on UI shape first); the launcher-ticked `Chronometer`
+half of D-008; R8 keep rules, Baseline Profiles, macrobenchmarks, a full accessibility pass; the
+first profiler-measured (not reasoned) battery/memory/CPU numbers.
 
 ----------------------------------
 
@@ -282,18 +377,17 @@ accessibility pass; the first profiler-measured (not reasoned) battery/memory/CP
 
 Full detail in `KNOWN_ISSUES.md`.
 
-**Resolved this session:** BUG-R013 (a `@Singleton Clock` froze its resolved timezone at
-construction, silently going stale after a real device timezone change — found and fixed the same
-session, D-064).
+**Resolved this session:** BUG-R014 (`Reminder.scheduledTime` used the device's current zone
+unconditionally instead of the event's own authored zone for timed events — found and fixed the
+same session via a real device timezone test, D-065).
 
-**Confirmed unchanged this session, with new evidence:** BUG-011 (Force Stop recovery) — the new
-alarm-based scheduler was confirmed, by design, not to change this: Force Stop cancels this app's
-`AlarmManager` alarms and `WorkManager` work exactly as it cancels everything else the app
-scheduled. No further engineering time went toward it, per the standing D-052 decision.
+**Confirmed unchanged this session:** BUG-011 (Force Stop recovery) — unaffected by this session's
+work; the new reminder scheduler is subject to the same standing D-052 decision as the widget
+refresh scheduler.
 
-**Open, unchanged:** TD-001, TD-002, TD-005, TD-006, TD-007, TD-009, TD-016, TD-017, TD-018.
-LIM-003, LIM-004, LIM-005, LIM-006. LIM-002 updated to note the coalesced-alarm half of its
-resolution is now real.
+**Open, unchanged:** TD-001, TD-005, TD-006, TD-007, TD-009, TD-016, TD-017, TD-018. TD-002 updated
+— `:core:notifications` is no longer an empty scaffold; two modules remain
+(`:core:analytics`, `:core:billing`). LIM-003, LIM-004, LIM-005, LIM-006.
 
 **Lint:** 0 errors, 17 accepted warnings, unchanged since Session 9.
 
@@ -301,15 +395,13 @@ resolution is now real.
 
 ## Next Session Plan
 
-1. Get explicit approval before starting Notifications (Milestone 7) — the natural next step now
-   that both Event CRUD/UI and reliable background refresh are done — or before resuming Milestone
-   5's remaining widget-sizing loose ends, or the rest of Milestone 8 (Chronometer ticking, R8,
-   Baseline Profiles, the full a11y pass).
-2. If Notifications is approved: reuse this session's coalesced-alarm infrastructure
-   (`AlarmScheduler`'s pattern) rather than adding a second wakeup source — the brief for
-   Milestone 7 already expects this, per `TODO.md`.
-3. If a real (ideally physical) device is available and Milestone 5 is prioritized instead:
-   the real 4×2 (`WIDE`) placement and screenshot Session 10 could not complete.
+1. Get explicit approval before starting Settings (Milestone 6), Billing/Live Updates, or the
+   remaining Milestone 5 `WIDE` measurement — the natural next steps now that Core Product,
+   background refresh, and basic reminders are all delivered.
+2. If Settings is approved: `PreferencesRepository` already exists and is tested but unwired to the
+   UI (theme mode, dynamic color) — the natural starting point, per `TODO.md`'s P2 section.
+3. If a real (ideally physical) device is available and Milestone 5 is prioritized instead: the
+   real 4×2 (`WIDE`) placement and screenshot Session 10 could not complete.
 4. Verify `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug`, then update all
    documents per the standing working agreement.
 
@@ -319,17 +411,16 @@ resolution is now real.
 
 **✅ Builds Successfully**
 
-Verified this session (twice — before and after the D-064 fix, both green):
+Verified this session:
 - `./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug` → BUILD SUCCESSFUL
-- 299 tests, 0 failures (up from 259)
+- 334 tests, 0 failures (up from 299)
 - Coverage gate passed: `:core:domain` 97.0% lines, unchanged
 - Lint: 0 errors, 17 warnings, unchanged since Session 9
 - Runtime: the same stable local emulator established in Session 8 (`Pixel_9`), used for the full
-  background-refresh/reboot/timezone verification sweep — including a genuine `adb reboot` and a
-  real `adb shell cmd alarm set-timezone` zone change, both firsts for this project. `dumpsys
-  alarm` was this session's primary verification technique (more reliable than logcat alone, since
-  `AndroidLogger.debug()` is gated behind `Log.isLoggable`, a pre-existing, unrelated behavior
-  worked around via `adb shell setprop log.tag.<TAG> DEBUG` once diagnosed).
+  reminder-delivery/reboot/timezone/permission-denial verification sweep. `adb shell uiautomator
+  dump` was this session's key new technique — reading real element bounds directly resolved
+  repeated screenshot-scaling tap failures. `dumpsys alarm` again confirmed exact alarm state
+  (request code `2001`, distinct from the widget scheduler's `1001`).
 
 Reproduce with `JAVA_HOME` set to JDK 21 and `platforms;android-37.0` installed. For device work,
 launch `~/Library/Android/sdk/emulator/emulator -avd Pixel_9` directly (GUI mode).
@@ -338,98 +429,92 @@ launch `~/Library/Android/sdk/emulator/emulator -avd Pixel_9` directly (GUI mode
 
 ## Tests
 
-**299 written, 299 passing, 0 failing — up from 259.**
+**334 written, 334 passing, 0 failing — up from 299.**
 
 | Module | Tests | Change this session |
 |---|---|---|
-| `:core:domain` | 111 | +20 (`CountdownEngineNextTransitionTest.kt`) |
-| `:core:common` | 4 | +4 (`LiveDefaultZoneClockTest.kt` — this module's first-ever test source set) |
+| `:core:domain` | 132 | +21 (`ReminderTest.kt`) |
+| `:core:common` | 4 | Unchanged |
 | `:core:data` | 32 | Unchanged |
-| `:core:database` | 40 | Unchanged |
-| `:feature:events` | 33 | Unchanged |
-| `:widget:engine` | 50 | +16 (`WidgetRefreshPlannerTest.kt` +7, `WidgetRefreshCoordinatorTest.kt` +9) |
-| `:widget:glance` | 29 | Unchanged (the new Android-side classes — `AndroidAlarmScheduler`, `WidgetRefreshReceiver`, `WidgetRefreshSafetyNetWorker`, `GlanceWidgetRedrawer` — are thin platform wrappers verified on-device this session rather than by unit test; see Developer Notes) |
+| `:core:database` | 41 | +1 (`MigrationTest.kt` — first migration test in the project) |
+| `:core:notifications` | 10 | +10 (`ReminderNotificationCoordinatorTest.kt` — this module's
+                                first-ever test source set) |
+| `:feature:events` | 36 | +3 (`EditEventViewModelTest.kt`) |
+| `:widget:engine` | 50 | Unchanged |
+| `:widget:glance` | 29 | Unchanged |
 
-**Coverage** — `:core:domain` 97.0% lines, unchanged (`nextTransitionAt` is fully exercised by its
-own 20-test file, so the module's aggregate percentage held rather than moved). The Android-side
-alarm/receiver/worker mechanics are verified by real-device evidence (§9 of the new architecture
-doc), not automated test — consistent with this project's standing practice for classes that are
-thin platform wrappers around `AlarmManager`/`WorkManager`/`BroadcastReceiver` with no business
-logic of their own to unit-test.
+**Coverage** — `:core:domain` 97.0% lines, unchanged (`Reminder`'s new logic is fully exercised by
+its own 21-test file). The Android-side alarm/receiver/worker/notification mechanics in
+`:core:notifications` are verified partly by `ReminderNotificationCoordinatorTest`'s fakes (the
+decision logic) and partly by real-device evidence (§12 of the new architecture doc) for the thin
+platform wrappers with no business logic of their own to unit-test — consistent with this
+project's standing practice, established in Session 12 for the equivalent widget-refresh classes.
 
 ----------------------------------
 
 ## Git Status
 
 Not yet committed as of writing this summary — commit follows immediately after. Working tree
-before that commit: 6 modified production files, 8 new production files, 3 new test files, 8
-modified documentation files, 1 new documentation file, building on `main` at `5d6179a` (Session
-11's final commit). No remote configured.
+before that commit: modified production files across `:core:domain`, `:core:database`, `:core:data`,
+`:app`, `:feature:events`; a full new `:core:notifications` module (previously an empty scaffold);
+new and modified test files; 7 modified documentation files and 1 new documentation file, building
+on `main` at the Session 12 commit (`eb25dd5`). No remote configured.
 
 ----------------------------------
 
 ## Developer Notes
 
-- **"Check only the next midnight" is a plausible-looking algorithm that is provably wrong for a
-  real label this domain already has.** `CountdownLabel.NextWeek`'s window re-anchors to a
-  shifting `today`, so the label can stay unchanged across several consecutive local midnights.
-  The bug was caught by manually tracing a label day-by-day across a real date range with Python,
-  not by intuition — worth remembering that "the next boundary" and "the next thing that actually
-  changes" are different questions whenever a label's own window can shift under it.
-- **A `@Singleton` built from a "read the live system value" API is not guaranteed to stay live.**
-  `Clock.systemDefaultZone()` looks like exactly the right tool for "the device's current zone,"
-  and reads correctly on every call to `.instant()` — but its `.zone` is captured once, at
-  construction, and a `@Singleton` binding means "once" means "once per process," not "once per
-  call." This bug (D-026, present since Milestone 2) was invisible for nine sessions specifically
-  because nothing before this session's real-device timezone test exercised a live zone change
-  against an already-running process — a category of bug that architecture review and unit tests
-  alike are structurally unable to catch, since both operate within one (implicitly static) process
-  lifetime. Worth checking any other `@Singleton`-scoped "current system value" the same way.
-- **`am force-stop` and `am kill` are not the same test, and confusing them cost real time this
-  session.** An early attempt to background the app for the "process not in use" verification used
-  `am force-stop`, which — correctly, per D-052's own reasoning — cancelled the pending alarm
-  outright (`dumpsys alarm` showed `Reason=pi_cancelled`). That is exactly the intended Force Stop
-  behavior, but it is a different test than "the process was reclaimed while backgrounded," which
-  needed `am kill` instead (a normal low-memory-style reclaim that leaves scheduled alarms intact).
-  Worth remembering as a standing distinction for any future device verification that needs to
-  simulate "app not in use" without accidentally simulating Force Stop instead.
-- **`dumpsys alarm` is a more reliable verification technique than logcat for confirming scheduled
-  system work exists,** independent of the codebase's own logging configuration. This session's
-  new debug logs didn't appear in logcat at first — not a code bug, but `AndroidLogger.debug()`'s
-  pre-existing `Log.isLoggable` gate, which silently suppresses debug logs unless the tag is
-  explicitly enabled (`adb shell setprop log.tag.<TAG> DEBUG`). `dumpsys alarm` needed no such
-  configuration and gave a direct, unambiguous answer throughout — including the moment that first
-  revealed BUG-R013, well before the logging gate was even diagnosed.
-- **A background/orchestration class with real business logic (deciding *when*, deciding *which*)
-  belongs behind an interface a fake can implement — a background class that's just a thin call
-  into a platform API does not need the same treatment.** `WidgetRefreshCoordinator`'s logic (what
-  order to redraw/compute/reschedule in) is fully unit-tested via `AlarmScheduler`/`WidgetRedrawer`
-  fakes; `AndroidAlarmScheduler` and `WidgetRefreshReceiver` themselves have no decision logic of
-  their own to fake around, and were verified correct the only way that's meaningful for them: on
-  a real device, against the real `AlarmManager`.
+- **A value's own "zone-pinned" design intent does not automatically propagate to every
+  calculation derived from it.** `EventTarget` has been correctly zone-pinned since D-014
+  (Milestone 2), but `Reminder.scheduledTime`, added the same milestone, still used the device's
+  current zone unconditionally for its own calendar-day subtraction — unnoticed for eleven
+  sessions because nothing before this session both activated a reminder on a timed event *and*
+  exercised a real device timezone change against it (BUG-R014, D-065). The same category of bug
+  as D-064, found the same way: a real device timezone test, not code review. Worth checking any
+  other "N days/hours before X" calculation for the same "which zone does this specific derived
+  calculation use" question, independently of what zone the value it derives from uses.
+- **Comparison-based idempotency (a value compared fresh on every read) needs less special-case
+  code than a boolean flag.** `deliveredForScheduledTime: Instant?` compared against a freshly
+  computed `scheduledTime` meant "editing a date resets delivery status" required zero explicit
+  reset code — the old timestamp simply stops matching. Worth reaching for this pattern over a
+  plain `isDelivered: Boolean` whenever the "was this already done" question depends on a value
+  that can itself change.
+- **`am force-stop` and `am kill` are not the same test — and this session repeated the mistake
+  once before correcting it, despite Session 12 having already documented the lesson.** Worth
+  treating this as a standing checklist item at the *start* of any background-process device test,
+  not just something to recall if it goes wrong again.
+- **`adb shell uiautomator dump` gives real element bounds directly and is more reliable than
+  reading tap coordinates off a screenshot.** Repeated screenshot-scaling mistakes made a
+  particular checkbox unreliable to tap by eyeballed coordinates; dumping the real semantics tree
+  and reading the element's actual bounds resolved it immediately. Worth reaching for this first on
+  any future stubborn UI-automation tap target, rather than after several failed guesses.
+- **Reusing an existing SQL-level filtering query can deliver an entire feature requirement (here,
+  lifecycle cancellation) with zero new code**, provided the existing query already encodes the
+  right semantics and the read path is already reactive (Room's `InvalidationTracker`). Worth
+  checking whether a new requirement is actually already satisfied by an existing query's `WHERE`
+  clause before writing new cancellation/rescheduling logic for it.
 - Commands: `./gradlew assembleDebug` · `./gradlew test` · `./gradlew :core:domain:koverVerify` ·
   `./gradlew :app:lintDebug`. Device: `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`.
-  Useful this session specifically: `adb shell dumpsys alarm`, `adb reboot` +
-  `adb wait-for-device` + polling `getprop sys.boot_completed`, `adb shell cmd alarm
-  set-timezone <tz>`, `adb shell am kill <package>` (not `am force-stop`, unless Force Stop
-  itself is what's being tested).
+  Useful this session specifically: `adb shell uiautomator dump`, `adb shell dumpsys alarm`,
+  `adb shell cmd alarm set-timezone <tz>`, `adb shell pm revoke/grant <pkg>
+  android.permission.POST_NOTIFICATIONS`, `adb shell am kill <package>` (not `am force-stop`).
 
 ----------------------------------
 
-## Requires approval before Session 13
+## Requires approval before Session 14
 
-1. **Notifications (Milestone 7), or further Milestone 5/8 work** — background refresh
-   infrastructure is now delivered and real-device verified; the natural next step is either
-   Notifications (which can now share this session's coalesced-alarm mechanism) or finishing
-   Milestone 5's widget-sizing loose ends (real `WIDE` confirmation) or the rest of Milestone 8
-   (Chronometer ticking, R8, Baseline Profiles, the full a11y pass).
+1. **Settings (Milestone 6), Billing/Live Updates, or further Milestone 5 work** — basic event
+   reminders are now delivered and real-device verified; the natural next step is either Settings
+   (theme, notification preferences, backup/restore — `PreferencesRepository` already exists and is
+   tested but unwired) or finishing Milestone 5's remaining widget-sizing loose ends (real `WIDE`
+   confirmation), or Billing/Live Updates. Do not begin any of these until approved.
 
 ----------------------------------
 
 ## Estimated Progress
 
 ```
-Overall Progress            59%
+Overall Progress            62%
 
 Research & Architecture    100%
 Project Setup              100%
@@ -441,8 +526,10 @@ Widget Themes & Sizes        70%   (responsive 2×1/2×2/4×2 delivered — Mile
                                      real WIDE confirmation and multi-widget polish remain)
 Background Refresh           90%   (Session 12: coalesced alarm scheduler delivered and
                                      device-verified; Chronometer ticking still open)
-Notifications                 0%
+Notifications                90%   (Session 13: basic reminders delivered and device-verified;
+                                     recurring/custom offsets explicitly out of MVP scope)
 Billing                       0%
-Testing                      80%   (domain, DAO, repository, ViewModel, widget engine, Glance UI)
+Testing                      80%   (domain, DAO, repository, ViewModel, widget engine, Glance UI,
+                                     notification coordinator)
 Play Store                    0%
 ```

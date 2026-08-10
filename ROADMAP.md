@@ -15,7 +15,7 @@ Living document. Update the status column as milestones move.
 | 4.9 | Real product validation | **Completed** | 8 |
 | 5 | Multiple widgets | **In Progress** (5A, 5B done — visual redesign + responsive sizes; multi-widget polish remains) | 9–10 |
 | 6 | Settings | Not Started | — |
-| 7 | Notifications | Not Started | — |
+| 7 | Notifications | **Completed** (basic reminders; recurring/custom offsets explicitly out of MVP scope) | 13 |
 | 8 | Optimization | **In Progress** (background refresh infrastructure pulled forward and delivered; R8, Baseline Profiles, macrobenchmarks, full a11y pass remain) | 12 |
 | 9 | Play Store ready | Not Started | — |
 
@@ -363,11 +363,54 @@ exclude widget bindings.
 
 ---
 
-## Milestone 7 — Notifications · Not Started
+## Milestone 7 — Notifications · Completed (Session 13)
 
-Opt-in reminders at 30 days, 7 days, tomorrow, and today. Notification channels, the
-`POST_NOTIFICATIONS` runtime permission, and scheduling that shares the coalesced-alarm
-infrastructure from D-008 rather than adding a second wakeup source.
+Basic event reminders: opt-in, per-event, four fixed offsets. Deliberately scoped small by the
+brief — "this is NOT a notification-platform project" — explicitly excluding FCM, a server,
+notification history, recurring reminders, and custom offsets.
+
+**Delivered:** the `Reminder`/`ReminderType` domain model and `ReminderDao`'s active-reminder
+query, both built in Milestone 2 well ahead of this milestone, needed almost no changes — the real
+work was the scheduling and delivery infrastructure around them, plus one real correctness fix.
+`Reminder.scheduledTime` now pins a timed event's reminder to the event's own authored zone rather
+than the device's current one (D-065) — the all-day case already followed the device, unchanged,
+per D-014's existing policy. A new `deliveredForScheduledTime` field, compared against a freshly
+computed trigger rather than read as a plain flag, makes "never fire twice" and "never fire an
+already-past trigger" the same code path with no special-casing. A new `:core:notifications`
+module (`ReminderNotificationCoordinator`, `AndroidNotificationAlarmScheduler`,
+`AndroidNotificationSender`, `ReminderNotificationReceiver`, `ReminderSafetyNetWorker`) coalesces
+every pending reminder to one `AlarmManager` alarm — mirroring, deliberately not sharing,
+Session 12's widget refresh scheduler pattern (D-067), since the two systems have genuinely
+different correctness properties (a duplicate widget redraw is harmless; a duplicate notification
+is not). A compact `ReminderSection` in the create/edit form (four checkboxes, no separate master
+switch) requests `POST_NOTIFICATIONS` contextually — only when the first reminder is enabled, never
+on app launch. Notification tap deep-links to the correct event via `MainActivity`'s
+`onNewIntent`/`CountFlowNavHost`, reusing the "ask the `PackageManager` for the launcher intent"
+technique D-035 already established for widget click targets. `docs/NOTIFICATION_ARCHITECTURE.md`
+is the new permanent reference.
+
+**The headline finding, from real-device work:** a timed event's reminder alarm's absolute epoch
+was recorded, the device's real timezone was changed by five hours
+(`adb shell cmd alarm set-timezone`), and the epoch was confirmed *unchanged* — a traveller's
+reminder about a zone-pinned event stays pinned, exactly as D-065 intends. The first attempt at
+this exact test, before the fix, would have shown the epoch shift by the full zone offset — this
+is the one genuine bug this session found and fixed, not merely verified.
+
+**Also confirmed on-device:** a reminder delivered with the app backgrounded and its process
+killed (`am kill`, not Force Stop); a reactive second coordinator run, triggered by the delivery's
+own database write, correctly redelivered nothing; a full device reboot correctly re-armed the
+alarm and the reminder fired exactly once, no duplicate; a revoked `POST_NOTIFICATIONS` permission
+produced no crash and no notification, with the reminder still marked resolved rather than stuck
+retrying; tapping a delivered notification opened CountFlow directly to the correct event.
+
+**Not delivered, by explicit scope:** recurring reminders, custom offsets, notification history,
+FCM/server-side push, notification action buttons beyond tap-to-open, and localized notification
+copy (consistent with this project's existing TD-007-tracked gap).
+
+299 → 334 tests, 0 failures. `:core:domain` unchanged at 97.0% line coverage, gated at 95%. Lint:
+0 errors, 17 warnings, unchanged since Session 9. First schema migration in this project's history
+(`1.json` → `2.json`, one additive nullable column), with a real `MigrationTestHelper` test walking
+the old schema forward with real data in it.
 
 ---
 

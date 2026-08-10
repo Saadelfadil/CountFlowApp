@@ -11,7 +11,7 @@ must design around · `WARN-nnn` accepted warnings
 ## Open bugs
 
 ### BUG-011 — Widget stays stuck on a loading spinner after Force Stop until the app reopens
-**Severity:** High · **Opened:** Session 8 · **Partially addressed Session 9 — see below · Confirmed unchanged by Session 12's new scheduler**
+**Severity:** High · **Opened:** Session 8 · **Partially addressed Session 9 — see below · Confirmed unchanged by Session 12's widget scheduler and Session 13's reminder scheduler**
 
 Confirmed directly on a real device: `adb shell am force-stop com.countflow`, then the widget
 shows `@layout/glance_default_loading_layout` — a generic spinner — and never clears on its own.
@@ -89,18 +89,19 @@ whole build. Budget a full session.
 ---
 
 ### TD-002 — Empty scaffold modules
-**Severity:** Low · **Opened:** Session 2
+**Severity:** Low · **Opened:** Session 2 · **`:core:notifications` resolved Session 13**
 
-`:core:data`, `:core:database`, `:core:notifications`, `:core:analytics`, `:core:billing`,
-`:core:domain`, `:widget:engine`, and `:widget:glance` contain build scripts and dependency
-wiring but no source. They exist to establish boundaries early.
+`:core:analytics` and `:core:billing` still contain build scripts and dependency wiring but no
+source, existing only to establish boundaries early. Every other module named in this entry's
+original text has since filled in on its own milestone schedule; `:core:notifications` was the
+most recent, in Session 13 (reminder scheduling and delivery — `docs/NOTIFICATION_ARCHITECTURE.md`).
 
-**Cost.** Eight modules of configuration and build time for no code yet. Each adds a small fixed
-cost to every build.
+**Cost.** Two modules of configuration and build time for no code yet, down from eight at this
+entry's original count. Each adds a small fixed cost to every build.
 
-**Resolution path.** They fill in on their milestone schedule (see ROADMAP.md). If build times
-become painful before then, `:core:analytics`, `:core:billing`, and `:feature:premium` can
-collapse into `:app` and be re-extracted later — they sit behind interfaces either way.
+**Resolution path.** They fill in on their milestone schedule (see ROADMAP.md, Milestone 9). If
+build times become painful before then, `:core:analytics`, `:core:billing`, and `:feature:premium`
+can collapse into `:app` and be re-extracted later — they sit behind interfaces either way.
 
 ---
 
@@ -378,6 +379,30 @@ if the device configuration changes while the screen is open).
 ---
 
 ## Resolved
+
+### BUG-R014 — A timed event's reminder recomputed against the device's current zone instead of the event's own authored zone *(found and fixed Session 13)*
+
+`Reminder.scheduledTime(event, deviceZone)` had used `deviceZone` unconditionally for its
+calendar-day subtraction since Milestone 2 — correct for an all-day target (which is supposed to
+follow the device, D-014) but wrong for a timed one, which `EventTarget` itself has been zone-pinned
+since the same milestone. A reminder about a Tokyo-zoned flight, set while the phone was in Tokyo,
+would have silently recomputed against wherever the device later happened to be, rather than
+staying pinned the way the flight's own instant already did.
+
+Found live, not by inspection, during Session 13's real-device timezone validation: a timed
+event's reminder alarm was armed, the device's real timezone was changed by five hours
+(`adb shell cmd alarm set-timezone`), and the alarm's absolute epoch was recorded before and after.
+With the bug present this would have shifted by the full five-hour offset; it did not, once fixed.
+Every long-lived timed-event reminder, not just ones observed at the moment of a zone change,
+carried the same latent risk — the bug was in the calculation itself, not a one-time read.
+
+Fixed by branching on `event.target.isAllDay` before choosing which zone to run the calendar
+subtraction in — `event.target.zone` (the event's own authored zone) for a timed target,
+`deviceZone` only for an all-day one, exactly mirroring `EventTarget.startAt`'s own existing
+branch. Re-verified on the same device, same test: the recomputed alarm's absolute epoch matched
+before and after the zone change. Regression-tested directly (`ReminderTest.kt`, new, 21 tests,
+including a same-instant-across-three-zones assertion for the timed case and a
+genuinely-different-instant assertion for the all-day case). See DECISIONS.md D-065.
 
 ### BUG-R013 — A `@Singleton Clock` froze its resolved timezone at construction, silently going stale after a real device timezone change *(found and fixed Session 12)*
 
