@@ -14,7 +14,7 @@ Living document. Update the status column as milestones move.
 | 4.5 | Widget stabilization | **Completed** | 7 |
 | 4.9 | Real product validation | **Completed** | 8 |
 | 5 | Multiple widgets | **In Progress** (5A, 5B done — visual redesign + responsive sizes; multi-widget polish remains) | 9–10 |
-| 6 | Settings | Not Started | — |
+| 6 | Settings | **Completed** (appearance, notification status, About; backup/restore and accounts explicitly out of MVP scope) | 14 |
 | 7 | Notifications | **Completed** (basic reminders; recurring/custom offsets explicitly out of MVP scope) | 13 |
 | 8 | Optimization | **In Progress** (background refresh infrastructure pulled forward and delivered; R8, Baseline Profiles, macrobenchmarks, full a11y pass remain) | 12 |
 | 9 | Play Store ready | Not Started | — |
@@ -355,11 +355,55 @@ Play.
 
 ---
 
-## Milestone 6 — Settings · Not Started
+## Milestone 6 — Settings · Completed (Session 14)
 
-Theme and dark-mode selection, the dynamic-colour toggle, notification preferences, backup and
-restore, About with licences and the privacy policy. Revisit `data_extraction_rules.xml` to
-exclude widget bindings.
+Essential settings for a polished V1: theme (System/Light/Dark) and dynamic color, notification
+status with a path to Android's own notification settings, and About (version, Privacy Policy,
+licenses). Deliberately scoped small by the brief — explicitly excluding billing, AdMob,
+subscriptions, Pro features, Android 16 Live Updates, cloud sync, backup/restore, accounts, and
+analytics, several of which were in the original `ARCHITECTURE.md` spec for this milestone but are
+now out of MVP scope by explicit product decision, the same kind of deliberate narrowing Milestone
+7 applied to notifications.
+
+**Delivered:** `PreferencesRepository`'s `ThemeMode`/`useDynamicColor` fields — stored and unit
+-tested since Milestone 2, never read by any screen until now — now drive `CountFlowTheme` directly
+from `MainActivity`, with no dedicated ViewModel needed for two fields. A real `SettingsScreen` and
+`AboutScreen` replace the Milestone 1 placeholders: a compact Theme picker dialog (System/Light/
+Dark, `AlertDialog` + `RadioButton`s), a Dynamic Color switch, a notification-status row backed by
+`NotificationManagerCompat.areNotificationsEnabled()` (correct on every Android version, not just
+13+, D-070) that refreshes on every screen resume via `LifecycleResumeEffect`, a "Manage
+notifications" row opening Android's real per-app notification settings, and an About screen
+reading the installed package's actual version via `PackageManager` (D-072) rather than a
+`BuildConfig` reference. Privacy Policy and Open-source licenses render as honest, visibly-disabled
+placeholders — no fake URL, no new dependency pulled in just to enumerate licenses (D-073). The
+Milestone 1 placeholder's "CountFlow Premium" entry point was deliberately not carried into the
+real screen (D-071), since Billing/Pro features are explicitly out of this milestone's scope.
+
+**Headline finding:** the app's `versionCode`/`versionName` had been frozen at `1`/`"0.1.0"` since
+Milestone 1, twelve sessions and thirteen real `CHANGELOG.md` releases ago — invisible until this
+session's own About screen made it visible, and corrected as part of delivering that screen
+correctly (D-072).
+
+**Confirmed on-device (`Pixel_9` AVD):** System/Light/Dark all apply instantly and correctly
+(confirmed via screenshot, including the app's accent color visibly shifting when Dynamic Color was
+toggled off to the static Material 3 palette); the choice survives a full `am force-stop` process
+kill, proving DataStore persistence rather than in-memory state. Two placed home-screen widgets
+kept their existing dark, translucent styling and accent completely unchanged through every
+Light/Dark/Dynamic-Color combination tested — the widget regression check the brief asked for,
+confirming D-069's "app UI only" policy holds in practice, not just in code. Disabling and
+re-enabling notifications through Android's real system settings and returning to CountFlow flipped
+the "Allowed"/"Not allowed" row correctly both directions with no restart. 200% font scale reflowed
+every row without clipping or overlap. Tapping the disabled Privacy Policy row produced no crash and
+no navigation, as designed.
+
+**Not delivered, by design:** backup/restore, accounts, cloud sync, a real privacy-policy URL, and
+open-source license enumeration — all tracked as explicit follow-up items (`TODO.md` P0 for the
+first two, P2 for the rest).
+
+**Tests:** 6 new (`SettingsViewModelTest`, `AboutViewModelTest`), all using plain Kotlin fakes for
+`NotificationStatusProvider`/`AppVersionProvider`/`PreferencesRepository` — no Robolectric needed,
+consistent with this project's standing practice for thin platform wrappers versus classes with
+real decision logic.
 
 ---
 

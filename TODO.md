@@ -5,15 +5,19 @@ scheduled but not imminent.
 
 ---
 
-## P0 — Blocks Session 14
+## P0 — Blocks Session 15
 
-- [ ] **Approve Settings (Milestone 6), Billing/Live Updates, or further Milestone 5/8 work, after
-      Session 13's basic reminders completion report.** Reminders now deliver reliably with
-      real-device evidence (`docs/NOTIFICATION_ARCHITECTURE.md`) — confirm the next milestone
-      before starting it.
+- [ ] **Approve Final MVP Release Audit, Billing/Live Updates, or further Milestone 5/8 work,
+      after Session 14's essential-settings completion report.** Event CRUD, responsive widgets,
+      widget customization, background refresh, basic reminders, and now essential settings are
+      all complete and real-device verified — confirm the next milestone before starting it.
+- [ ] **Get a real, final privacy-policy URL and wire it into `AboutUiState.privacyPolicyUrl`**
+      (Session 14, D-073) — a genuine release blocker, not an engineering task. The About screen's
+      Privacy Policy row ships correctly disabled ("Not yet available") until this exists; no
+      placeholder or fake URL was substituted.
 - [ ] **Get a real on-device `WIDE` (4×2) measurement and screenshot** (TD-016, TD-017) — still
       the one significant Milestone 5 gap, carried over from Session 10. Not attempted this
-      session either, which was explicitly scoped to reminders, not widget sizing.
+      session either, which was explicitly scoped to settings, not widget sizing.
 
 Resolved in prior sessions (kept here only as a pointer, not re-litigated): 2×1/4×2 size work
 approved and delivered (Session 10); the countdown label policy confirmed permanent (D-051);
@@ -21,8 +25,10 @@ archive/complete/delete gestures delivered with a full accessible menu alternati
 TD-008 resolved); create/edit live widget preview delivered (Session 11); the coalesced-alarm
 background refresh scheduler D-008 always planned, delivered and real-device verified (Session 12,
 D-062/D-063); basic event reminders (30/7/1-day/day-of), delivered and real-device verified
-(Session 13, D-065 through D-068). BUG-011 (Force Stop recovery) remains open by explicit
-decision — see below; neither scheduler changes that decision.
+(Session 13, D-065 through D-068); essential settings (appearance, notification status, About),
+delivered and real-device verified (Session 14, D-069 through D-073). BUG-011 (Force Stop
+recovery) remains open by explicit decision — see below; nothing this session changes that
+decision.
 
 ---
 
@@ -45,13 +51,20 @@ decision — see below; neither scheduler changes that decision.
 
 ---
 
-## P2 — Milestone 6: settings
+## P2 — Post-MVP settings scope
 
-- [ ] Theme mode, dynamic-colour toggle, notification preferences, backup and restore, About.
+Milestone 6's essential scope (theme, dynamic color, notification status, About) is complete
+(Session 14). Everything below was explicitly deferred out of MVP by the brief, not forgotten:
+
+- [ ] Backup and restore, and an account/sign-in concept if one is ever needed — neither exists yet
+      and neither was in Session 14's scope.
 - [ ] **Do the full localisation pass here (TD-007).** Sort names, validation messages,
       empty-state copy, and every field label are currently hard-coded in Kotlin.
-- [ ] Wire `PreferencesRepository` to the theme — `ThemeMode` and `useDynamicColor` are stored
-      and tested but nothing reads them yet.
+- [ ] A real open-source-license enumeration mechanism (Session 14, D-073) — the About screen's
+      "Open-source licenses" row ships correctly disabled ("Coming soon"); adding Google's
+      `play-services-oss-licenses` plugin is the natural option but is a new dependency, not
+      something to pull in "merely" for this per the brief's own instruction — worth deciding on
+      its own merits, not as a rushed addition.
 - [ ] Revisit `data_extraction_rules.xml` — see D-037. Not a blocker; a second Room database for
       widget bindings only becomes worth it on its own merits.
 
@@ -78,9 +91,12 @@ decision — see below; neither scheduler changes that decision.
 
 - [ ] **TD-001 (High)** — migrate off `android.builtInKotlin=false` / `android.newDsl=false`
       before any AGP 10 upgrade. Budget a full session.
-- [ ] **TD-007 (Medium)** — localise the remaining UI strings. Scheduled for Milestone 6.
+- [ ] **TD-007 (Medium)** — localise the remaining UI strings, including Session 14's new Settings
+      and About screens. Milestone 6 shipped without this pass — see P2 above.
 - [ ] **TD-002 (Low)** — two empty scaffold modules remain (`:core:analytics`, `:core:billing`).
-      `:core:notifications` filled in Session 13 and is no longer part of this entry.
+      `:core:notifications` filled in Session 13, `:feature:settings` filled in Session 14 (it was
+      already a real module with placeholder screens, not an empty scaffold, so it was never part
+      of this entry), and neither is part of this entry.
 - [ ] **TD-005 (Low)** — build output noise; disappears with TD-001.
 - [ ] **TD-006 (Low)** — title search is ASCII-case-insensitive only.
 - [ ] **TD-009 (Low)** — the date picker's UTC conversion is comment-guarded but untested.
@@ -185,3 +201,12 @@ for full detail.
       a timed event *and* exercised a real device timezone change (D-065). Worth checking any other
       "N days/hours before X" calculation for the same "which zone does this specific derived
       calculation use" question, independently of what zone the value it derives from uses.
+- [ ] **A stale generated value can go unnoticed for exactly as long as nothing displays it.** The
+      app's `versionCode`/`versionName` had been frozen at `1`/`"0.1.0"` since Milestone 1 —
+      correct-looking Kotlin, never wrong in any test, silently wrong in fact for thirteen real
+      releases — because no screen ever read it back until Session 14's About screen did (D-072).
+      The same class of gap as D-039/D-040 (a render-model field with no reader), one level up: a
+      *build* value with no reader is invisible the same way, for the same reason, and just as long.
+      Worth checking any other value sourced once at project setup and never revisited (an app id, a
+      package name, a static config default) the same way before assuming "it compiled and nothing
+      complained" means it's still correct.

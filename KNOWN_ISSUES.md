@@ -380,6 +380,25 @@ if the device configuration changes while the screen is open).
 
 ## Resolved
 
+### BUG-R015 — The app's `versionCode`/`versionName` had been frozen at `1`/`"0.1.0"` since Milestone 1 *(found and fixed Session 14)*
+
+`AndroidApplicationConventionPlugin`'s `defaultConfig` set `versionCode = 1` and `versionName =
+"0.1.0"` in Session 2 and neither had been touched since, despite `CHANGELOG.md` recording thirteen
+real releases (`[0.2.0]` through `[0.4.8]`) across the twelve sessions in between. Nothing in the
+compiled app, any test, or any prior session's manual verification ever read these values back, so
+nothing ever disagreed with them — they were simply never wrong *visibly*, in exactly the same way
+a render-model field with no reader looks identical to one that works (D-039/D-040's own class of
+gap, one level up: a build value instead of a data field).
+
+Found while building Session 14's About screen, which reads the installed package's real version
+via `PackageManager` specifically so it would never drift from what actually shipped
+(`AndroidAppVersionProvider`, D-072) — the first time anything in the app asked what its own version
+was. Fixed by bumping the convention plugin's two values to `14`/`"0.4.9"` to match this session's
+own `CHANGELOG.md` entry, with a comment noting the two must be bumped together from now on. No
+regression test is meaningful here (the values are static Gradle configuration, not logic to
+assert against) — the fix is verified by the About screen's own real-device screenshot showing the
+corrected number. See DECISIONS.md D-072.
+
 ### BUG-R014 — A timed event's reminder recomputed against the device's current zone instead of the event's own authored zone *(found and fixed Session 13)*
 
 `Reminder.scheduledTime(event, deviceZone)` had used `deviceZone` unconditionally for its

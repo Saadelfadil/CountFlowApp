@@ -10,8 +10,71 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
-Nothing yet. Settings (Milestone 6), or further Milestone 5/8 work, begins next, pending
-approval — see `TODO.md` P0.
+Nothing yet. Final MVP Release Audit, Billing/Live Updates, or further Milestone 5/8 work begins
+next, pending approval — see `TODO.md` P0.
+
+---
+
+## [0.4.9] — 2026-08-10 — Milestone 6: essential settings
+
+Session 14. A small, polished Settings screen: theme (System/Light/Dark), Material You dynamic
+color, notification status with a path to Android's own notification settings, and an About screen
+(version, Privacy Policy, licenses). Deliberately scoped small by the brief — explicitly excluding
+billing, AdMob, subscriptions, Pro features, Live Updates, cloud sync, backup/restore, accounts, and
+analytics, several of which were in the original Milestone 6 spec but are now out of MVP scope by
+explicit decision. Turned on `PreferencesRepository`'s `ThemeMode`/`useDynamicColor` fields, stored
+and tested since Milestone 2 but never read by any screen until now.
+
+### Added
+- **A real `SettingsScreen`**, replacing the Milestone 1 placeholder: a Theme picker dialog
+  (System default/Light/Dark), a Dynamic Color switch, a notification-status row ("Allowed"/"Not
+  allowed"), a "Manage notifications" row opening Android's real per-app notification settings, and
+  a compact link to About.
+- **A real `AboutScreen`**: app name, real installed-package version, a Privacy Policy row and an
+  Open-source licenses row, both correctly disabled with honest supporting text rather than a fake
+  link or placeholder ("Not yet available" / "Coming soon").
+- **`MainActivity` now drives `CountFlowTheme` from `PreferencesRepository`** directly as Compose
+  state — no dedicated ViewModel needed for two fields — confirmed to apply instantly, persist
+  across a full process kill, and leave placed home-screen widgets' own theme/style/accent
+  completely untouched (D-069).
+- **`NotificationStatusProvider`/`AndroidNotificationStatusProvider`** — wraps
+  `NotificationManagerCompat.areNotificationsEnabled()`, correct on every Android version, not just
+  13+; refreshed on every screen resume via `LifecycleResumeEffect`, not just once at construction
+  (D-070).
+- **`AppVersionProvider`/`AndroidAppVersionProvider`** — reads the installed package's real version
+  via `PackageManager`, keeping `:feature:settings` decoupled from `:app`'s `BuildConfig` (D-072).
+
+### Fixed
+- **BUG-R015** — the app's `versionCode`/`versionName` had been frozen at `1`/`"0.1.0"` since
+  Milestone 1, thirteen real releases ago, invisible until this session's About screen made it
+  visible. Corrected to `14`/`"0.4.9"`. See DECISIONS.md D-072.
+
+### Confirmed on a real device
+Theme (System/Light/Dark) applied instantly and persisted across a full `am force-stop` process
+kill; Dynamic Color toggling off visibly switched the app's accent from the wallpaper-derived color
+to CountFlow's static Material 3 palette; two placed home-screen widgets kept their existing
+styling and accent completely unchanged through every theme/dynamic-color combination tested (the
+widget regression check); disabling and re-enabling notifications through Android's real system
+settings and returning to CountFlow flipped the status row correctly both directions with no
+restart; "Manage notifications" opened Android's real per-app notification settings page; 200% font
+scale reflowed every row without clipping; tapping the disabled Privacy Policy row produced no
+crash and no navigation.
+
+### Known gaps (not fixed by design)
+- Backup/restore, accounts, cloud sync, and a full localisation pass remain explicitly out of MVP
+  scope — see `TODO.md` P2.
+- No real privacy-policy URL exists yet (tracked as a release blocker, `TODO.md` P0) and no
+  open-source-license enumeration mechanism exists yet (`TODO.md` P2) — both ship as honest,
+  disabled placeholders rather than fake content.
+- `WidgetConfigurationActivity`'s own chrome still follows the system theme unconditionally,
+  unaffected by the in-app Appearance preference — a narrow, deliberately accepted inconsistency
+  (D-069), since it does not affect the widgets a user actually places.
+
+### Tests
+340 tests, 0 failures (up from 334) — `:feature:settings` +6 (`SettingsViewModelTest`,
+`AboutViewModelTest`), its first test source set, using plain Kotlin fakes rather than Robolectric.
+`:core:domain` line coverage unchanged at 97.0%, gated at 95%. Lint: 0 errors, 17 warnings,
+unchanged since Session 9.
 
 ---
 

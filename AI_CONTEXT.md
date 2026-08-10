@@ -63,7 +63,12 @@ is now a summary pointing there, not the source of truth for refresh behavior. F
 notifications** — trigger-time calculation, timezone policy, idempotent delivery, the coalesced
 alarm, permission flow, and real device evidence — read `docs/NOTIFICATION_ARCHITECTURE.md`
 (Session 13); it deliberately does not share code with the widget refresh system, only the
-scheduling *pattern* (D-067).
+scheduling *pattern* (D-067). For **Settings** — how the app-wide Theme/Dynamic Color preference
+reaches the UI without a dedicated ViewModel, why widgets are unaffected by it, and how
+notification status stays correct across every Android version — read `PROJECT_STATUS.md`'s
+"Where important logic lives" table and DECISIONS.md D-069 through D-073 (Session 14); there is no
+separate architecture doc for Settings, since the whole system is a handful of small, self-
+explanatory classes in `:feature:settings`.
 
 **If you need a device this session, check for a local one before assuming you need a remote
 one.** Sessions 5–7 fought a flaky remote device at `127.0.0.1:6555` and Session 7 wrongly
@@ -72,7 +77,7 @@ concluded no local emulator existed — that conclusion came from `which emulato
 works, alongside an existing `Pixel_9` AVD. `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`
 launched directly gave Session 8 a fully stable device for the whole session. Try this first.
 
-## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12; Milestone 7's basic event reminders delivered, Session 13)
+## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12; Milestone 7's basic event reminders delivered, Session 13; Milestone 6's essential settings delivered, Session 14)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
@@ -112,6 +117,16 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   permission requesting (never on first launch), and lifecycle cancellation (complete/archive/
   delete) for free via the existing `ACTIVE_REMINDERS_QUERY`'s SQL-level filtering (D-066) — see
   "Confirmed Session 13" below.
+- **Settings**: a real `SettingsScreen`/`AboutScreen` (Session 14, `:feature:settings`) replacing
+  the Milestone 1 placeholders — Theme (System/Light/Dark) and Dynamic Color, both reading and
+  writing the `ThemeMode`/`useDynamicColor` fields `PreferencesRepository` has stored since
+  Milestone 2 but nothing read until now; `MainActivity` applies them to `CountFlowTheme` directly
+  as Compose state, no dedicated ViewModel needed (D-069). Notification status
+  (`NotificationStatusProvider`, `areNotificationsEnabled()`, correct on every Android version) and
+  a "Manage notifications" deep link to Android's own settings, refreshed on every screen resume
+  (D-070). About reads the installed package's real version via `PackageManager`, not `BuildConfig`
+  (D-072); Privacy Policy and Open-source licenses render as honest, disabled placeholders, not
+  fake links (D-073) — see "Confirmed Session 14" below.
 - **Confirmed Session 8**: the widget has been placed through the actual system picker and
   launcher, configured, updated live, survived an app update, and survived a full device reboot —
   all screenshotted (`docs/SCREENSHOT_GUIDE.md`). This closed TD-010 after three sessions of
@@ -161,6 +176,19 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   fixed and re-verified the same session. Denying `POST_NOTIFICATIONS` produced no crash, no
   repeated permission-request loop, and a silently-resolved (never-fired) reminder.
   `docs/NOTIFICATION_ARCHITECTURE.md` has the full system and every claim's real-device evidence.
+- **Confirmed Session 14**: System/Light/Dark all applied instantly and correctly, confirmed via
+  screenshot, and the choice survived a full `am force-stop` process kill — proof of DataStore
+  persistence, not in-memory state. Toggling Dynamic Color off visibly switched the app's accent
+  from the wallpaper-derived color to CountFlow's static Material 3 palette. Two placed home-screen
+  widgets kept their existing dark, translucent styling and accent completely unchanged through
+  every theme/dynamic-color combination tested — the widget regression check confirming D-069's
+  "app UI only" policy holds in practice. Disabling and re-enabling notifications through Android's
+  real system settings and returning to CountFlow flipped the "Allowed"/"Not allowed" row correctly
+  both directions with no restart, confirming `LifecycleResumeEffect`'s resume-refresh (D-070).
+  "Manage notifications" opened Android's real per-app settings page. 200% font scale reflowed
+  every row without clipping. One real defect found and fixed: the app's `versionCode`/`versionName`
+  had been frozen at `1`/`"0.1.0"` since Milestone 1, invisible until this session's About screen
+  read it back (BUG-R015 / D-072).
 - Still not measured on any device, by any session: update latency, memory, CPU, or TalkBack
   output. Battery now has a *reasoned* answer (Session 12, alarm-count-based, not
   profiler-measured — `docs/WIDGET_REFRESH_ARCHITECTURE.md` §11); see `docs/PRODUCT_REVIEW.md` for
@@ -280,6 +308,15 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
   timed — exactly as `EventTarget` itself already branches. Worth checking any other "N days/hours
   before X" calculation for the same "which zone does *this specific derived calculation* use"
   question, independently of what zone the value it derives from uses.
+- **A value with no reader is invisible for exactly as long as nothing reads it — a build value,
+  not just a data field.** `versionCode`/`versionName` were set once, in Session 2, and never
+  touched again despite thirteen real `CHANGELOG.md` releases in between; nothing ever disagreed
+  with `1`/`"0.1.0"` because nothing ever read them back (BUG-R015, D-072). The same shape as
+  BUG-R006/BUG-R007 (Session 6): a field with no consumer looks identical to a field that works,
+  right up until something checks. Found the moment Session 14's About screen became the first
+  thing in the app to ask "what version am I" — worth auditing any other value set once at project
+  setup and never revisited (an app id, a static config default, a hardcoded string a screen will
+  someday display) the same way before trusting it is still correct.
 
 ## How to verify the project still works
 
@@ -287,7 +324,7 @@ Worth knowing because each is a *shape* of bug likely to recur elsewhere:
 ./gradlew assembleDebug test :core:domain:koverVerify :app:lintDebug
 ```
 
-Current baseline: 334 tests, 0 failures, 0 lint errors (17 accepted warnings, all documented in
+Current baseline: 340 tests, 0 failures, 0 lint errors (17 accepted warnings, all documented in
 `KNOWN_ISSUES.md`), `:core:domain` line coverage above 95% (currently 97.0%).
 
 Build output is noisy — every module logs two deprecation warnings per compile, a side effect of
@@ -316,7 +353,7 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (68 as of Session 13) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (73 as of Session 14) with reason, alternatives, tradeoffs. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render flow, both lifecycles, Glance's sharp edges, forward compatibility. §5 (refresh flow) is now a summary — see the file below for the real system. |
 | `docs/WIDGET_REFRESH_ARCHITECTURE.md` | The production background refresh system in one file: next-transition calculation, coalescing, alarm lifecycle, system receivers, timezone/reboot/Force Stop behavior, battery reasoning, real-device evidence (Session 12). |
 | `docs/NOTIFICATION_ARCHITECTURE.md` | The MVP reminder notification system in one file: reminder model, trigger-time calculation, all-day/timed zone policy, idempotent delivery, the coalesced alarm scheduler, permission flow, notification channel, lifecycle behavior, boot/timezone recovery, battery reasoning, real-device evidence (Session 13). |

@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | Basic Event Reminders (Milestone 7 scope, Session 13) now **complete and real-device verified**; Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) still open |
-| **Last session** | Session 13 — 2026-08-10 |
+| **Current milestone** | Essential Settings (Milestone 6 scope, Session 14) now **complete and real-device verified**; Milestone 5's remaining widget-sizing gaps (TD-016/TD-017) still open |
+| **Last session** | Session 14 — 2026-08-10 |
 | **Build status** | ✅ `assembleDebug` succeeds |
 | **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9, all documented) |
-| **Tests** | 334 passing, 0 failing (up from 299). `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 13: users can now select 30/7/1-day/day-of reminders per event and reliably receive exactly one local notification at the intended time, with real-device evidence.** Reused the Milestone 2 `Reminder`/`ReminderType` domain model and `ReminderDao`'s active-reminder query almost entirely as-is; found and fixed one real zone bug in the process (D-065): a timed event's reminder used to recompute against the device's current zone instead of the event's own authored zone, meaning a traveller's reminder could silently drift. A new `:core:notifications` module (`ReminderNotificationCoordinator` + a coalesced `AlarmManager` alarm, mirroring Session 12's widget scheduler pattern without sharing its code, D-067) delivers reminders idempotently via a comparison-based resolution field (`deliveredForScheduledTime`), confirmed on-device: fires with the app backgrounded and killed, survives reboot with no duplicate, stays pinned to a timed event's zone across a real device timezone change, fails silently (no crash) when notification permission is denied, and opens the correct event when tapped. See `docs/NOTIFICATION_ARCHITECTURE.md` |
-| **Overall progress** | ~62% |
+| **Tests** | 340 passing, 0 failing (up from 334). `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ **Session 14: users can now choose System/Light/Dark theme and toggle Material You dynamic color, see whether CountFlow's notifications will actually reach them, jump straight to Android's own notification settings, and see an accurate app version — all real-device verified.** `PreferencesRepository`'s existing `ThemeMode`/`useDynamicColor` fields (stored and tested since Milestone 2, never read until now) now drive `CountFlowTheme` directly from `MainActivity`, confirmed to persist across a full process kill and to leave placed widgets' own styling completely untouched (D-069). Notification status reads `NotificationManagerCompat.areNotificationsEnabled()` — correct on every Android version, not just 13+ — and refreshes on every screen resume via `LifecycleResumeEffect`, confirmed flipping both directions after leaving and returning from Android's real notification settings with no CountFlow restart (D-070). About reads the installed package's real version (`PackageManager`, not `BuildConfig`); a stale `versionCode`/`versionName` frozen at Milestone 1 was corrected in the process (D-072). Privacy Policy and Open-source licenses ship as visible, honestly-disabled placeholders, not fake links (D-073) |
+| **Overall progress** | ~65% |
 
 ---
 
@@ -123,7 +123,8 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
 | `:feature:events` | Home list (three lifecycle tabs, swipe + menu actions), create/edit form (live widget preview), two ViewModels, UI mapper |
 | `:widget:engine` | **Render model, theme resolver, progress engine, mapper, provider, lifecycle coordinator, refresh coalescing/orchestration** |
 | `:widget:glance` | **First widget, configuration activity, production alarm-based refresh scheduler** |
-| `:feature:settings` `:feature:premium` | Navigation + placeholder screens |
+| `:feature:settings` | **Real Settings + About screens (Session 14): appearance, notification status, app version — see `docs/NOTIFICATION_ARCHITECTURE.md` for what it deliberately does not surface** |
+| `:feature:premium` | Navigation + placeholder screen (no entry point from Settings, D-071) |
 | `:core:notifications` | **Reminder scheduling and delivery: coordinator, coalesced alarm, notification sender, channel, receiver, safety net** |
 | `:core:analytics` `:core:billing` | Empty scaffolds — boundaries established, code arrives on the roadmap schedule (TD-002) |
 
@@ -213,11 +214,30 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
   requested only when the first reminder is enabled, never on app launch; a denied permission
   fails silently with no crash; tapping a delivered notification opens the correct event. See
   `docs/NOTIFICATION_ARCHITECTURE.md`.
+- **A real Settings screen exists, with real-device evidence for every claim it makes.** Session
+  14 turned on `PreferencesRepository`'s `ThemeMode`/`useDynamicColor` fields — stored and unit
+  -tested since Milestone 2, never read by any screen until now. `MainActivity` reads them
+  directly as Compose state and drives `CountFlowTheme`'s existing `darkTheme`/`dynamicColor`
+  parameters; confirmed on-device to apply instantly, persist across a full process kill, and
+  leave placed widgets' own theme/style/accent completely unaffected (D-069). Notification status
+  reads `NotificationManagerCompat.areNotificationsEnabled()` — correct on every Android version,
+  not just the ones with a runtime `POST_NOTIFICATIONS` prompt — and refreshes on every screen
+  resume, confirmed flipping both directions after a real trip out to Android's own notification
+  settings and back, with no CountFlow restart (D-070). About shows the installed package's real
+  version, read from `PackageManager` rather than `:app`'s `BuildConfig` (D-072); Privacy Policy
+  and Open-source licenses render as honest, visibly-disabled placeholders rather than fake links
+  or a new dependency pulled in just to enumerate licenses (D-073).
 
 ## What does not exist yet
 
-No settings, no billing, no notification history, no recurring or custom-offset reminders — see
-`docs/NOTIFICATION_ARCHITECTURE.md`'s own scope note for the full MVP boundary. Within widgets: the same-event-two-different-styles
+No billing, no notification history, no recurring or custom-offset reminders — see
+`docs/NOTIFICATION_ARCHITECTURE.md`'s own scope note for the full MVP boundary. No backup/restore,
+accounts, cloud sync, or localisation settings — Session 14 scoped Settings down to appearance,
+notification status, and About only, per the brief's own explicit exclusions; backup/restore in
+particular was in the original Milestone 6 spec (`ARCHITECTURE.md`) but is now out of MVP scope by
+the same kind of deliberate scope narrowing Milestone 7 applied to notifications. No real privacy
+-policy URL yet, and no open-source-license enumeration mechanism — both tracked as explicit
+release-preparation items in `TODO.md`'s P0 section (D-073). Within widgets: the same-event-two-different-styles
 case is unit-tested but not verified through real UI, and the 4×2 (WIDE) size has no real-device
 visual confirmation at all — Robolectric only (TD-017); the `WidgetSizeClass` thresholds are
 confirmed against exactly one emulator/launcher combination (TD-016). Background refresh now
@@ -267,13 +287,18 @@ a different kind of verification with zero or near-zero prior evidence over prof
 | How is a reminder guaranteed to never fire twice? | `core/domain/…/model/Reminder.kt` `isResolvedFor`/`markResolved`, or `docs/NOTIFICATION_ARCHITECTURE.md` §5 |
 | How do N pending reminders coalesce into one alarm? | `core/notifications/…/ReminderNotificationCoordinator.kt`, or `docs/NOTIFICATION_ARCHITECTURE.md` §6 |
 | Why are there two receivers for the same four system broadcasts? | DECISIONS.md D-067, or `docs/NOTIFICATION_ARCHITECTURE.md` §7 |
+| How does the app-wide Theme/Dynamic Color preference reach the UI? | `app/…/MainActivity.kt`, or DECISIONS.md D-069 |
+| Why don't placed widgets change with the app's Light/Dark setting? | DECISIONS.md D-069 |
+| How does Settings know whether a notification will actually be seen? | `feature/settings/…/notification/NotificationStatusProvider.kt`, or DECISIONS.md D-070 |
+| Why does the notification status row update without restarting the app? | `feature/settings/…/SettingsScreen.kt` `LifecycleResumeEffect`, or DECISIONS.md D-070 |
+| Where does the About screen's version number actually come from? | `feature/settings/…/about/AndroidAppVersionProvider.kt`, or DECISIONS.md D-072 |
 
 ---
 
 ## Progress
 
 ```
-Overall                      62%
+Overall                      65%
 
 Research & architecture     100%   Milestone 0
 Project foundation          100%   Milestone 1
@@ -282,7 +307,9 @@ Database & persistence      100%   Milestone 2
 Event CRUD / UI             100%   Milestone 3 (Session 11: lifecycle tabs, gestures, live preview)
 Widget engine                98%   Milestone 4.9 (validated on a real device — docs/PRODUCT_REVIEW.md)
 Widget themes & sizes        70%   Milestone 5B of 5 (responsive 2×1/2×2/4×2 delivered; multi-widget polish remains)
-Settings                      0%   Milestone 6
+Settings                      90%  Milestone 6 (Session 14: appearance, notification status, About delivered
+                                     and device-verified; backup/restore, accounts, and localisation settings
+                                     explicitly out of MVP scope — see "What does not exist yet")
 Notifications                 90%  Milestone 7 (Session 13: basic 30/7/1-day/day-of reminders delivered and
                                      device-verified — docs/NOTIFICATION_ARCHITECTURE.md; recurring/custom
                                      offsets and a notification history remain explicitly out of MVP scope)

@@ -1730,3 +1730,183 @@ classpath for one string lookup. Hand-roll the day-count decision independently 
 minimal) string mapping, not the shared `CountdownLabelFormatter` — and, like that formatter's
 callers before Milestone 6, it is not localized, consistent with this project's existing
 TD-007-tracked gap rather than a new one.
+
+---
+
+## D-069 — Global Appearance controls the app's own UI only; widgets keep their independent theme/style/accent rules
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 6 (Session 14)
+
+The Theme (System/Light/Dark) and Dynamic Color preferences added this session apply to
+`CountFlowTheme`, which wraps only the app's own Compose screens (`CountFlowNavHost`, reached via
+`MainActivity`). `MainActivity` reads `PreferencesRepository.preferences` directly as Compose state
+— `collectAsStateWithLifecycle`, no dedicated ViewModel — and derives `CountFlowTheme`'s two
+existing parameters (`darkTheme`, `dynamicColor`) from it every recomposition. Placed Glance widgets
+on the home screen render through a completely separate system (`GlanceTheme`, per-widget
+`WidgetTheme`/style/accent overrides, Milestone 4/5) that this session does not touch at all, and a
+real-device regression check confirmed it: two placed widgets kept their existing dark, translucent
+styling and blue accent unchanged through Light, Dark, and Dynamic-Color-off/on transitions in
+Settings.
+
+**Reason.** The brief asked explicitly whether this setting should affect "App UI only" or "App UI
++ widgets," with the recommended MVP policy being app-UI-only, "if this matches the current
+architecture." It does — the two rendering systems (Compose `MaterialTheme` for the app,
+`GlanceTheme`/`RemoteViews` for widgets) already had zero shared theming code before this session,
+so app-UI-only is not a restriction added on top of the architecture, it is simply not building a
+new cross-cutting theming bridge that nothing before this session needed. Per-widget style/accent
+customization (D-041 and others) is a deliberate, event-scoped user choice made in the
+widget-configuration flow; a global app theme switch silently overriding it would be a real
+regression to that feature, not a refinement.
+
+**Alternatives.** Propagate the app's `ThemeMode`/`useDynamicColor` into `GlanceTheme` too, so a
+widget's neutral tones shift with the app's light/dark choice — rejected: widgets already have
+their own explicit theme concept (`WidgetTheme`: OLED, Glass, Material, and others) that has nothing
+to do with the phone's system theme, and conflating the two would mean either ignoring per-widget
+overrides some of the time or building a precedence rule nobody asked for. A shared
+`AppThemeViewModel` injected into both `MainActivity` and `WidgetConfigurationActivity` — deferred:
+`WidgetConfigurationActivity`'s own Compose chrome (not the widgets it configures) still follows the
+system theme unconditionally, unchanged by this session, since the brief scoped this work to "the
+app," or which activity is or isn't "the app" is a call outside its explicit examples, and the
+brief also warned against unrelated widget-adjacent work. Worth revisiting if that inconsistency is
+ever reported as a real user-facing rough edge.
+
+**Tradeoffs.** `WidgetConfigurationActivity` (reached only via a launcher's "reconfigure" affordance,
+not through CountFlow's own navigation) does not follow the in-app theme preference — a narrow,
+deliberately accepted inconsistency, not a bug, since real-device testing showed it does not affect
+the actual widgets a user places, only one configuration screen's own chrome.
+
+---
+
+## D-070 — Notification status uses `areNotificationsEnabled()`, not a raw permission check, and refreshes on every screen resume
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 6 (Session 14)
+
+The Settings screen's "Event reminders: Allowed/Not allowed" row is backed by
+`NotificationManagerCompat.from(context).areNotificationsEnabled()`
+(`NotificationStatusProvider`/`AndroidNotificationStatusProvider`), not
+`ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)` — the check
+`AndroidNotificationSender` uses to gate an actual `notify()` call (D-065's session). `SettingsView
+Model` re-reads it via `refreshNotificationStatus()`, called from a `LifecycleResumeEffect` in the
+Composable on every screen resume, not just once at construction.
+
+**Reason.** `POST_NOTIFICATIONS` is a runtime permission only from API 33; below that,
+`checkSelfPermission` for it returns `GRANTED` unconditionally regardless of whether the user has
+actually disabled notifications for the app through the classic per-app toggle that has existed
+since API 26 — displaying "Allowed" in that state would be exactly the "misleading messaging on
+versions where runtime permission does not exist" the brief explicitly forbade.
+`areNotificationsEnabled()` answers the question the row actually asks — "will a CountFlow
+notification reach this user right now" — correctly and uniformly on every supported API level,
+confirmed on the real device by disabling and re-enabling notifications through Android's system
+settings and watching the row flip both directions without restarting CountFlow. Refreshing on
+resume (not just construction) is what makes that flip visible at all: the user's path to changing
+this state — Settings → "Manage notifications" → Android's settings → back — always leaves and
+returns to the same screen instance, which construction-only logic would never re-run for.
+
+**Alternatives.** Poll on a timer while the screen is visible — rejected: resume is the only moment
+the value can plausibly have changed (the user can't reach Android's notification settings without
+leaving CountFlow first), so a timer would only add battery cost for no additional correctness.
+Check `POST_NOTIFICATIONS` directly and branch UI copy on `Build.VERSION.SDK_INT` — rejected as
+strictly more code for a worse answer than the version-uniform API already gives.
+
+**Tradeoffs.** None found — `areNotificationsEnabled()` is the API Android's own documentation
+recommends for exactly this "will my notifications be seen" question, and imposes no cost
+`checkSelfPermission` doesn't already have.
+
+---
+
+## D-071 — Settings does not surface a Premium/Upgrade entry point this session
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 6 (Session 14)
+
+The Milestone 1 placeholder `SettingsScreen` had a "CountFlow Premium" action navigating to
+`:feature:premium`'s placeholder screen. The real Settings screen built this session does not
+include it; `onNavigateToPremium` was removed from `SettingsScreen`'s and `settingsSection`'s
+signatures. `:feature:premium`'s route stays registered in `CountFlowNavHost` — nothing about the
+module or its navigation graph entry was deleted, only the link to it from Settings.
+
+**Reason.** The brief's exclusion list is explicit and unambiguous: "No Billing. No AdMob. No
+subscriptions. No Pro features," and separately warns "do not add a feature simply because Settings
+seems like a convenient place for it." A visible "Premium" row in a shipped-feeling Settings screen
+reads as a real, present paywall entry point regardless of what the screen behind it currently does
+— it is a promise about the product's shape that this session, and this milestone, does not make.
+Removing it is the more accurate representation of what CountFlow's MVP actually offers today, not
+a regression: nothing reachable from the real Settings screen was taken away, since it was only
+ever ready from a placeholder screen no prior session considered load-bearing.
+
+**Alternatives.** Keep the row, pointing at the existing placeholder — rejected for the reason
+above. Delete `:feature:premium` and its nav registration entirely — rejected: out of scope for a
+session about essential settings, and the module and route are legitimate, intentional scaffolding
+for Milestone 9, not dead code to clean up now.
+
+**Tradeoffs.** None — `:feature:premium` remains exactly as reachable (by direct route navigation,
+for whenever Milestone 9 wires a real entry point) as it was before this session; only a link that
+promised more than the app currently delivers was removed.
+
+---
+
+## D-072 — App version is read from the installed package, not `BuildConfig`; the stale `versionCode`/`versionName` were corrected
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 6 (Session 14)
+
+`AppVersionProvider`/`AndroidAppVersionProvider` (`:feature:settings`) reads
+`PackageManager.getPackageInfo(context.packageName, 0)` at runtime for the About screen's version
+label, rather than referencing `:app`'s generated `BuildConfig.VERSION_NAME`/`VERSION_CODE`
+directly. Separately, `AndroidApplicationConventionPlugin`'s `versionCode`/`versionName` — `1` and
+`"0.1.0"`, unchanged since Milestone 1 (D-001-era project setup) despite thirteen real
+`CHANGELOG.md` releases since — were corrected to `14` and `"0.4.9"` to match the version this
+session's own `CHANGELOG.md` entry adds.
+
+**Reason.** Reading the installed package's own version keeps `:feature:settings` decoupled from
+`:app`'s build configuration, the same reasoning `AndroidLogger` (`:core:common`) already applies
+to avoid a direct `BuildConfig.DEBUG` reference — a feature module should not need to know which
+application module it happens to be packaged into just to answer "what version am I." The
+`versionCode`/`versionName` correction exists because the brief explicitly asked for an accurate
+"App version" display: shipping a real About screen that reads `PackageManager` correctly, but
+against a `versionName` frozen at `"0.1.0"` for thirteen sessions, would have displayed a materially
+wrong, worse-than-no-information number — a bug the About screen's own correctness requirement
+surfaced, not a pre-existing one this session went looking for.
+
+**Alternatives.** Pass `BuildConfig.VERSION_NAME`/`VERSION_CODE` down from `:app` through
+`CountFlowNavHost` as constructor parameters, the same way `pendingEventId` is threaded (Session
+13) — rejected: that pattern exists for a genuine cross-feature navigation event, not a static value
+every module can already read for itself via `PackageManager` with no plumbing at all. Leave
+`versionCode`/`versionName` unchanged and note the mismatch as a known issue — rejected: the fix is
+a two-line change with no risk, not worth carrying as debt through Final MVP QA.
+
+**Tradeoffs.** `versionCode`/`versionName` must now be bumped manually alongside `CHANGELOG.md` each
+session that adds one, exactly as `CHANGELOG.md` itself already is — no new process, just a second
+place the same discipline applies. `PackageManager.getPackageInfo` can theoretically throw for a
+package that isn't installed, which cannot happen for an app reading its own `packageName` from
+`Context`; `AndroidAppVersionProvider` still degrades to a placeholder string rather than crash, on
+the same "don't trust a platform API to never surprise you" instinct as the rest of this project's
+Android-facing code.
+
+---
+
+## D-073 — Privacy Policy and Open-source licenses ship as visible, disabled placeholders, not fake links or a new dependency
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 6 (Session 14)
+
+The About screen's "Privacy Policy" row renders disabled (dimmed, non-clickable) with supporting
+text "Not yet available" when `AboutUiState.privacyPolicyUrl` is `null` — which it always is this
+session, since no final URL exists yet. "Open-source licenses" renders the same way, permanently for
+now, with "Coming soon." Both rows are real UI, present in the shipped layout, not commented out or
+hidden behind a feature flag.
+
+**Reason.** The brief was explicit and doubly so: "Do NOT invent a production privacy-policy URL...
+Do not silently ship a fake URL," and separately, "Do not add a large third-party library merely to
+display licenses." A real URL would need Google's `play-services-oss-licenses` Gradle plugin (the
+only lightweight-ish first-party mechanism for an enumerable, auto-generated licenses screen), which
+is itself a new external dependency this project has never taken on — exactly what the brief asked
+to avoid "merely" for this. Showing the rows now, disabled, means the final feature (a real
+`privacyPolicyUrl`, and a real licenses mechanism decided on its own merits) is a data change and,
+for licenses, a scoped follow-up session — not a new screen or layout — when both are ready.
+
+**Alternatives.** Omit both rows entirely until ready — rejected: the brief's own instruction was to
+"create the UI/navigation infrastructure cleanly," which reads as building the row now, not
+deferring its existence. Link Privacy Policy to a placeholder page hosted somewhere — explicitly
+the "fake URL" the brief forbade outright.
+
+**Tradeoffs.** The About screen currently ships two rows that do nothing when tapped — an
+intentional, temporary state, tracked as two explicit release-preparation items in `TODO.md`'s P0
+section rather than left implicit.
