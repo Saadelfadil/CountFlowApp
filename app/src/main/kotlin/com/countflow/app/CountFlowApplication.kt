@@ -3,6 +3,7 @@ package com.countflow.app
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.countflow.core.notifications.NotificationReminderScheduler
 import com.countflow.widget.engine.refresh.WidgetRefreshScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -10,7 +11,7 @@ import javax.inject.Inject
 /**
  * CountFlow's [Application].
  *
- * Three responsibilities, all of which have to live here:
+ * Four responsibilities, all of which have to live here:
  *
  * 1. `@HiltAndroidApp` generates the application-level Hilt component every other injection
  *    point resolves against.
@@ -19,9 +20,11 @@ import javax.inject.Inject
  *    default initializer to be removed from the merged manifest — see `AndroidManifest.xml`.
  *    Without that removal WorkManager initializes itself first with the default factory and
  *    every injected worker fails at runtime.
- * 3. Starting [WidgetRefreshScheduler]. This is the Milestone 4 seam, not the Milestone 8
- *    strategy (ARCHITECTURE.md D-008) — see the injected implementation's own documentation for
- *    what it actually does and does not cover.
+ * 3. Starting [WidgetRefreshScheduler] (Session 12, `docs/WIDGET_REFRESH_ARCHITECTURE.md`).
+ * 4. Starting [NotificationReminderScheduler] (Session 13,
+ *    `docs/NOTIFICATION_ARCHITECTURE.md`) — a separate seam from the widget one, not a shared
+ *    call, since reminder delivery and widget redraw are independent outcomes (DECISIONS.md
+ *    D-067).
  *
  * Otherwise deliberately empty. Work done in `onCreate` is charged directly to cold start, and
  * CountFlow targets under 700 ms; initialization belongs in the component that needs it.
@@ -35,6 +38,9 @@ class CountFlowApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var widgetRefreshScheduler: WidgetRefreshScheduler
 
+    @Inject
+    lateinit var notificationReminderScheduler: NotificationReminderScheduler
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -43,5 +49,6 @@ class CountFlowApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         widgetRefreshScheduler.start()
+        notificationReminderScheduler.start()
     }
 }

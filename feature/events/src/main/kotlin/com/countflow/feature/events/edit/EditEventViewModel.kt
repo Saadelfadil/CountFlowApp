@@ -10,8 +10,11 @@ import com.countflow.core.domain.model.Event
 import com.countflow.core.domain.model.EventCategory
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.EventTarget
+import com.countflow.core.domain.model.Reminder
+import com.countflow.core.domain.model.ReminderType
 import com.countflow.core.domain.model.WidgetBinding
 import com.countflow.core.domain.repository.EventRepository
+import com.countflow.core.domain.repository.ReminderRepository
 import com.countflow.core.domain.validation.EventValidationResult
 import com.countflow.core.domain.validation.errors
 import com.countflow.feature.events.navigation.EditEventRoute
@@ -49,6 +52,7 @@ import javax.inject.Inject
 @HiltViewModel
 class EditEventViewModel @Inject constructor(
     private val eventRepository: EventRepository,
+    private val reminderRepository: ReminderRepository,
     private val validator: EventValidator,
     private val renderModelProvider: WidgetRenderModelProvider,
     private val clock: Clock,
@@ -72,6 +76,14 @@ class EditEventViewModel @Inject constructor(
     /** The event being edited, kept so unedited fields survive a save unchanged. */
     private var loadedEvent: Event? = null
 
+    /**
+     * This event's existing reminders, keyed by type. Reused by [buildReminders] so a save that
+     * leaves a reminder's selection unchanged preserves its identity and
+     * [Reminder.deliveredForScheduledTime] — a reminder that already fired must not be handed a
+     * fresh id and re-armed by an unrelated field edit.
+     */
+    private var loadedReminders: Map<ReminderType, Reminder> = emptyMap()
+
     init {
         editingId?.let(::load)
     }
@@ -85,6 +97,8 @@ class EditEventViewModel @Inject constructor(
             }
 
             loadedEvent = event
+            val reminders = reminderRepository.getRemindersForEvent(id)
+            loadedReminders = reminders.associateBy { it.type }
             val start = event.target.startAt(clock.zone)
             _uiState.update {
                 it.copy(
@@ -96,9 +110,23 @@ class EditEventViewModel @Inject constructor(
                     time = start.toLocalTime(),
                     isAllDay = event.target.isAllDay,
                     accentColor = event.accentColor,
+                    selectedReminderTypes = reminders.filter { it.isEnabled }.map { it.type }.toSet(),
                 )
             }
             refreshPreview()
+        }
+    }
+
+    /** Turns one reminder offset on or off. There is no separate master switch to keep in sync. */
+    fun onReminderTypeToggle(type: ReminderType, enabled: Boolean) {
+        _uiState.update {
+            it.copy(
+                selectedReminderTypes = if (enabled) {
+                    it.selectedReminderTypes + type
+                } else {
+                    it.selectedReminderTypes - type
+                },
+            )
         }
     }
 
@@ -169,6 +197,10 @@ class EditEventViewModel @Inject constructor(
         viewModelScope.launch {
             val event = buildEvent(state, target, state.title.trim(), emoji)
             eventRepository.upsertEvent(event)
+            reminderRepository.replaceRemindersForEvent(
+                eventId = event.id,
+                reminders = buildReminders(state, event),
+            )
             _uiState.update { it.copy(isSaving = false, isSaved = true) }
         }
     }
@@ -222,6 +254,7 @@ class EditEventViewModel @Inject constructor(
         category = state.category,
         target = target,
         accentColor = state.accentColor,
+        remindersEnabled = state.selectedReminderTypes.isNotEmpty(),
     ) ?: Event.create(
         title = title,
         target = target,
@@ -229,7 +262,26 @@ class EditEventViewModel @Inject constructor(
         emoji = emoji,
         category = state.category,
         accentColor = state.accentColor,
+        remindersEnabled = state.selectedReminderTypes.isNotEmpty(),
     )
+
+    /**
+     * Builds the reminder set a save should persist.
+     *
+     * A still-selected type reuses its existing [Reminder] — same id, same
+     * [Reminder.deliveredForScheduledTime] — so a save that does not touch reminders (editing only
+     * the title, say) cannot silently un-resolve one that already fired. Every reminder, reused or
+     * freshly created, is then run through [Reminder.withPastTriggerResolved] against *this* save's
+     * event and instant: a still-future reminder is untouched, but one whose trigger this very
+     * edit just moved into the past — pulling the date closer, say — is silently resolved rather
+     * than firing the moment the save completes, the same "never fire an already-past trigger"
+     * rule applied uniformly, not just for brand-new selections.
+     */
+    private fun buildReminders(state: EditEventUiState, event: Event): List<Reminder> =
+        state.selectedReminderTypes.map { type ->
+            val reminder = loadedReminders[type] ?: Reminder.of(eventId = event.id, type = type)
+            reminder.withPastTriggerResolved(event, clock.instant(), clock.zone)
+        }
 
     /**
      * Builds the target from the form.

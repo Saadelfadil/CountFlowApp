@@ -8,11 +8,13 @@ import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.AppWidgetId
 import com.countflow.core.domain.model.Event
 import com.countflow.core.domain.model.EventId
+import com.countflow.core.domain.model.ReminderType
 import com.countflow.core.domain.model.WidgetBinding
 import com.countflow.core.domain.repository.BoundWidget
 import com.countflow.core.domain.repository.WidgetBindingRepository
 import com.countflow.core.domain.validation.EventValidator
 import com.countflow.feature.events.testing.FakeEventRepository
+import com.countflow.feature.events.testing.FakeReminderRepository
 import com.countflow.widget.engine.provider.WidgetRenderModelProvider
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.Dispatchers
@@ -45,15 +47,18 @@ class EditEventViewModelTest {
     private val zone: ZoneId = ZoneId.of("UTC")
     private val now: Instant = Instant.parse("2026-06-15T12:00:00Z")
     private lateinit var eventRepository: FakeEventRepository
+    private lateinit var reminderRepository: FakeReminderRepository
     private lateinit var viewModel: EditEventViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         eventRepository = FakeEventRepository()
+        reminderRepository = FakeReminderRepository()
         val clock = Clock.fixed(now, zone)
         viewModel = EditEventViewModel(
             eventRepository = eventRepository,
+            reminderRepository = reminderRepository,
             validator = EventValidator(clock),
             renderModelProvider = WidgetRenderModelProvider(
                 widgetBindingRepository = NoOpWidgetBindingRepository,
@@ -166,6 +171,54 @@ class EditEventViewModelTest {
         }
 
         assertThat(eventRepository.getAllEventsSync().map(Event::title)).containsExactly("Trip to Kyoto")
+    }
+
+    @Test
+    fun `toggling a reminder type updates the selection, and toggling it off removes it`() {
+        viewModel.onReminderTypeToggle(ReminderType.SEVEN_DAYS, true)
+        assertThat(viewModel.uiState.value.selectedReminderTypes)
+            .containsExactly(ReminderType.SEVEN_DAYS)
+
+        viewModel.onReminderTypeToggle(ReminderType.SEVEN_DAYS, false)
+        assertThat(viewModel.uiState.value.selectedReminderTypes).isEmpty()
+    }
+
+    @Test
+    fun `saving with reminders selected persists them and turns the event's master switch on`() = runTest {
+        viewModel.onTitleChange("Trip to Kyoto")
+        viewModel.onReminderTypeToggle(ReminderType.ONE_DAY, true)
+        viewModel.onReminderTypeToggle(ReminderType.SEVEN_DAYS, true)
+
+        viewModel.uiState.test {
+            awaitState { it.title == "Trip to Kyoto" }
+            viewModel.onSave()
+            awaitState { it.isSaved }
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        val saved = eventRepository.getAllEventsSync().single()
+        assertThat(saved.remindersEnabled).isTrue()
+        val persisted = reminderRepository.lastReplaced.getValue(saved.id.value)
+        assertThat(persisted.map { it.type }).containsExactly(
+            ReminderType.ONE_DAY,
+            ReminderType.SEVEN_DAYS,
+        )
+    }
+
+    @Test
+    fun `saving with no reminders selected leaves the event's master switch off`() = runTest {
+        viewModel.onTitleChange("Trip to Kyoto")
+
+        viewModel.uiState.test {
+            awaitState { it.title == "Trip to Kyoto" }
+            viewModel.onSave()
+            awaitState { it.isSaved }
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        val saved = eventRepository.getAllEventsSync().single()
+        assertThat(saved.remindersEnabled).isFalse()
+        assertThat(reminderRepository.lastReplaced.getValue(saved.id.value)).isEmpty()
     }
 
     // ---------------------------------------------------------------- helpers

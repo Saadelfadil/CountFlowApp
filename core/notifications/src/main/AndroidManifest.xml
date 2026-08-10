@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Runtime-requested contextually (first reminder enabled), never on cold start; see
+         docs/NOTIFICATION_ARCHITECTURE.md. The manifest declaration is still required for any
+         dangerous permission an app requests at runtime, independent of when it is requested. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Needed so ReminderNotificationReceiver's BOOT_COMPLETED intent-filter below is actually
+         delivered. Already declared by :widget:glance for the identical reason (Session 12);
+         redeclaring it here keeps this module correct on its own, and manifest merge dedupes a
+         permission declared by more than one module. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+
+        <!--
+          Registered for the four system broadcasts that mean "the reminder schedule might now be
+          wrong, recompute it" — reboot, timezone change, manual clock change, and a defensive
+          date-rollover check. The alarm itself (ACTION_REMINDER_ALARM) reaches this same receiver
+          through an explicit PendingIntent and needs no intent-filter of its own.
+        -->
+        <receiver
+            android:name=".ReminderNotificationReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

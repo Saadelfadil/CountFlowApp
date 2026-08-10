@@ -11,6 +11,7 @@ internal fun ReminderEntity.toDomain(): Reminder = Reminder(
     type = type,
     timeOfDay = timeOfDay,
     isEnabled = isEnabled,
+    deliveredForScheduledTime = deliveredForScheduledTime,
 )
 
 internal fun Reminder.toEntity(): ReminderEntity = ReminderEntity(
@@ -19,4 +20,5 @@ internal fun Reminder.toEntity(): ReminderEntity = ReminderEntity(
     type = type,
     timeOfDay = timeOfDay,
     isEnabled = isEnabled,
+    deliveredForScheduledTime = deliveredForScheduledTime,
 )

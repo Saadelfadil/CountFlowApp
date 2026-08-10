@@ -1,5 +1,10 @@
 package com.countflow.feature.events.edit
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +18,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -39,13 +45,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.countflow.core.designsystem.component.AccentColorPicker
 import com.countflow.core.designsystem.format.asText
 import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.EventCategory
+import com.countflow.core.domain.model.ReminderType
 import com.countflow.core.domain.validation.EventField
 import com.countflow.core.domain.validation.EventValidationError
 import java.time.Instant
@@ -86,6 +95,7 @@ fun CreateEventScreen(
         onTimeChange = viewModel::onTimeChange,
         onAllDayChange = viewModel::onAllDayChange,
         onAccentColorChange = viewModel::onAccentColorChange,
+        onReminderTypeToggle = viewModel::onReminderTypeToggle,
         onSave = viewModel::onSave,
         onNavigateBack = onNavigateBack,
         modifier = modifier,
@@ -104,12 +114,17 @@ internal fun CreateEventScreen(
     onTimeChange: (LocalTime) -> Unit,
     onAllDayChange: (Boolean) -> Unit,
     onAccentColorChange: (AccentColor) -> Unit,
+    onReminderTypeToggle: (ReminderType, Boolean) -> Unit,
     onSave: () -> Unit,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    // The reminder selection itself is kept regardless of the result (see ReminderSection below).
+    val notificationPermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     Scaffold(
         modifier = modifier,
@@ -232,6 +247,22 @@ internal fun CreateEventScreen(
             uiState.visibleErrors
                 .filter { it.field == EventField.TARGET }
                 .forEach { ErrorText(it) }
+
+            ReminderSection(
+                selected = uiState.selectedReminderTypes,
+                onToggle = { type, enabled ->
+                    if (enabled &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    onReminderTypeToggle(type, enabled)
+                },
+            )
         }
     }
 
@@ -319,6 +350,41 @@ private fun EventTimePickerDialog(
             TimePicker(state = state)
         }
     }
+}
+
+/**
+ * Reminders: [ReminderType.entries] as one checkbox row each, furthest-out first, matching the
+ * brief's own mockup order. No separate master switch — an empty [selected] set means reminders
+ * are off, which [EditEventViewModel.buildEvent] reads directly.
+ */
+@Composable
+private fun ReminderSection(
+    selected: Set<ReminderType>,
+    onToggle: (ReminderType, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text("Reminders", style = MaterialTheme.typography.titleSmall)
+        ReminderType.entries.forEach { type ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = type in selected,
+                    onCheckedChange = { checked -> onToggle(type, checked) },
+                )
+                Text(type.label())
+            }
+        }
+    }
+}
+
+private fun ReminderType.label(): String = when (this) {
+    ReminderType.THIRTY_DAYS -> "30 days before"
+    ReminderType.SEVEN_DAYS -> "7 days before"
+    ReminderType.ONE_DAY -> "1 day before"
+    ReminderType.DAY_OF -> "Day of event"
 }
 
 @Composable

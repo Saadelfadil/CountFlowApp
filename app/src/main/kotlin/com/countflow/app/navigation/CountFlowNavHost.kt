@@ -1,6 +1,7 @@
 package com.countflow.app.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
@@ -23,11 +24,27 @@ import com.countflow.feature.settings.navigation.settingsSection
  * this file the single place where cross-feature routing is decided.
  *
  * @param navController hoisted so tests and previews can supply their own.
+ * @param pendingEventId a tapped reminder notification's event id, if that is why the activity is
+ *   showing right now (Session 13). Always starts at [HomeRoute] regardless — this only pushes
+ *   [com.countflow.feature.events.navigation.EditEventRoute] on top once the graph exists, the
+ *   same "navigate after start, don't retarget the start destination" approach a deep link into a
+ *   single-activity app needs.
+ * @param onPendingEventIdConsumed invoked once the navigation above has happened, so rotating the
+ *   device or another recomposition does not navigate a second time.
  */
 @Composable
 fun CountFlowNavHost(
     navController: NavHostController = rememberNavController(),
+    pendingEventId: String? = null,
+    onPendingEventIdConsumed: () -> Unit = {},
 ) {
+    LaunchedEffect(pendingEventId) {
+        if (pendingEventId != null) {
+            navController.navigateToEditEvent(pendingEventId)
+            onPendingEventIdConsumed()
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = HomeRoute,

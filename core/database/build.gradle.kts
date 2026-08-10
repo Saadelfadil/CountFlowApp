@@ -6,6 +6,14 @@ plugins {
 
 android {
     namespace = "com.countflow.core.database"
+
+    // MigrationTestHelper reads exported schemas as test assets, not from the `schemas/`
+    // source-controlled directory directly.
+    sourceSets {
+        getByName("test") {
+            assets.srcDirs("$projectDir/schemas")
+        }
+    }
 }
 
 // Depending on :core:domain is the correct direction — the database is part of the data layer,

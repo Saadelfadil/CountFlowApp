@@ -7,6 +7,16 @@ import androidx.room.Upsert
 import com.countflow.core.database.entity.ReminderEntity
 import kotlinx.coroutines.flow.Flow
 
+/** Rows eligible to fire: both the reminder's own switch and its event's master toggle are on, and the event is neither archived nor completed. */
+private const val ACTIVE_REMINDERS_QUERY = """
+    SELECT r.* FROM reminders AS r
+    INNER JOIN events AS e ON e.id = r.event_id
+    WHERE r.is_enabled = 1
+      AND e.reminders_enabled = 1
+      AND e.is_archived = 0
+      AND e.is_completed = 0
+"""
+
 /** Queries over the reminders table. */
 @Dao
 interface ReminderDao {
@@ -23,17 +33,20 @@ interface ReminderDao {
      * Both switches have to be on — the reminder's own and its event's master toggle — so the
      * join is done here rather than leaving the scheduler to intersect two lists.
      */
-    @Query(
-        """
-        SELECT r.* FROM reminders AS r
-        INNER JOIN events AS e ON e.id = r.event_id
-        WHERE r.is_enabled = 1
-          AND e.reminders_enabled = 1
-          AND e.is_archived = 0
-          AND e.is_completed = 0
-        """,
-    )
+    @Query(ACTIVE_REMINDERS_QUERY)
     suspend fun getActiveReminders(): List<ReminderEntity>
+
+    /**
+     * The reactive form of [getActiveReminders].
+     *
+     * Room's invalidation tracker registers every table a `@Query` reads from — both `reminders`
+     * and `events` here, since the query joins them — so this re-emits on a write to either one,
+     * with no extra wiring. The notification scheduler pairs each row with its event separately
+     * (`EventRepository.getEvent`) rather than this query returning both entities: the join is
+     * useful for filtering, but the two tables' full column sets never need to travel together.
+     */
+    @Query(ACTIVE_REMINDERS_QUERY)
+    fun observeActiveReminders(): Flow<List<ReminderEntity>>
 
     @Upsert
     suspend fun upsertReminder(reminder: ReminderEntity)

@@ -4,10 +4,12 @@ import com.countflow.core.common.di.CountFlowDispatcher
 import com.countflow.core.common.di.Dispatcher
 import com.countflow.core.data.mapper.toDomain
 import com.countflow.core.data.mapper.toEntity
+import com.countflow.core.database.dao.EventDao
 import com.countflow.core.database.dao.ReminderDao
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.Reminder
 import com.countflow.core.domain.model.ReminderId
+import com.countflow.core.domain.repository.ActiveReminder
 import com.countflow.core.domain.repository.ReminderRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +23,7 @@ import javax.inject.Singleton
 @Singleton
 internal class ReminderRepositoryImpl @Inject constructor(
     private val reminderDao: ReminderDao,
+    private val eventDao: EventDao,
     @Dispatcher(CountFlowDispatcher.IO) private val ioDispatcher: CoroutineDispatcher,
 ) : ReminderRepository {
 
@@ -37,6 +40,23 @@ internal class ReminderRepositoryImpl @Inject constructor(
     override suspend fun getActiveReminders(): List<Reminder> = withContext(ioDispatcher) {
         reminderDao.getActiveReminders().map { it.toDomain() }
     }
+
+    override fun observeActiveReminders(): Flow<List<ActiveReminder>> =
+        reminderDao.observeActiveReminders()
+            .map { entities ->
+                // The event is fetched per row rather than via a Room @Relation because the
+                // ACTIVE_REMINDERS_QUERY join already needs event columns to filter by
+                // (reminders_enabled/is_archived/is_completed) — a @Relation only resolves
+                // relations for rows the main query already returned, it cannot filter by them.
+                // Active-reminder counts are small (this is a personal countdown list, not a
+                // shared system), so the extra per-row read costs nothing that matters here.
+                entities.mapNotNull { entity ->
+                    eventDao.getEvent(entity.eventId)?.let { event ->
+                        ActiveReminder(reminder = entity.toDomain(), event = event.toDomain())
+                    }
+                }
+            }
+            .flowOn(ioDispatcher)
 
     override suspend fun upsertReminder(reminder: Reminder) = withContext(ioDispatcher) {
         reminderDao.upsertReminder(reminder.toEntity())

@@ -6,6 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.countflow.core.domain.model.ReminderType
+import java.time.Instant
 import java.time.LocalTime
 
 /**
@@ -54,4 +55,14 @@ data class ReminderEntity(
 
     @ColumnInfo(name = "is_enabled")
     val isEnabled: Boolean,
+
+    /**
+     * Epoch millis of the [com.countflow.core.domain.model.Reminder.scheduledTime] this row was
+     * last resolved for — sent, or silently skipped for already being in the past when
+     * activated. Null means never resolved. Compared against a freshly computed scheduled time,
+     * not read as a plain flag, so editing the owning event's date makes an old resolution stop
+     * matching automatically. Added in schema v2 (Session 13, D-065).
+     */
+    @ColumnInfo(name = "delivered_for_scheduled_time", defaultValue = "NULL")
+    val deliveredForScheduledTime: Instant? = null,
 )
