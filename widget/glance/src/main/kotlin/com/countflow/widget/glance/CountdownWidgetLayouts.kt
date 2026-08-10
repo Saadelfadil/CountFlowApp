@@ -23,12 +23,15 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
+import androidx.glance.semantics.semantics
+import androidx.glance.semantics.testTag
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.countflow.core.designsystem.format.TargetDateFormatter
+import com.countflow.core.domain.model.ProgressStyle
 import com.countflow.widget.engine.model.WidgetRenderModel
 import com.countflow.widget.glance.progress.CircularProgressRenderer
 
@@ -60,9 +63,9 @@ import com.countflow.widget.glance.progress.CircularProgressRenderer
 
 /**
  * Typography-first. The countdown value is the entire point; everything else is a whisper around
- * it. No progress bar — a bar is a second thing to look at, and Minimal's whole premise is that
- * there is only one thing to look at. Filled with type scale and breathing room, not more
- * elements.
+ * it — Minimal draws no identity noise and no chrome. Progress is still available here like every
+ * other style (Style and Progress are independent settings), but stays a small, quiet graphic
+ * beneath the number rather than anything competing with it for attention.
  */
 @Composable
 internal fun MinimalLayout(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
@@ -91,6 +94,10 @@ internal fun MinimalLayout(model: WidgetRenderModel, headline: WidgetHeadline, c
         headline.secondary?.let {
             Spacer(modifier = GlanceModifier.height(SPACING_XS))
             Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
+        }
+        if (model.progress.isVisible) {
+            Spacer(modifier = GlanceModifier.height(SPACING_SM))
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_STANDARD)
         }
     }
 }
@@ -138,6 +145,10 @@ internal fun MinimalLayoutWide(model: WidgetRenderModel, headline: WidgetHeadlin
             Spacer(modifier = GlanceModifier.height(SPACING_XS))
             Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
         }
+        if (model.progress.isVisible) {
+            Spacer(modifier = GlanceModifier.height(SPACING_SM))
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_WIDE_SINGLE_COLUMN)
+        }
     }
 }
 
@@ -182,7 +193,14 @@ internal fun MaterialLayout(model: WidgetRenderModel, headline: WidgetHeadline, 
         }
         if (model.progress.isVisible) {
             Spacer(modifier = GlanceModifier.height(SPACING_SM))
-            ProgressRow(model, colors)
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_STANDARD)
+        }
+        if (model.showPercentageText) {
+            Text(
+                text = model.progress.percentText,
+                style = TextStyle(fontSize = PERCENT_SIZE, color = colors.onSurfaceMuted),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -265,7 +283,14 @@ internal fun MaterialLayoutWide(model: WidgetRenderModel, headline: WidgetHeadli
             }
             if (model.progress.isVisible) {
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
-                ProgressRow(model, colors, modifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH))
+                ProgressGraphic(model, colors, barModifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_WIDE)
+            }
+            if (model.showPercentageText) {
+                Text(
+                    text = model.progress.percentText,
+                    style = TextStyle(fontSize = PERCENT_SIZE, color = colors.onSurfaceMuted),
+                    maxLines = 1,
+                )
             }
         }
     }
@@ -392,8 +417,16 @@ internal fun ProgressLayoutWide(model: WidgetRenderModel, headline: WidgetHeadli
 /**
  * As stark as the display technology it is named for. One number, one line beneath it if that,
  * nothing competing for the handful of lit sub-pixels this theme's entire purpose is minimizing.
- * No identity row — the burn-in-safe theme is the one place a user has explicitly chosen bare
- * information over context.
+ *
+ * Identity, target date, and percentage are drawn only when their own toggle asks for them —
+ * found on a real Samsung Galaxy A55 that this layout was silently never drawing identity at all,
+ * regardless of `showTitle`/`showEmoji` (and never drew target date or percentage either): OLED's
+ * genuine starkness comes from [colors] already being the highest-contrast palette any style
+ * resolves (forced true black, forced white/near-white text — see `resolveColors`), not from
+ * ignoring what the user asked to see. Kept visually the smallest, quietest text in the layout
+ * (13sp Medium vs. the headline's own 26–50sp Bold), the same hierarchy every other style already
+ * gives its own identity row, so OLED stays the starkest-*looking* style while still honouring
+ * every toggle truthfully.
  */
 @Composable
 internal fun OledLayout(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
@@ -402,6 +435,10 @@ internal fun OledLayout(model: WidgetRenderModel, headline: WidgetHeadline, colo
         verticalAlignment = Alignment.CenterVertically,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+            CenteredIdentity(model, colors, size = 13.sp, weight = FontWeight.Medium)
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+        }
         Text(
             text = headline.primary,
             style = TextStyle(
@@ -418,16 +455,32 @@ internal fun OledLayout(model: WidgetRenderModel, headline: WidgetHeadline, colo
         headline.secondary?.let {
             Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
         }
+        if (model.showDate) {
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            TargetDateLine(model, colors)
+        }
+        if (model.showPercentageText) {
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            Text(
+                text = model.progress.percentText,
+                style = TextStyle(fontSize = PERCENT_SIZE, fontWeight = FontWeight.Medium, color = colors.accent, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
+        }
+        if (model.progress.isVisible) {
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_OLED_STANDARD)
+        }
     }
 }
 
-/** 2×1. Still no identity, still just the number — the least this layout can show is already what it always shows. */
+/** 2×1. Still no identity, still just the number — the least this layout can show is already what it always shows (an established, size-driven limitation shared with [MinimalLayoutCompact], not touched by this fix). */
 @Composable
 internal fun OledLayoutCompact(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
     CompactCenteredHeadline(headline, colors, modifier, size = OLED_COMPACT_SIZE, weight = FontWeight.Bold)
 }
 
-/** 4×2. The extra width goes to an even larger number, the same "stay one thing, get bigger" logic [MinimalLayoutWide] uses — no identity here either, ever. */
+/** 4×2. The extra width goes to an even larger number, the same "stay one thing, get bigger" logic [MinimalLayoutWide] uses. Same identity/date/percentage toggles as [OledLayout] — see its own doc. */
 @Composable
 internal fun OledLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
     Column(
@@ -435,6 +488,10 @@ internal fun OledLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, 
         verticalAlignment = Alignment.CenterVertically,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+            CenteredIdentity(model, colors, size = 14.sp, weight = FontWeight.Medium)
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+        }
         Text(
             text = headline.primary,
             style = TextStyle(
@@ -450,6 +507,22 @@ internal fun OledLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, 
         }
         headline.secondary?.let {
             Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
+        }
+        if (model.showDate) {
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            TargetDateLine(model, colors)
+        }
+        if (model.showPercentageText) {
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            Text(
+                text = model.progress.percentText,
+                style = TextStyle(fontSize = PERCENT_SIZE, fontWeight = FontWeight.Medium, color = colors.accent, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
+        }
+        if (model.progress.isVisible) {
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_OLED_WIDE)
         }
     }
 }
@@ -492,12 +565,7 @@ internal fun GlassLayout(model: WidgetRenderModel, headline: WidgetHeadline, col
         }
         if (model.progress.isVisible) {
             Spacer(modifier = GlanceModifier.height(SPACING_LG))
-            LinearProgressIndicator(
-                progress = model.progress.fraction,
-                modifier = GlanceModifier.fillMaxWidth().height(4.dp),
-                color = colors.statusColor,
-                backgroundColor = colors.track,
-            )
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(4.dp), ringDp = SECONDARY_RING_DP_STANDARD)
         }
     }
 }
@@ -558,12 +626,7 @@ internal fun GlassLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline,
             }
             if (model.progress.isVisible) {
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
-                LinearProgressIndicator(
-                    progress = model.progress.fraction,
-                    modifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(4.dp),
-                    color = colors.statusColor,
-                    backgroundColor = colors.track,
-                )
+                ProgressGraphic(model, colors, barModifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(4.dp), ringDp = SECONDARY_RING_DP_WIDE)
             }
         }
     }
@@ -602,12 +665,7 @@ internal fun RoundedLayout(model: WidgetRenderModel, headline: WidgetHeadline, c
         }
         if (model.progress.isVisible) {
             Spacer(modifier = GlanceModifier.height(SPACING_SM))
-            LinearProgressIndicator(
-                progress = model.progress.fraction,
-                modifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT),
-                color = colors.accent,
-                backgroundColor = colors.track,
-            )
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_STANDARD, barColor = colors.accent)
         }
     }
 }
@@ -670,12 +728,7 @@ internal fun RoundedLayoutWide(model: WidgetRenderModel, headline: WidgetHeadlin
             }
             if (model.progress.isVisible) {
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
-                LinearProgressIndicator(
-                    progress = model.progress.fraction,
-                    modifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(PROGRESS_HEIGHT),
-                    color = colors.accent,
-                    backgroundColor = colors.track,
-                )
+                ProgressGraphic(model, colors, barModifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_WIDE, barColor = colors.accent)
             }
         }
     }
@@ -723,12 +776,7 @@ internal fun ModernLayout(model: WidgetRenderModel, headline: WidgetHeadline, co
         }
         if (model.progress.isVisible) {
             Spacer(modifier = GlanceModifier.height(SPACING_XS))
-            LinearProgressIndicator(
-                progress = model.progress.fraction,
-                modifier = GlanceModifier.fillMaxWidth().height(4.dp),
-                color = colors.accent,
-                backgroundColor = colors.track,
-            )
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(4.dp), ringDp = SECONDARY_RING_DP_STANDARD, barColor = colors.accent)
         }
     }
 }
@@ -804,12 +852,7 @@ internal fun ModernLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline
             }
             if (model.progress.isVisible) {
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
-                LinearProgressIndicator(
-                    progress = model.progress.fraction,
-                    modifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(4.dp),
-                    color = colors.accent,
-                    backgroundColor = colors.track,
-                )
+                ProgressGraphic(model, colors, barModifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(4.dp), ringDp = SECONDARY_RING_DP_WIDE, barColor = colors.accent)
             }
         }
     }
@@ -870,23 +913,54 @@ private fun TargetDateLine(model: WidgetRenderModel, colors: WidgetColors, size:
     Text(text = dateText, style = TextStyle(fontSize = size, color = colors.onSurfaceMuted), maxLines = 1)
 }
 
+/**
+ * The progress *graphic* slot every real style now shares — a bar, a ring, or nothing, chosen by
+ * `model.progress.style` alone, never by which [com.countflow.core.domain.model.WidgetStyle] is
+ * active. This is the one place that makes Style and Progress genuinely independent axes: every
+ * style already decided *whether* to reserve room for a graphic and where (its own
+ * `model.progress.isVisible` check at each call site, unchanged) — this decides *which* graphic
+ * fills that room, uniformly, instead of each style hand-rolling its own bar-only treatment (the
+ * bug a Samsung Galaxy A55 exposed: picking Ring never actually drew one outside the old
+ * dedicated Progress style).
+ *
+ * Deliberately a small, secondary graphic beside/beneath the headline the style already drew,
+ * never a replacement for it — unlike [ProgressLayout]'s ring, which *is* the headline's frame.
+ * Swallowing every style's own carefully-sized headline into a ring here would undo exactly what
+ * each style's own layout above already tuned (OLED's headline, for one real example, is the
+ * *largest* of any style specifically so nothing else competes with it — shrinking it to fit
+ * inside a ring would contradict that on the one style whose entire premise is that number being
+ * as big as possible). [testTag] lets a test tell bar and ring apart without a pixel comparison.
+ */
 @Composable
-private fun ProgressRow(model: WidgetRenderModel, colors: WidgetColors, modifier: GlanceModifier = GlanceModifier.fillMaxWidth()) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        LinearProgressIndicator(
+private fun ProgressGraphic(
+    model: WidgetRenderModel,
+    colors: WidgetColors,
+    barModifier: GlanceModifier,
+    ringDp: Float,
+    barColor: ColorProvider = colors.statusColor,
+) {
+    when (model.progress.style) {
+        ProgressStyle.LINEAR -> LinearProgressIndicator(
             progress = model.progress.fraction,
-            modifier = GlanceModifier.defaultWeight().height(PROGRESS_HEIGHT),
-            color = colors.statusColor,
+            modifier = barModifier.semantics { testTag = "progress-bar" },
+            color = barColor,
             backgroundColor = colors.track,
         )
-        if (model.showPercentageText) {
-            Text(
-                text = model.progress.percentText,
-                style = TextStyle(fontSize = PERCENT_SIZE, color = colors.onSurfaceMuted),
-                maxLines = 1,
-                modifier = GlanceModifier.padding(start = 6.dp),
-            )
+
+        ProgressStyle.CIRCULAR -> {
+            val context = LocalContext.current
+            Box(
+                modifier = GlanceModifier.size(ringDp.dp).semantics { testTag = "progress-ring" },
+                contentAlignment = Alignment.Center,
+            ) {
+                ProgressRingGraphic(model, colors, context, ringDp)
+            }
         }
+
+        // Unreachable in practice — every call site already guards with `model.progress.isVisible`
+        // (false exactly when style is NONE) — kept so this `when` stays exhaustive rather than
+        // relying on that external guarantee holding at every call site forever.
+        ProgressStyle.NONE -> Unit
     }
 }
 
@@ -958,29 +1032,8 @@ private fun ProgressRing(
     headlineSize: TextUnit,
     showHeadline: Boolean = true,
 ) {
-    val density = context.resources.displayMetrics.density
-    // Quantized to the nearest 8px, not the exact pixel value: SizeMode.Exact (D-053) reports a
-    // widget's genuine current size, which can vary by a handful of dp between otherwise-identical
-    // placements (density rounding, per-launcher grid quirks). Without quantizing, every such
-    // placement would mint its own CircularProgressRenderer cache entry for no visual difference —
-    // this keeps the cache's real key space close to "how many distinct percents are on screen
-    // right now," which is what its LRU capacity was actually budgeted against (D-047, D-054).
-    val ringPx = (((ringDp * density).toInt() / RING_PX_QUANTUM) * RING_PX_QUANTUM).coerceAtLeast(RING_PX_QUANTUM)
-    val strokePx = RING_STROKE_DP * density
-
     Box(modifier = GlanceModifier.size(ringDp.dp), contentAlignment = Alignment.Center) {
-        Image(
-            provider = CircularProgressRenderer.provider(
-                sizePx = ringPx,
-                percent = model.progress.percent,
-                trackArgb = colors.track.getColor(context).toArgb(),
-                progressArgb = colors.accent.getColor(context).toArgb(),
-                strokeWidthPx = strokePx,
-            ),
-            contentDescription = null,
-            modifier = GlanceModifier.size(ringDp.dp),
-            contentScale = ContentScale.Fit,
-        )
+        ProgressRingGraphic(model, colors, context, ringDp, modifier = GlanceModifier.size(ringDp.dp))
         if (showHeadline) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
@@ -994,6 +1047,43 @@ private fun ProgressRing(
             }
         }
     }
+}
+
+/**
+ * The bitmap ring itself, with no headline drawn over it — [ProgressRing] wraps this with an
+ * optional headline for [ProgressLayout]/[ProgressLayoutWide]; [ProgressGraphic] uses it bare, as
+ * a small decorative graphic beside a headline the caller already drew as plain text.
+ */
+@Composable
+private fun ProgressRingGraphic(
+    model: WidgetRenderModel,
+    colors: WidgetColors,
+    context: android.content.Context,
+    ringDp: Float,
+    modifier: GlanceModifier = GlanceModifier.size(ringDp.dp),
+) {
+    val density = context.resources.displayMetrics.density
+    // Quantized to the nearest 8px, not the exact pixel value: SizeMode.Exact (D-053) reports a
+    // widget's genuine current size, which can vary by a handful of dp between otherwise-identical
+    // placements (density rounding, per-launcher grid quirks). Without quantizing, every such
+    // placement would mint its own CircularProgressRenderer cache entry for no visual difference —
+    // this keeps the cache's real key space close to "how many distinct percents are on screen
+    // right now," which is what its LRU capacity was actually budgeted against (D-047, D-054).
+    val ringPx = (((ringDp * density).toInt() / RING_PX_QUANTUM) * RING_PX_QUANTUM).coerceAtLeast(RING_PX_QUANTUM)
+    val strokePx = RING_STROKE_DP * density
+
+    Image(
+        provider = CircularProgressRenderer.provider(
+            sizePx = ringPx,
+            percent = model.progress.percent,
+            trackArgb = colors.track.getColor(context).toArgb(),
+            progressArgb = colors.accent.getColor(context).toArgb(),
+            strokeWidthPx = strokePx,
+        ),
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = ContentScale.Fit,
+    )
 }
 
 /**
@@ -1080,3 +1170,31 @@ private const val MIN_RING_DP = 64f
 private const val MAX_RING_DP = 120f
 private const val RING_STROKE_DP = 8f
 private const val RING_PX_QUANTUM = 8
+
+// [ProgressGraphic]'s decorative ring, deliberately smaller than [MIN_RING_DP] — that constant
+// sizes a ring that *is* the headline's frame (ProgressLayout); this one sits beside a headline
+// every other style already drew at full size, so it has to share the card rather than dominate
+// it.
+//
+// Found on a real Samsung Galaxy A55: WIDE and STANDARD share the *same* real measured card
+// height (224dp — WidgetSizeClass.kt's own doc; only width differs), so a WIDE ring sized larger
+// than STANDARD's on the assumption that extra width means extra vertical room was wrong, and the
+// actual cause of real-device clipping. Two further splits, both from the same 224dp budget minus
+// WIDGET_PADDING (12dp × 2 = 24dp, leaving ~200dp) and each style's own already-tuned constants
+// above, not a blanket shrink:
+//   - Single-column layouts (Minimal, OLED) stack identity + headline + unit + secondary + this
+//     ring all in one column, unlike Material/Glass/Rounded/Modern's WIDE layouts, which are two
+//     columns — the ring's column there holds only a headline + unit, with identity/secondary/date
+//     in the *other* column. Single-column WIDE therefore needs a real fraction of its budget
+//     back from the ring; two-column WIDE has ample headroom to keep the larger ring.
+//   - OLED specifically uses the largest headline of any style (50sp/62sp, vs Minimal's 46sp/58sp)
+//     and, as of this fix, also draws identity/date/percentage Minimal does not — its own smaller
+//     constants leave adequate room for its realistic default case (title/emoji + a ring, no
+//     optional date/percentage) with margin; the single most crowded combination (every optional
+//     field on at once) was not separately re-measured on a real device, consistent with this
+//     project's standing practice of not claiming a confirmation that was not obtained.
+private const val SECONDARY_RING_DP_STANDARD = 56f
+private const val SECONDARY_RING_DP_OLED_STANDARD = 44f
+private const val SECONDARY_RING_DP_WIDE = 64f
+private const val SECONDARY_RING_DP_WIDE_SINGLE_COLUMN = 40f
+private const val SECONDARY_RING_DP_OLED_WIDE = 36f

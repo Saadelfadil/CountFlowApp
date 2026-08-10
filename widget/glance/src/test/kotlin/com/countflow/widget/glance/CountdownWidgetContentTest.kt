@@ -4,6 +4,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
 import androidx.glance.testing.unit.hasContentDescription
+import androidx.glance.testing.unit.hasTestTag
 import androidx.glance.testing.unit.hasText
 import androidx.glance.testing.unit.hasTextEqualTo
 import androidx.test.core.app.ApplicationProvider
@@ -63,7 +64,7 @@ class CountdownWidgetContentTest {
         label: CountdownLabel = CountdownLabel.InDays(12),
         showDaysValue: Boolean = true,
         showTitle: Boolean = true,
-        progressVisible: Boolean = true,
+        progressStyle: ProgressStyle = ProgressStyle.LINEAR,
         showPercentageText: Boolean = false,
         backgroundColorArgb: Int? = null,
         isHighContrast: Boolean = false,
@@ -82,11 +83,11 @@ class CountdownWidgetContentTest {
         showDaysValue = showDaysValue,
         label = label,
         progress = WidgetProgress(
-            style = if (progressVisible) ProgressStyle.LINEAR else ProgressStyle.NONE,
+            style = progressStyle,
             fraction = 0.4f,
             percent = 40,
             percentText = "40%",
-            isVisible = progressVisible,
+            isVisible = progressStyle != ProgressStyle.NONE,
         ),
         theme = WidgetTheme(
             style = style,
@@ -188,15 +189,19 @@ class CountdownWidgetContentTest {
     }
 
     @Test
-    fun `omits the percent text when progress itself is not visible, even if requested`() = runTest {
+    fun `still shows the percent text when progress itself is not visible, if requested`() = runTest {
+        // Percentage and the progress graphic are independent choices now (the Samsung Galaxy A55
+        // finding this fixes): a user can ask for "40%" as plain text with no bar or ring drawn.
         runGlanceAppWidgetUnitTest {
             setAppWidgetSize(STANDARD_SIZE)
             setContext(ApplicationProvider.getApplicationContext())
             provideComposable {
-                CountdownWidgetContent(model(progressVisible = false, showPercentageText = true))
+                CountdownWidgetContent(model(progressStyle = ProgressStyle.NONE, showPercentageText = true))
             }
 
-            onNode(hasTextEqualTo("40%")).assertDoesNotExist()
+            onNode(hasTextEqualTo("40%")).assertExists()
+            onNode(hasTestTag("progress-bar")).assertDoesNotExist()
+            onNode(hasTestTag("progress-ring")).assertDoesNotExist()
         }
     }
 
@@ -281,7 +286,7 @@ class CountdownWidgetContentTest {
     // ── Every style renders its headline without crashing, and actually differs in what it shows ──
 
     @Test
-    fun `minimal never draws a progress bar even when progress is visible`() = runTest {
+    fun `minimal never draws percentage text, even when progress is visible and requested`() = runTest {
         runGlanceAppWidgetUnitTest {
             setAppWidgetSize(STANDARD_SIZE)
             setContext(ApplicationProvider.getApplicationContext())
@@ -289,20 +294,163 @@ class CountdownWidgetContentTest {
                 CountdownWidgetContent(model(style = WidgetStyle.MINIMAL, showPercentageText = true))
             }
 
-            // Minimal's whole premise is one thing to look at; percent text is never drawn here
-            // regardless of the binding's own toggle.
+            // Minimal has no percentage-text slot at all — unrelated to, and unchanged by, Style
+            // and Progress becoming independent settings: Minimal still draws its own bar/ring
+            // like every other style now does (see the Style × Progress sweep below), it just
+            // never adds a number next to it.
             onNode(hasTextEqualTo("40%")).assertDoesNotExist()
         }
     }
 
+    // ── OLED identity/date/percentage (second Samsung Galaxy A55 physical-device finding): OLED
+    // used to never draw its identity row at all, regardless of showTitle/showEmoji — not a
+    // contrast defect (its palette was already the highest-contrast one any style resolves), a
+    // missing render path. Title, emoji, target date, and percentage now all follow their own
+    // toggle for OLED exactly like every other style already does. ──
+
     @Test
-    fun `oled omits the identity row entirely`() = runTest {
+    fun `oled draws the title when enabled`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setAppWidgetSize(STANDARD_SIZE)
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable { CountdownWidgetContent(model(style = WidgetStyle.OLED, showTitle = true)) }
+
+            onNode(hasText("Trip to Kyoto")).assertExists()
+        }
+    }
+
+    @Test
+    fun `oled draws the emoji when enabled`() = runTest {
         runGlanceAppWidgetUnitTest {
             setAppWidgetSize(STANDARD_SIZE)
             setContext(ApplicationProvider.getApplicationContext())
             provideComposable { CountdownWidgetContent(model(style = WidgetStyle.OLED)) }
 
+            // model() always builds showEmoji = true — every other style's own tests already rely
+            // on that same fixed value rather than each test threading its own emoji flag through.
+            onNode(hasText("🌸")).assertExists()
+        }
+    }
+
+    @Test
+    fun `oled omits the title when disabled`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setAppWidgetSize(STANDARD_SIZE)
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable { CountdownWidgetContent(model(style = WidgetStyle.OLED, showTitle = false)) }
+
             onNode(hasText("Trip to Kyoto")).assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun `oled draws the target date and percentage when both are enabled`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setAppWidgetSize(STANDARD_SIZE)
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable {
+                CountdownWidgetContent(model(style = WidgetStyle.OLED, showDate = true, showPercentageText = true))
+            }
+
+            onNode(hasText("Jun")).assertExists()
+            onNode(hasTextEqualTo("40%")).assertExists()
+        }
+    }
+
+    @Test
+    fun `oled at wide still draws title, date, and percentage when enabled, alongside a ring that fits`() = runTest {
+        // The exact combination the Samsung Galaxy A55 exposed: OLED, Ring progress, at 4x2 — now
+        // with title/date/percentage also respected rather than silently dropped. This cannot
+        // assert the ring's real on-device pixel bounds (Robolectric has no such measurement, see
+        // the sweep test below), only that every toggle still renders correctly alongside it.
+        runGlanceAppWidgetUnitTest {
+            setAppWidgetSize(WIDE_SIZE)
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable {
+                CountdownWidgetContent(
+                    model(
+                        style = WidgetStyle.OLED,
+                        progressStyle = ProgressStyle.CIRCULAR,
+                        showDate = true,
+                        showPercentageText = true,
+                    ),
+                )
+            }
+
+            onNode(hasText("Trip to Kyoto")).assertExists()
+            onNode(hasText("Jun")).assertExists()
+            onNode(hasTextEqualTo("40%")).assertExists()
+            onNode(hasTestTag("progress-ring")).assertExists()
+        }
+    }
+
+    // ── Style × Progress independence (Samsung Galaxy A55 physical-device finding): every
+    // selectable style must draw None/Bar/Ring truthfully off its own progress.style, never a
+    // style-specific special case. Sweeps WidgetStyle.selectable (not .entries — legacy PROGRESS
+    // is covered separately, below) × every ProgressStyle, which subsumes the brief's own named
+    // spot checks (OLED+Ring, Modern+Ring, Glass+Ring, Material+Ring all appear as one iteration
+    // each) rather than duplicating them as four near-identical tests. ──
+
+    @Test
+    fun `every selectable style draws none, bar, or ring truthfully, never substituting one for another`() = runTest {
+        WidgetStyle.selectable.forEach { style ->
+            ProgressStyle.entries.forEach { progressStyle ->
+                runGlanceAppWidgetUnitTest {
+                    setAppWidgetSize(STANDARD_SIZE)
+                    setContext(ApplicationProvider.getApplicationContext())
+                    provideComposable { CountdownWidgetContent(model(style = style, progressStyle = progressStyle)) }
+
+                    when (progressStyle) {
+                        ProgressStyle.NONE -> {
+                            onNode(hasTestTag("progress-bar")).assertDoesNotExist()
+                            onNode(hasTestTag("progress-ring")).assertDoesNotExist()
+                        }
+                        ProgressStyle.LINEAR -> {
+                            onNode(hasTestTag("progress-bar")).assertExists()
+                            onNode(hasTestTag("progress-ring")).assertDoesNotExist()
+                        }
+                        ProgressStyle.CIRCULAR -> {
+                            // If Ring is selected, a Bar must never render silently in its place —
+                            // the exact bug the Samsung Galaxy A55 exposed.
+                            onNode(hasTestTag("progress-ring")).assertExists()
+                            onNode(hasTestTag("progress-bar")).assertDoesNotExist()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Ring clipping at 4x2 (Samsung Galaxy A55 physical-device finding): Minimal and OLED are
+    // the single-column WIDE layouts, stacking identity + headline + unit + secondary + the ring
+    // all in one column, unlike Material/Glass/Rounded/Modern's two-column WIDE layouts — the ones
+    // actually at risk of the ring being pushed past the card's real (measured, not assumed) 224dp
+    // height. Robolectric cannot measure real pixel bounds or detect clipping directly (there is
+    // no such assertion in Glance's unit-testing API), so this only confirms the fixed composition
+    // still renders correctly end to end at WIDE with every optional field on — the smaller ring
+    // diameters themselves are justified by arithmetic against each layout's own real constants,
+    // documented alongside SECONDARY_RING_DP_WIDE_SINGLE_COLUMN/SECONDARY_RING_DP_OLED_WIDE in
+    // CountdownWidgetLayouts.kt. ──
+
+    @Test
+    fun `minimal and oled still render a full composition at wide with ring progress and every optional field on`() = runTest {
+        // Minimal has no target-date/percentage slot at all (unchanged, out of scope here) — only
+        // the fields common to both are asserted; OLED's own date/percentage rendering has its own
+        // dedicated test above.
+        listOf(WidgetStyle.MINIMAL, WidgetStyle.OLED).forEach { style ->
+            runGlanceAppWidgetUnitTest {
+                setAppWidgetSize(WIDE_SIZE)
+                setContext(ApplicationProvider.getApplicationContext())
+                provideComposable {
+                    CountdownWidgetContent(
+                        model(style = style, progressStyle = ProgressStyle.CIRCULAR, label = CountdownLabel.NextWeek),
+                    )
+                }
+
+                onNode(hasText("Next week")).assertExists()
+                onNode(hasTestTag("progress-ring")).assertExists()
+                onNode(hasTestTag("progress-bar")).assertDoesNotExist()
+            }
         }
     }
 

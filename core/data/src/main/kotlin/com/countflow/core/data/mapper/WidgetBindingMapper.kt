@@ -2,6 +2,7 @@ package com.countflow.core.data.mapper
 
 import com.countflow.core.database.entity.WidgetBindingEntity
 import com.countflow.core.database.entity.WidgetBindingWithEvent
+import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.AppWidgetId
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.WidgetBinding
@@ -12,6 +13,14 @@ internal fun WidgetBindingEntity.toDomain(): WidgetBinding = WidgetBinding(
     eventId = EventId(eventId),
     widgetStyleOverride = widgetStyleOverride,
     progressStyleOverride = progressStyleOverride,
+    // hasAccentOverride is the "override, or inherit" state accentArgbOverride alone cannot carry
+    // (its own null means the override itself is Dynamic, once an override exists at all) — see
+    // WidgetBindingEntity's own KDoc.
+    accentColorOverride = if (hasAccentOverride) {
+        accentArgbOverride?.let(AccentColor::Fixed) ?: AccentColor.Dynamic
+    } else {
+        null
+    },
     showTitle = showTitle,
     showEmoji = showEmoji,
     showTargetDate = showTargetDate,
@@ -24,6 +33,8 @@ internal fun WidgetBinding.toEntity(): WidgetBindingEntity = WidgetBindingEntity
     eventId = eventId.value,
     widgetStyleOverride = widgetStyleOverride,
     progressStyleOverride = progressStyleOverride,
+    hasAccentOverride = accentColorOverride != null,
+    accentArgbOverride = (accentColorOverride as? AccentColor.Fixed)?.argb,
     showTitle = showTitle,
     showEmoji = showEmoji,
     showTargetDate = showTargetDate,

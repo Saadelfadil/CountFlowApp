@@ -24,7 +24,18 @@ enum class WidgetStyle(val isPremium: Boolean) {
     /** True black, for OLED always-on displays. */
     OLED(isPremium = false),
 
-    /** Progress-led: the bar or ring is the primary element. */
+    /**
+     * Progress-led: the bar or ring is the primary element.
+     *
+     * No longer offered as a choice — [selectable] excludes it. A style and its progress
+     * visualization are now independent settings (any [selectable] style combines with any
+     * [ProgressStyle]), which made a dedicated "this style's whole identity is its progress
+     * graphic" style redundant with just picking [ProgressStyle.CIRCULAR]. Kept as a real enum
+     * constant, not deleted, purely so a `WidgetStyle` persisted before this change (Room stores
+     * enums by name, never by ordinal — see `Converters.kt`) still resolves to a real value
+     * instead of an unknown-name fallback; [com.countflow.widget.engine.mapper.WidgetRenderMapper]
+     * is the one place that reinterprets it for rendering.
+     */
     PROGRESS(isPremium = false),
 
     /** Heavily rounded card. */
@@ -37,6 +48,14 @@ enum class WidgetStyle(val isPremium: Boolean) {
     companion object {
         /** The style applied when the user does not choose one. */
         val Default: WidgetStyle = MINIMAL
+
+        /**
+         * Styles a user can actually choose. Excludes [PROGRESS] — see its own KDoc. The
+         * configuration screen's Style picker iterates this, never [entries] directly, so
+         * [PROGRESS] can never be newly selected again while still resolving safely wherever it
+         * was chosen before this list existed.
+         */
+        val selectable: List<WidgetStyle> get() = entries.filter { it != PROGRESS }
 
         /** Styles available without a premium entitlement. */
         val free: List<WidgetStyle> get() = entries.filter { !it.isPremium }

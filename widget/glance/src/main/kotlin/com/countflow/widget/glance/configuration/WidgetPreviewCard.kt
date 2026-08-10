@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.countflow.core.designsystem.format.CountdownLabelFormatter
+import com.countflow.core.domain.model.ProgressStyle
 import com.countflow.core.domain.model.WidgetStyle
 import com.countflow.widget.engine.model.WidgetRenderModel
 import com.countflow.widget.glance.WidgetSizeClass
@@ -37,8 +38,10 @@ import com.countflow.widget.glance.resolveHeadline
  * per-size layouts. It reuses the exact same content-hierarchy decision
  * ([com.countflow.widget.glance.resolveHeadline]) and the exact same resolved [WidgetRenderModel]
  * a real render would use — nothing about *what* to show is duplicated or re-derived — but *how*
- * it is drawn is a single, simplified card that varies alignment, background, corner radius, and
- * whether progress is a ring or a bar by style, rather than 21 fully independent compositions.
+ * it is drawn is a single, simplified card that varies alignment, background, and corner radius
+ * by style, rather than 21 fully independent compositions — whether progress draws as a ring or a
+ * bar follows [model]'s own [com.countflow.widget.engine.model.WidgetProgress.style], independent
+ * of which style is active, the same rule the real widget's `ProgressGraphic` follows.
  * Close enough to make style/toggle/color choices meaningful before saving; not a substitute for
  * `docs/RESPONSIVE_WIDGET_REVIEW.md`'s real on-device captures of the actual widget.
  *
@@ -112,26 +115,18 @@ internal fun WidgetPreviewCard(model: WidgetRenderModel, sizeClass: WidgetSizeCl
                     }
                 }
 
-                if (!isCompact && theme.style == WidgetStyle.PROGRESS && model.progress.isVisible && headline.isNumeric) {
-                    Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(
-                            progress = { model.progress.fraction },
-                            modifier = Modifier.size(72.dp),
-                            color = accent,
-                            trackColor = onSurfaceMuted.copy(alpha = 0.3f),
-                            strokeWidth = 6.dp,
-                        )
-                        Text(headline.primary, color = statusColor, style = MaterialTheme.typography.titleLarge)
-                    }
-                } else {
-                    Text(
-                        text = headline.primary,
-                        color = statusColor,
-                        style = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
-                        maxLines = 1,
-                        textAlign = if (isEditorial) TextAlign.Start else TextAlign.Center,
-                    )
-                }
+                // Always plain text, never a ring-with-headline-inside: unlike ProgressGraphic
+                // below, this headline is the same one every style already draws regardless of
+                // progress. Style and Progress are independent settings (see
+                // WidgetConfigurationActivity's Style row), so no style-specific "swallow the
+                // headline into a ring" case exists to special-case here any more.
+                Text(
+                    text = headline.primary,
+                    color = statusColor,
+                    style = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                    maxLines = 1,
+                    textAlign = if (isEditorial) TextAlign.Start else TextAlign.Center,
+                )
 
                 headline.unit?.let {
                     Text(it, color = onSurfaceMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
@@ -144,16 +139,36 @@ internal fun WidgetPreviewCard(model: WidgetRenderModel, sizeClass: WidgetSizeCl
                         Text(it, color = onSurfaceMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
                     }
 
-                    if (model.progress.isVisible && theme.style != WidgetStyle.PROGRESS) {
-                        LinearProgressIndicator(
-                            progress = { model.progress.fraction },
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            color = statusColor,
-                            trackColor = onSurfaceMuted.copy(alpha = 0.3f),
-                        )
-                        if (model.showPercentageText) {
-                            Text(model.progress.percentText, color = onSurfaceMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    if (model.progress.isVisible) {
+                        when (model.progress.style) {
+                            ProgressStyle.LINEAR -> LinearProgressIndicator(
+                                progress = { model.progress.fraction },
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                color = statusColor,
+                                trackColor = onSurfaceMuted.copy(alpha = 0.3f),
+                            )
+                            // A small decorative ring beside the headline already drawn above, the
+                            // same "graphic and headline stay separate" rule the real widget's own
+                            // ProgressGraphic follows — never a ring the headline sits inside.
+                            ProgressStyle.CIRCULAR -> Box(
+                                modifier = Modifier.padding(top = 4.dp).size(PREVIEW_RING_SIZE),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    progress = { model.progress.fraction },
+                                    modifier = Modifier.size(PREVIEW_RING_SIZE),
+                                    color = accent,
+                                    trackColor = onSurfaceMuted.copy(alpha = 0.3f),
+                                    strokeWidth = 4.dp,
+                                )
+                            }
+                            ProgressStyle.NONE -> Unit // unreachable: guarded by isVisible above
                         }
+                    }
+                    // Independent of the graphic above — a user can ask for "42%" as plain text
+                    // with no bar or ring drawn at all (ProgressStyle.NONE).
+                    if (model.showPercentageText) {
+                        Text(model.progress.percentText, color = onSurfaceMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
             }
@@ -179,3 +194,7 @@ private fun WidgetSizeClass.previewAspectRatio(): Float = when (this) {
     WidgetSizeClass.STANDARD -> 172f / 224f
     WidgetSizeClass.WIDE -> 320f / 224f
 }
+
+/** The decorative ring's fixed diameter — deliberately smaller than the old ring-with-headline
+ * treatment (72dp) this preview no longer draws, since the headline stays separate now. */
+private val PREVIEW_RING_SIZE = 48.dp

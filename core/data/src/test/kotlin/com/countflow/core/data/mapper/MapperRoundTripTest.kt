@@ -150,12 +150,13 @@ class MapperRoundTripTest {
     // ---------------------------------------------------------------- bindings
 
     @Test
-    fun `a widget binding with overrides survives a round trip`() {
+    fun `a widget binding with overrides including a fixed accent survives a round trip`() {
         val original = WidgetBinding(
             appWidgetId = AppWidgetId(42),
             eventId = EventId("event-1"),
             widgetStyleOverride = WidgetStyle.OLED,
             progressStyleOverride = ProgressStyle.NONE,
+            accentColorOverride = AccentColor.Fixed(0xFF00897B.toInt()),
             showTitle = false,
             showEmoji = true,
             showTargetDate = true,
@@ -164,6 +165,37 @@ class MapperRoundTripTest {
         )
 
         assertThat(original.toEntity().toDomain()).isEqualTo(original)
+    }
+
+    @Test
+    fun `a widget binding overriding accent to Dynamic survives a round trip distinctly from no override`() {
+        // The trap this asymmetric encoding creates: has_accent_override=true with a null
+        // accent_argb_override means "the override itself is Dynamic," not "no override" — those
+        // two states share the same accent_argb_override value (null) and are only told apart by
+        // has_accent_override. A binding whose event default is a Fixed color, explicitly
+        // overridden back to Dynamic per-widget, is exactly the case that would silently collapse
+        // into "no override" if that flag were dropped or ignored.
+        val overriddenToDynamic = WidgetBinding(
+            appWidgetId = AppWidgetId(43),
+            eventId = EventId("event-1"),
+            widgetStyleOverride = null,
+            progressStyleOverride = null,
+            accentColorOverride = AccentColor.Dynamic,
+            showTitle = true,
+            showEmoji = true,
+            showTargetDate = false,
+            showPercentage = false,
+            createdAt = Instant.parse("2026-02-02T10:00:00Z"),
+        )
+        val noOverride = overriddenToDynamic.copy(appWidgetId = AppWidgetId(44), accentColorOverride = null)
+
+        val restoredOverridden = overriddenToDynamic.toEntity().toDomain()
+        val restoredNoOverride = noOverride.toEntity().toDomain()
+
+        assertThat(restoredOverridden.accentColorOverride).isEqualTo(AccentColor.Dynamic)
+        assertThat(restoredNoOverride.accentColorOverride).isNull()
+        assertThat(restoredOverridden).isEqualTo(overriddenToDynamic)
+        assertThat(restoredNoOverride).isEqualTo(noOverride)
     }
 
     @Test
@@ -181,6 +213,7 @@ class MapperRoundTripTest {
         assertThat(restored).isEqualTo(original)
         assertThat(restored.widgetStyleOverride).isNull()
         assertThat(restored.progressStyleOverride).isNull()
+        assertThat(restored.accentColorOverride).isNull()
     }
 
     // ---------------------------------------------------------------- reminders

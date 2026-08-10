@@ -19,11 +19,15 @@ import androidx.glance.ImageProvider
  * one ring diameter ever existed (`WidgetSizeClass.STANDARD`'s, ~200px at typical density, `200×
  * 200×4 ≈ 160KB` as `ARGB_8888`). [WidgetSizeClass.WIDE]'s ring (`CountdownWidgetLayouts.kt`'s
  * `ProgressLayoutWide`) is genuinely larger — sized against half the card's width instead of the
- * whole card's shorter side — at ~258px, `258×258×4 ≈ 266KB`. Worst case with [MAX_CACHED] at
- * [MAX_CACHED] entries, pessimistically assuming *every* cached entry is the larger WIDE size, is
- * `266KB × 40 ≈ 10.6MB` — still comfortably under budget, with real headroom left for everything
- * else the launcher itself needs to keep resident. [WidgetSizeClass.COMPACT] never reaches this
- * class at all (`ProgressLayoutCompact` falls back to plain text, D-054) — there is no
+ * whole card's shorter side — at ~258px, `258×258×4 ≈ 266KB`, the largest diameter this cache
+ * ever holds. Every style's own smaller decorative ring (`ProgressGraphic`'s fixed 56dp/64dp,
+ * added once Style and Progress became independent settings) stays well under that same worst
+ * case rather than adding to it. Worst case with [MAX_CACHED] at [MAX_CACHED] entries,
+ * pessimistically assuming *every* cached entry is the largest WIDE size regardless of how many
+ * distinct diameters are actually in play, is `266KB × 40 ≈ 10.6MB` — still comfortably under
+ * budget, with real headroom left for everything else the launcher itself needs to keep resident.
+ * [WidgetSizeClass.COMPACT] never reaches this class at all (`ProgressLayoutCompact` falls back
+ * to plain text, D-054, and no other Compact layout draws progress either) — there is no
  * ring-below-[MIN_RING_DP] case to budget for.
  *
  * ### Quantization

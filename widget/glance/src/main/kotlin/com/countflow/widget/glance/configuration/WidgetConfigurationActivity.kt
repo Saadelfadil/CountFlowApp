@@ -184,7 +184,7 @@ private fun WidgetConfigurationContent(
     onShowEmojiChange: (Boolean) -> Unit,
     onShowTargetDateChange: (Boolean) -> Unit,
     onShowPercentageChange: (Boolean) -> Unit,
-    onAccentColorChange: (AccentColor?) -> Unit,
+    onAccentColorChange: (AccentColor) -> Unit,
     onConfirm: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
@@ -281,7 +281,7 @@ private fun CustomizeStep(
     onShowEmojiChange: (Boolean) -> Unit,
     onShowTargetDateChange: (Boolean) -> Unit,
     onShowPercentageChange: (Boolean) -> Unit,
-    onAccentColorChange: (AccentColor?) -> Unit,
+    onAccentColorChange: (AccentColor) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Vertically scrollable (found on a Samsung Galaxy A55 / One UI: this step's controls run
@@ -330,7 +330,7 @@ private fun CustomizeStep(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            WidgetStyle.entries.forEach { style ->
+            WidgetStyle.selectable.forEach { style ->
                 WidgetStyleThumbnail(
                     style = style,
                     selected = uiState.widgetStyle == style,
@@ -355,7 +355,7 @@ private fun CustomizeStep(
 
         Text("Accent color", style = MaterialTheme.typography.titleSmall)
         AccentColorPicker(
-            selected = uiState.accentColorOverride ?: AccentColor.Dynamic,
+            selected = uiState.accentColor,
             onSelect = onAccentColorChange,
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         )

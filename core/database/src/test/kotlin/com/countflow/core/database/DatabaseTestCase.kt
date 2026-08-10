@@ -81,6 +81,8 @@ internal abstract class DatabaseTestCase {
         eventId = eventId,
         widgetStyleOverride = null,
         progressStyleOverride = null,
+        hasAccentOverride = false,
+        accentArgbOverride = null,
         showTitle = true,
         showEmoji = true,
         showTargetDate = false,

@@ -83,11 +83,11 @@ class WidgetConfigurationViewModel @Inject constructor(
                 selectedEventId = eventId,
                 widgetStyle = existing?.widgetStyleOverride ?: event.defaultWidgetStyle,
                 progressStyle = existing?.progressStyleOverride ?: event.defaultProgressStyle,
+                accentColor = existing?.accentColorOverride ?: event.accentColor,
                 showTitle = existing?.showTitle ?: true,
                 showEmoji = existing?.showEmoji ?: true,
                 showTargetDate = existing?.showTargetDate ?: false,
                 showPercentage = existing?.showPercentage ?: false,
-                accentColorOverride = null,
             )
         }
         refreshPreview(event)
@@ -112,8 +112,8 @@ class WidgetConfigurationViewModel @Inject constructor(
 
     fun onShowPercentageChange(show: Boolean) = updateAndRefresh { it.copy(showPercentage = show) }
 
-    fun onAccentColorChange(accentColor: AccentColor?) =
-        updateAndRefresh { it.copy(accentColorOverride = accentColor) }
+    fun onAccentColorChange(accentColor: AccentColor) =
+        updateAndRefresh { it.copy(accentColor = accentColor) }
 
     /** Writes the binding step two describes, then finishes — the one place anything is saved. */
     fun onConfirm() {
@@ -131,6 +131,7 @@ class WidgetConfigurationViewModel @Inject constructor(
                 eventId = eventId,
                 widgetStyleOverride = state.widgetStyle.takeIf { it != event.defaultWidgetStyle },
                 progressStyleOverride = state.progressStyle.takeIf { it != event.defaultProgressStyle },
+                accentColorOverride = state.accentColor.takeIf { it != event.accentColor },
                 showTitle = state.showTitle,
                 showEmoji = state.showEmoji,
                 showTargetDate = state.showTargetDate,
@@ -149,22 +150,34 @@ class WidgetConfigurationViewModel @Inject constructor(
         refreshPreview(event)
     }
 
-    /** Recomputes [WidgetConfigurationUiState.previewModel] from the current in-memory selections. */
+    /**
+     * Recomputes [WidgetConfigurationUiState.previewModel] from the current in-memory selections.
+     *
+     * Threads every selection through [previewBinding], never through a faked copy of [event] —
+     * this is the exact pipeline [onConfirm] writes for real, down to
+     * [WidgetRenderModelProvider.preview] calling the same
+     * [com.countflow.widget.engine.mapper.WidgetRenderMapper] a real render uses, so there is no
+     * separate "what the preview shows" logic that could drift from "what Save persists." An
+     * earlier version faked the accent specifically by copying it onto [event]
+     * (`event.copy(accentColor = it)`) rather than the binding — accurate for the preview alone,
+     * but the reason Save had nothing to actually write: no field carried the choice anywhere
+     * [onConfirm] could reach it.
+     */
     private fun refreshPreview(event: Event) {
         val state = _uiState.value
-        val previewEvent = state.accentColorOverride?.let { event.copy(accentColor = it) } ?: event
         val previewBinding = WidgetBinding(
             appWidgetId = appWidgetId ?: AppWidgetId(AppWidgetId.INVALID),
             eventId = event.id,
             widgetStyleOverride = state.widgetStyle.takeIf { it != event.defaultWidgetStyle },
             progressStyleOverride = state.progressStyle.takeIf { it != event.defaultProgressStyle },
+            accentColorOverride = state.accentColor.takeIf { it != event.accentColor },
             showTitle = state.showTitle,
             showEmoji = state.showEmoji,
             showTargetDate = state.showTargetDate,
             showPercentage = state.showPercentage,
             createdAt = clock.instant(),
         )
-        val model = renderModelProvider.preview(previewEvent, previewBinding)
+        val model = renderModelProvider.preview(event, previewBinding)
         _uiState.update { it.copy(previewModel = model) }
     }
 }

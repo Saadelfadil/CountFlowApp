@@ -49,6 +49,20 @@ data class WidgetBindingEntity(
     @ColumnInfo(name = "progress_style_override")
     val progressStyleOverride: ProgressStyle?,
 
+    /**
+     * Whether this widget overrides the event's own accent at all — a third state
+     * [accentArgbOverride] alone cannot carry, since that column's own null already means
+     * "override is Dynamic" once [hasAccentOverride] is true. Existing rows migrate to `0`/`NULL`
+     * (no override), matching every binding's real behavior before this column existed — every
+     * widget inherited the event's accent unconditionally.
+     */
+    @ColumnInfo(name = "has_accent_override", defaultValue = "0")
+    val hasAccentOverride: Boolean,
+
+    /** Packed 0xAARRGGBB, meaningful only when [hasAccentOverride] is true; null there means the override itself is Dynamic. */
+    @ColumnInfo(name = "accent_argb_override")
+    val accentArgbOverride: Int?,
+
     @ColumnInfo(name = "show_title")
     val showTitle: Boolean,
 

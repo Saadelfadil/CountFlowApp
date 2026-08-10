@@ -27,9 +27,11 @@ import com.countflow.widget.engine.model.WidgetRenderModel
  * @property showEmoji whether the event emoji will be drawn.
  * @property showTargetDate whether the target date will be drawn.
  * @property showPercentage whether the progress percentage will be drawn alongside the bar.
- * @property accentColorOverride a per-widget accent, overriding the event's own default; null
- *   inherits it — the same override-else-default precedence [com.countflow.core.domain.model.WidgetBinding]
- *   already applies to style and progress style (D-013).
+ * @property accentColor the accent being customized — always a resolved value (this widget's own
+ *   override if it has one, otherwise the event's), the same shape [widgetStyle]/[progressStyle]
+ *   already use, so [onConfirm][com.countflow.widget.glance.configuration.WidgetConfigurationViewModel.onConfirm]
+ *   derives the same "only write an override when it actually differs" precedence
+ *   [com.countflow.core.domain.model.WidgetBinding] applies to style and progress style (D-013).
  * @property previewModel the render model step two's live preview draws — computed by
  *   [com.countflow.widget.engine.provider.WidgetRenderModelProvider.preview] from the selections
  *   above, the same pipeline a real widget render uses, never faked.
@@ -49,7 +51,7 @@ data class WidgetConfigurationUiState(
     val showEmoji: Boolean = true,
     val showTargetDate: Boolean = false,
     val showPercentage: Boolean = false,
-    val accentColorOverride: AccentColor? = null,
+    val accentColor: AccentColor = AccentColor.Default,
     val previewModel: WidgetRenderModel? = null,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,

@@ -55,7 +55,7 @@ abstract class CountFlowDatabase : RoomDatabase() {
 
     companion object {
         /** Current schema version. Bump this and add a migration; never reset it. */
-        const val VERSION: Int = 2
+        const val VERSION: Int = 3
 
         /** On-disk filename. */
         const val NAME: String = "countflow.db"
