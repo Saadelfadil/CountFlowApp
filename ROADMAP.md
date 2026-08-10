@@ -298,6 +298,29 @@ a flawless yes rather than left unsaid.
 different events at once, and everything else Milestone 5 still owns. Session 9 stopped at the
 brief's explicit instruction and awaits approval before continuing.
 
+### Milestone 5A follow-up — Physical-device QA fixes + Style/Progress thumbnail redesign · Completed (Session 16)
+
+The first real physical-device testing this project has had (Samsung Galaxy A55, One UI) found two
+genuine bugs in the Customize Widget screen, both fixed and verified on the `Pixel_9` emulator:
+**BUG-R016** (no vertical scroll, stranding controls below the fold — fixed with
+`Modifier.verticalScroll`) and **BUG-R017** (the 4×2 live preview clipped its progress percentage —
+fixed by making the preview card's height a minimum via `BoxWithConstraints`/`heightIn` instead of
+a hard `aspectRatio()`). Neither changes architecture; both recorded resolved in `KNOWN_ISSUES.md`.
+
+Separately, a product clarification distinguished two previously conflated ideas on that same
+screen: the one real "what will my widget look like" preview (`WidgetPreviewCard`, untouched)
+versus the Style/Progress selectors, redesigned from plain text `FilterChip`s into visual
+"design language" thumbnails (`WidgetStyleThumbnail`/`ProgressStyleThumbnail`) that answer "what
+does this style look like" using abstract content grounded in each style's real
+`docs/WIDGET_DESIGN_GUIDE.md` differentiator — never the user's real event data, enforced
+structurally by the thumbnails' own function signatures having no event/model parameter at all
+(D-074). Tapping a thumbnail selects it and immediately re-renders the one real preview via the
+pre-existing style/progress-change pipeline, confirmed on-device for five of the ten options.
+
+**Not delivered:** live on-device confirmation of the real 4×2 (WIDE) widget specifically — the
+direct-activity-launch technique used for all of this session's on-device verification has no real
+`AppWidgetHost` behind it, so it always defaults to 2×2. Same standing gap as TD-016/TD-017.
+
 ### Milestone 5B — Responsive widget system (2×1 / 2×2 / 4×2) · Completed (Session 10)
 
 The mission: turn the 2×2 visual language Session 9 delivered into one coherent responsive system

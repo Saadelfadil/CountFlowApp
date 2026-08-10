@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | Final MVP Release Audit (Session 15) complete: **MVP NOT READY** for public submission — two owner-action blockers (signing key, privacy-policy URL), no code-level blocker found |
-| **Last session** | Session 15 — 2026-08-10 |
-| **Build status** | ✅ `assembleDebug`, `assembleRelease` (unsigned), `bundleRelease` (unsigned) all succeed |
+| **Current milestone** | Milestone 5A follow-up (Session 16) complete: real physical-device QA fixes + Style/Progress selectors redesigned as visual design samples. Release verdict unchanged from Session 15: **MVP NOT READY** — two owner-action blockers (signing key, privacy-policy URL), no code-level blocker found |
+| **Last session** | Session 16 — 2026-08-10 |
+| **Build status** | ✅ `assembleDebug` succeeds; `assembleRelease`/`bundleRelease` unchanged (unsigned) from Session 15 |
 | **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9, all documented) |
-| **Tests** | 340 passing, 0 failing (unchanged from Session 14 — this session wrote no production code). `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 15: a full, critical MVP release audit — feature freeze, no new product code.** Verified: release build succeeds and leaks no debug-only code; every permission and exported component is justified; zero network requests exist anywhere in the codebase; zero analytics/ads SDK; Room migration/FK/no-destructive-fallback all correct; the reminder pipeline was re-verified live end-to-end (created, permission granted, alarm scheduled, fired, correct "Expired" content, tap-to-open, no duplicate); a clean install through first event creation has no dead ends. Found and classified real gaps rather than hiding them to reach "MVP COMPLETE": two release **BLOCKERs** (no signing key, no privacy-policy URL — both owner actions), and HIGH findings on cold-start time (~2.5–2.8 s measured on a debug build, real number, needs a release-build re-measurement), 4×2 WIDE still unconfirmed on a real launcher after every session that has attempted it, and this session's own widget-picker automation not succeeding in placing a fresh widget. Full findings: `docs/MVP_RELEASE_AUDIT.md`; factual privacy basis: `docs/PRIVACY_DATA_INVENTORY.md`; practical follow-up: `docs/RELEASE_CHECKLIST.md` |
-| **Overall progress** | ~66% |
+| **Tests** | 340 passing, 0 failing (unchanged from Session 15 — this session's changes were UI-layer only). `:core:domain` 97.0% line coverage, gated at 95% |
+| **Runtime** | ✅ **Session 16: the first real physical-device testing this project has had (Samsung Galaxy A55, One UI), plus a product-clarification feature.** Found and fixed two genuine real-device bugs on the Customize Widget screen: no vertical scroll, stranding controls below the fold (BUG-R016), and a clipped progress percentage in the 4×2 live preview (BUG-R017) — both fixed, verified on the `Pixel_9` emulator, and recorded resolved in `KNOWN_ISSUES.md`. Separately, the Style/Progress selectors on that same screen were redesigned from plain text chips into visual "design language" thumbnails (`WidgetStyleThumbnail`/`ProgressStyleThumbnail`) that show each style's real defining trait using abstract content — never the user's real event data — while the existing `WidgetPreviewCard` remains the single real-data preview; the tap-to-select → live-preview-update interaction was confirmed on-device for five of the ten options. See `DECISIONS.md` D-074. Real 4×2 WIDE confirmation on an actual launcher remains the standing open gap (TD-016/TD-017) — this session's own direct-activity-launch testing technique cannot produce it either. |
+| **Overall progress** | ~67% |
 
 ---
 

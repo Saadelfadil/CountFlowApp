@@ -81,7 +81,7 @@ concluded no local emulator existed — that conclusion came from `which emulato
 works, alongside an existing `Pixel_9` AVD. `~/Library/Android/sdk/emulator/emulator -avd Pixel_9`
 launched directly gave Session 8 a fully stable device for the whole session. Try this first.
 
-## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12; Milestone 7's basic event reminders delivered, Session 13; Milestone 6's essential settings delivered, Session 14; Milestone 8.9's Final MVP Release Audit delivered, Session 15 — verdict MVP NOT READY, two owner-action blockers)
+## What exists right now (Milestone 3 finishing pass + Milestone 5B complete; Milestone 8's background refresh delivered, Session 12; Milestone 7's basic event reminders delivered, Session 13; Milestone 6's essential settings delivered, Session 14; Milestone 8.9's Final MVP Release Audit delivered, Session 15 — verdict MVP NOT READY, two owner-action blockers; Milestone 5A follow-up — physical-device QA fixes and Style/Progress thumbnail redesign — delivered Session 16)
 
 - **Domain**: `Event`, `EventTarget` (the all-day/timed split — read its KDoc, it is the most
   important type in the app), `WidgetBinding`, `Reminder`, `CountdownEngine`, `EventValidator`,
@@ -108,7 +108,14 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   unnecessary "N days / In N days" redundancies the pre-Session-9 renderer had. A configuration
   activity with a verified no-orphan-bindings guarantee, now a two-step flow (pick event →
   customize style/progress/toggles/accent) with a live, size-aware, no-save-required preview
-  (D-048, D-049, D-057). A widget-picker preview via `android:previewLayout` (TD-014, resolved). A
+  (D-048, D-049, D-057), scrollable end-to-end on real hardware (BUG-R016, Session 16) and no
+  longer clipping its 4×2 preview's progress percentage (BUG-R017, Session 16). The Style/Progress
+  rows are now visual design-sample thumbnails (`WidgetStyleThumbnail`/`ProgressStyleThumbnail`,
+  D-074, Session 16) — abstract content grounded in each style's real
+  `docs/WIDGET_DESIGN_GUIDE.md` differentiator, structurally incapable of showing real event data;
+  the pre-existing `WidgetPreviewCard` remains the one real-data preview, and a thumbnail tap
+  drives it via the same `onWidgetStyleChange`/`onProgressStyleChange` pipeline unchanged since
+  Session 9. A widget-picker preview via `android:previewLayout` (TD-014, resolved). A
   production, alarm-based refresh scheduler (Session 12, D-062/D-063) keeps every widget current
   in the background, not just while the app is alive — see "Confirmed Session 12" below.
 - **Reminders**: an MVP local-notification system (Session 13, `:core:notifications`,
@@ -212,6 +219,18 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   TD-017, now also observed for basic placement) — stated plainly, not a discovered regression,
   since no widget code has changed since Session 12. Full findings, classified BLOCKER/HIGH/MEDIUM
   /LOW/POST-MVP: `docs/MVP_RELEASE_AUDIT.md`. **Verdict: MVP NOT READY** for public submission.
+- **Confirmed Session 16 (first real physical-device testing, Samsung Galaxy A55 / One UI, plus a
+  product clarification)**: two genuine real-device bugs found and fixed on Customize Widget — no
+  vertical scroll, stranding controls below the fold (BUG-R016), and a clipped 4×2-preview progress
+  percentage (BUG-R017) — both verified on the `Pixel_9` emulator (scroll reachability at 200% font
+  scale, horizontal-scroll rows unaffected, Save always reachable). The Style/Progress selectors
+  were redesigned into visual design-sample thumbnails (D-074); the tap-a-thumbnail →
+  selected-state → real-event Main Preview updates → thumbnail itself stays content-free
+  interaction was confirmed by direct on-device observation for five of the ten style/progress
+  options (OLED, Rounded, Modern, Glass, Ring). **Not obtained**: live confirmation of the real
+  4×2 (WIDE) widget specifically — this session's direct-activity-launch testing technique has no
+  real `AppWidgetHost` behind it and always defaults to 2×2, the same standing gap as
+  TD-016/TD-017, not a new one.
 - Still not measured on any device, by any session: update latency, memory, CPU, or TalkBack
   output. Battery now has a *reasoned* answer (Session 12, alarm-count-based, not
   profiler-measured — `docs/WIDGET_REFRESH_ARCHITECTURE.md` §11); see `docs/PRODUCT_REVIEW.md` for
@@ -376,7 +395,7 @@ checking `TODO.md`'s P0 section first — it is where unresolved cross-session q
 | `ARCHITECTURE.md` | The original design proposal. Wins on any conflict. |
 | `PROJECT_STATUS.md` | Permanent overview: module graph, tech stack, progress bars. |
 | `SESSION_SUMMARY.md` | What the *most recent* session did, in narrative detail. |
-| `DECISIONS.md` | Every decision (73 as of Session 14) with reason, alternatives, tradeoffs. |
+| `DECISIONS.md` | Every decision (74 as of Session 16) with reason, alternatives, tradeoffs. |
 | `docs/WIDGET_ARCHITECTURE.md` | The widget system in one file: data/render flow, both lifecycles, Glance's sharp edges, forward compatibility. §5 (refresh flow) is now a summary — see the file below for the real system. |
 | `docs/WIDGET_REFRESH_ARCHITECTURE.md` | The production background refresh system in one file: next-transition calculation, coalescing, alarm lifecycle, system receivers, timezone/reboot/Force Stop behavior, battery reasoning, real-device evidence (Session 12). |
 | `docs/NOTIFICATION_ARCHITECTURE.md` | The MVP reminder notification system in one file: reminder model, trigger-time calculation, all-day/timed zone policy, idempotent delivery, the coalesced alarm scheduler, permission flow, notification channel, lifecycle behavior, boot/timezone recovery, battery reasoning, real-device evidence (Session 13). |
