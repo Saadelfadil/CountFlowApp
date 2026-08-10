@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -322,16 +321,20 @@ private fun CustomizeStep(
             }
         }
 
+        // Design-language samples, not miniatures of the user's real event — that question
+        // ("what will MY widget look like") belongs to WidgetPreviewCard alone, above. Tapping a
+        // card here changes the Main Preview immediately; the card itself never fills with the
+        // user's own event data. See WidgetStyleThumbnail.kt.
         Text("Style", style = MaterialTheme.typography.titleSmall)
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             WidgetStyle.entries.forEach { style ->
-                FilterChip(
+                WidgetStyleThumbnail(
+                    style = style,
                     selected = uiState.widgetStyle == style,
                     onClick = { onWidgetStyleChange(style) },
-                    label = { Text(style.displayName()) },
                 )
             }
         }
@@ -339,13 +342,13 @@ private fun CustomizeStep(
         Text("Progress", style = MaterialTheme.typography.titleSmall)
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ProgressStyle.entries.forEach { style ->
-                FilterChip(
+                ProgressStyleThumbnail(
+                    style = style,
                     selected = uiState.progressStyle == style,
                     onClick = { onProgressStyleChange(style) },
-                    label = { Text(style.displayName()) },
                 )
             }
         }
@@ -377,7 +380,7 @@ private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean
     }
 }
 
-private fun WidgetStyle.displayName(): String = when (this) {
+internal fun WidgetStyle.displayName(): String = when (this) {
     WidgetStyle.MINIMAL -> "Minimal"
     WidgetStyle.MATERIAL -> "Material"
     WidgetStyle.GLASS -> "Glass"
@@ -387,7 +390,7 @@ private fun WidgetStyle.displayName(): String = when (this) {
     WidgetStyle.MODERN -> "Modern"
 }
 
-private fun ProgressStyle.displayName(): String = when (this) {
+internal fun ProgressStyle.displayName(): String = when (this) {
     ProgressStyle.NONE -> "None"
     ProgressStyle.LINEAR -> "Bar"
     ProgressStyle.CIRCULAR -> "Ring"

@@ -10,6 +10,24 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
+**Style/Progress thumbnails: two preview levels.** The Customize Widget screen's Style and
+Progress rows changed from plain text `FilterChip`s to visual "design language" thumbnail cards
+(`WidgetStyleThumbnail`, `ProgressStyleThumbnail`), per a product clarification distinguishing two
+different kinds of preview that had been conflated: the existing `WidgetPreviewCard` above them
+answers "what will *my* widget look like" using the user's real event and all selected settings —
+there is exactly one of those on the screen, unchanged by this work — while the new thumbnails
+answer "what does this *style* look like" using a generic "Aa" glyph and abstract shapes, never the
+user's real event data. Each of the seven `WidgetStyle` thumbnails and three `ProgressStyle`
+thumbnails reproduces the one or two traits `docs/WIDGET_DESIGN_GUIDE.md` names as that style's
+real differentiator (Minimal centered with no bar, Material left-aligned with an inline bar, Glass
+translucent-dark and normal-weight, OLED true-black and largest-bold, Progress ring-dominant,
+Rounded pill-chip, Modern top-left-anchored and densest), so a thumbnail never promises a look the
+real widget can't produce. Tapping a thumbnail selects it and immediately re-renders the existing
+Main Preview with the real event in that style — confirmed on-device for all seven styles and all
+three progress options, including that a thumbnail's own content never changes to show real event
+text. No domain/data logic touched; 340 tests and lint unchanged (0 errors, 17 pre-existing
+warnings).
+
 **Session 15 — Final MVP Release Audit (Milestone 8.9).** No version bump: this session shipped no
 production code, only a full release-readiness audit and three new documents
 (`docs/MVP_RELEASE_AUDIT.md`, `docs/PRIVACY_DATA_INVENTORY.md`, `docs/RELEASE_CHECKLIST.md`). The

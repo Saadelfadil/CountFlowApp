@@ -1910,3 +1910,47 @@ the "fake URL" the brief forbade outright.
 **Tradeoffs.** The About screen currently ships two rows that do nothing when tapped — an
 intentional, temporary state, tracked as two explicit release-preparation items in `TODO.md`'s P0
 section rather than left implicit.
+
+---
+
+## D-074 — Customize Widget has exactly one real-data preview; Style/Progress selectors are abstract design samples, not miniature previews
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 5A (Session 16)
+
+The Customize Widget screen now distinguishes two different questions it was previously conflating.
+`WidgetPreviewCard` — one instance, unchanged by this decision — answers "what will *my* widget
+look like," built from the user's real selected event and every current setting. The Style row's
+seven cards and the Progress row's three cards answer a narrower question, "what does this *style*
+look like," using `WidgetStyleThumbnail`/`ProgressStyleThumbnail`: a generic "Aa" glyph and abstract
+shapes standing in for title/headline/progress, never the real event's actual text. Tapping a
+thumbnail selects it and drives the existing `onWidgetStyleChange`/`onProgressStyleChange` →
+`refreshPreview` pipeline (unchanged since Milestone 5A/Session 9), so the one real preview updates
+immediately; the thumbnail itself does not.
+
+**Reason.** Before this change, the Style/Progress rows were plain `FilterChip` labels with no
+visual content at all — a user could not tell Minimal from Modern without selecting each one and
+watching the single preview change, which is slow and easy to second-guess. The tempting fix, making
+each chip itself a tiny live preview of the real event, was explicitly rejected by the product brief:
+seven or ten simultaneous miniature renders of the user's actual event data is visually noisy, and
+more importantly implies each thumbnail is its own independent preview rather than a control that
+feeds the one real one — the same "which number is real" confusion a form with several duplicate
+live-bound fields creates. Keeping the thumbnails content-free and structurally incapable of
+receiving event data (their function signatures take only `style`/`progressStyle`, `selected`, and
+`onClick` — no event or render-model parameter exists) makes "exactly one real preview" a property
+of the type signature, not a convention that a future edit could quietly violate.
+
+**Alternatives.** Miniature live previews per style (rejected above, the brief's own explicit
+concern). A single static legend/diagram explaining the styles in prose instead of per-style
+thumbnails — rejected: slower to scan than a visual sample, and does not give each option its own
+selectable target the way the existing `AccentColorPicker` swatches already do for color. Import
+`WidgetThemeResolver`'s real resolved colors/corners directly into the thumbnails instead of
+restating close approximations — rejected: that resolver is `internal` to `:widget:engine` for real
+`WidgetRenderModel` data, and reaching across that boundary for a fixed illustrative color a
+content-free sample doesn't need would trade a one-line constant for a new cross-module dependency.
+
+**Tradeoffs.** Each thumbnail's colors/corner-radius are hand-restated close approximations of
+`WidgetThemeResolver`'s real values (`docs/WIDGET_DESIGN_GUIDE.md` is the shared source both are
+checked against), not a single shared constant — if a style's real theme value changes, the matching
+thumbnail approximation must be updated by hand and will not fail loudly if someone forgets. Ten
+thumbnails is more markup than seven/three `FilterChip`s was, all now living in one new file
+(`WidgetStyleThumbnail.kt`) rather than inline in `WidgetConfigurationActivity.kt`.
