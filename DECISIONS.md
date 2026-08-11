@@ -1954,3 +1954,192 @@ checked against), not a single shared constant — if a style's real theme value
 thumbnail approximation must be updated by hand and will not fail loudly if someone forgets. Ten
 thumbnails is more markup than seven/three `FilterChip`s was, all now living in one new file
 (`WidgetStyleThumbnail.kt`) rather than inline in `WidgetConfigurationActivity.kt`.
+
+---
+
+## D-075 — Rewarded-style entitlements are a separate, widget-scoped axis from `isPremium`, granted only through one repository method
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 5A follow-up (Session 17)
+
+`WidgetStyle` gains a second boolean, `isRewarded` (Glass, Rounded, Modern — deliberately not the
+same three that already happened to carry `isPremium = true`; Rounded is rewarded but not premium),
+backed by a new Room table `widget_style_entitlements` (migration 3→4, composite primary key
+`(app_widget_id, style)`, `FOREIGN KEY(app_widget_id) REFERENCES widget_bindings ... ON DELETE
+CASCADE`) and a new `:core:domain` interface, `WidgetStyleEntitlementRepository`:
+`isStyleUnlocked(appWidgetId, style): Boolean` (free styles always `true`, no persistence lookup)
+and `grantRewardedStyle(appWidgetId, style)` (throws `IllegalArgumentException` for a non-rewarded
+style). A row's mere existence *is* the entitlement — there is no expiry, no quantity, nothing else
+to model. `WidgetConfigurationUiState` gained `unlockedRewardedStyles`/`isStyleLocked(style)`, and
+the Style row's thumbnails (`WidgetStyleThumbnail`, D-074) gained a `locked` parameter and lock
+badge; tapping a locked style raises `pendingRewardRequest` (a plain nullable state field, the same
+one-time-signal shape every other transient UI event in this codebase already uses, cleared by its
+own explicit `onRewardRequestHandled` call rather than an event channel) instead of selecting. No
+ad provider exists yet at this point in the session — this milestone is deliberately the
+entitlement/gating foundation only; D-076 wires a real `RewardedStyleAdController` to it.
+
+**Reason.** Widget-scoped, not event-scoped, for the same reason `WidgetBinding` already draws that
+boundary for Style/Progress/Accent (D-013): unlocking Glass for one widget must never unlock it for
+another widget showing the same event. A separate axis from `isPremium` rather than reusing it,
+because the two model genuinely different products — a subscription (D-009's still-unimplemented
+scaffold) and a per-widget rewarded-ad unlock — that happen to both gate styles; conflating them
+would mean a future billing feature and this feature fighting over the same bit for two different
+unlock mechanisms with different scopes (account-wide vs. per-widget) and different grant paths
+(purchase receipt vs. ad-reward callback).
+
+**Alternatives.** A single `unlockTier`-style enum spanning both free/rewarded/premium — rejected:
+collapses two independent yes/no questions into one axis for no real savings, and would need a
+third "how was this unlocked" field anyway once billing exists. Storing the entitlement on
+`WidgetBinding` itself (a `Set<WidgetStyle>` column) instead of a new table — rejected: an
+entitlement's lifecycle (granted once, never changes with a style *selection*) is unrelated to a
+binding's own fields, which do change on every style change; a separate table with its own cascade
+keeps "what does this widget currently render as" and "what has this widget ever unlocked" from
+being able to drift into the same row by accident.
+
+**Tradeoffs.** The migration's grandfathering backfill (any widget already resolving to Glass,
+Rounded, or Modern before this table existed gets a retroactive entitlement row, via a SQL
+`COALESCE` reimplementation of `WidgetBinding.resolveWidgetStyle`'s override-else-default logic)
+is hand-duplicated SQL, not shared code with the Kotlin function it mirrors — if that resolution
+logic ever changes, the migration's copy will not update itself and will not fail loudly if
+someone forgets it exists. Zero UI-visible effect without D-076: as of this decision alone, every
+rewarded style is permanently locked for every widget with no entitlement, since nothing can grant
+one yet.
+
+---
+
+## D-076 — AdMob Rewarded Ads unlock rewarded styles; the entitlement is granted only from Google's genuine earned-reward callback, never ad-open or ad-dismiss
+
+**Date:** 2026-08-10 · **Status:** Accepted · **Milestone:** 5A follow-up (Session 17) · **Test ads
+only — see Tradeoffs.**
+
+Wires a real ad provider to D-075's entitlement foundation. `RewardedStyleAdController` — `load
+(Activity)` / `show(Activity, onRewardEarned, onDismissed, onFailed)` — is declared in
+`:widget:glance` (which `WidgetConfigurationViewModel`/`Activity` already live in) with **no Google
+Mobile Ads import anywhere in its file**; the real implementation
+(`AdMobRewardedStyleAdController`, `play-services-ads:25.4.0` + `user-messaging-platform:4.0.0`,
+both verified as current and non-deprecated against Google's own maven index and docs, not
+recalled from training data) lives in `:app` and is bound to the interface through a new Hilt
+`@Binds` module (`AdsModule`) — the first Hilt module ever declared directly in `:app`, made
+necessary because `:app`→`:widget:glance` is the only valid dependency direction in this project's
+module graph and the brief required AdMob to stay out of `:core:domain`/`:core:database`/
+`:widget:engine`. `WidgetConfigurationViewModel.onWatchAdClicked` wires `onRewardEarned` — and
+*only* `onRewardEarned` — to `grantRewardedStyle`; `onDismissed`/`onFailed` never grant anything.
+Inside `AdMobRewardedStyleAdController.show`, a local `var earned = false` (fresh per call, not a
+class field) records whether Google's own `OnUserEarnedRewardListener` fired before
+`FullScreenContentCallback.onAdDismissedFullScreenContent` does, since Google's own docs confirm
+the latter fires unconditionally on every close — reward or not — and this flag is what stops a
+genuine reward from also being reported as a spurious "dismissed without reward" a moment later.
+UMP consent (`AdConsentGate`, wrapping `ConsentInformation`/`UserMessagingPlatform`, no custom GDPR
+logic) and `MobileAds.initialize` are triggered lazily, only from
+`WidgetConfigurationViewModel.onUnlockDialogShown` — the instant the unlock dialog itself first
+appears — not from `CountFlowApplication`/`MainActivity`'s own launch.
+
+**Reason.** The reward-security rule ("opening the ad is not enough, displayed is not enough,
+dismissed is not enough — only earned reward grants") is the one hard constraint of this whole
+feature; a local per-call flag is the simplest construct that cannot leak state between two
+different `show()` calls the way a class-level field could. The consent/init scoping is a
+considered reading of the brief's "at app launch," not the most literal one: `CountFlowApplication`
+itself documents that `onCreate` work is charged directly to a 700 ms cold-start budget (already
+measured at 2.5–2.8 s, Session 15), and `WidgetConfigurationActivity` is a genuinely separate
+launcher entry point most visits to which never touch a locked style at all — eagerly initializing
+ad infrastructure (which can itself show a one-time UMP consent form) for a screen visit that will
+never need it would be the exact "automatic ad merely because of a tap" eagerness the brief's own
+"intentional value exchange" framing rejects, one level earlier than the tap itself.
+
+**Alternatives.** The newer "GMA Next-Gen SDK" (`ads-mobile-sdk`) — rejected: still v1.x, marks its
+own ad-preloading feature "(beta)," and two separate documentation fetches never confirmed an
+overall GA/stable status, against `play-services-ads`'s confirmed-current "maintenance mode" (not
+deprecated) status. Refreshing consent/initializing the SDK in `CountFlowApplication.onCreate`
+(the most literal "at app launch" reading) — rejected per Reason above; flagged here explicitly as
+a deviation worth revisiting if Google's guidance is read differently in the future. A `SharedFlow`
+one-shot event for the reward result instead of plain `UiState` fields (`pendingRewardRequest`,
+`adFeedback`) — rejected: no channel/event pattern exists anywhere else in this codebase (every
+one-time UI signal is already a nullable/boolean state field observed via `LaunchedEffect`), and
+introducing the only one here for this feature alone would be a new pattern with no precedent.
+
+**Tradeoffs.** `REWARDED_STYLE_TEST_AD_UNIT_ID` (`ca-app-pub-3940256099942544/5224354917`) and the
+manifest's AdMob `APPLICATION_ID` (`ca-app-pub-3940256099942544~3347511713`) are both Google's own
+published **test** values, marked with a prominent "MUST NOT SHIP AS PRODUCTION CONFIGURATION"
+comment at each site — a real production ad unit and App ID are owner-provided and explicitly out
+of this decision's scope (see `TODO.md`). CountFlow now contains a network-communicating
+third-party SDK (Google Mobile Ads + UMP) for the first time — Session 15's
+`docs/PRIVACY_DATA_INVENTORY.md` "zero network / zero advertising SDK" finding is no longer
+current and must be regenerated before any Play Store submission; not regenerated as part of this
+decision, by the same brief that scoped it out. `refreshEntitlements()` had to become a genuine
+`suspend fun` (previously a fire-and-forget `viewModelScope.launch` wrapper) so
+`onRewardEarned`'s grant → refresh → clear → select sequence can await the refresh before
+selecting — without this, `onWidgetStyleChange` could read a stale `unlockedRewardedStyles` and
+wrongly re-raise a reward request immediately after a real grant.
+
+---
+
+## D-077 — DEBUG/RELEASE AdMob identifiers are resolved per build variant from one Gradle object, never a literal in Kotlin source; rewarded-ad readiness is a real, observable state, not inferred from a callback
+
+**Date:** 2026-08-11 · **Status:** Accepted · **Milestone:** 5A follow-up (Session 18)
+
+Two related fixes to D-076's own delivered feature, both found from real diagnostic evidence
+(`CountFlowAds` Logcat output, added the session before this one), not speculation.
+
+**Production/test identifier separation.** CountFlow's real, owner-provided production AdMob App
+ID (`ca-app-pub-3546123128954911~2283615612`) and Rewarded Ad Unit ID
+(`ca-app-pub-3546123128954911/7392472066`) now exist in the repo for the first time, alongside
+Google's test values — both declared exactly once, as named constants on a private `AdMobConfig`
+object at the top of `app/build.gradle.kts`, never as a literal anywhere in Kotlin source. AGP's
+own per-`buildType` `manifestPlaceholders`/`buildConfigField` mechanism resolves the right pair
+automatically: DEBUG gets Google's test values, RELEASE gets CountFlow's production values, from
+the same single `AndroidManifest.xml`'s one `${admobApplicationId}` placeholder and the same
+`AdMobRewardedStyleAdController.requestAdLoad`'s one `BuildConfig.REWARDED_STYLE_AD_UNIT_ID` read —
+there is no second code path, no flavor, no manual override to forget. `AdMobConfigTest`
+(`:app`) asserts the DEBUG variant's real, AGP-resolved `BuildConfig` value is Google's test ID and
+never CountFlow's production one; a companion assertion reads `app/build.gradle.kts` itself (the
+one place the RELEASE variant's own values live) to confirm they are CountFlow's production
+identifiers, since AGP compiles unit tests against exactly one variant (`debug`, unchanged) and a
+RELEASE-variant `BuildConfig` cannot be constructed from that same test process. The stronger
+confirmation — that `assembleRelease` genuinely produces a RELEASE APK whose merged manifest and
+generated `BuildConfig` carry the production values, and that `assembleDebug` never does — was
+run manually this session (both artifacts' merged manifests and generated `BuildConfig.java`
+grepped directly) rather than automated, and is recorded in this session's own report.
+
+**Rewarded-ad readiness state.** `CountFlowAds` diagnostics (added the prior session) showed a
+real UX bug on a physical Samsung Galaxy A55: the very first "Watch ad & unlock" tap could land
+while UMP/`MobileAds`/`RewardedAd.load()` was still genuinely in flight, and the UI reported "Ad
+unavailable right now" — a legitimate load in progress being misreported as a failure.
+`RewardedStyleAdController` gained `val state: StateFlow<RewardedAdState>`
+(`LOADING`/`READY`/`SHOWING`/`FAILED`), mirrored into
+`WidgetConfigurationUiState.rewardedAdState` by a collector started once in the ViewModel's
+`init`. The Unlock Style dialog's primary button now reads this state directly: disabled with
+"Preparing ad…" for `LOADING`/`SHOWING`, "Watch ad & unlock" for `READY`, "Retry" for `FAILED`.
+`WidgetConfigurationViewModel.onWatchAdClicked` refuses to call
+`RewardedStyleAdController.show` unless `rewardedAdState == READY` — the real enforcement, since a
+disabled Compose button alone cannot be trusted against a tap landing in the same frame as a state
+change. A genuine `FAILED` (consent/load/show failure) no longer auto-retries in the background —
+only a dismiss-without-reward still does, preserving the existing preload lifecycle unchanged for
+that one case — specifically so a "Retry" action has something real to retry rather than racing an
+automatic reload that already happened.
+
+**Reason.** Both fixes follow directly from evidence, not guesswork: the diagnostic logging this
+session started from showed exactly which call landed against `rewardedAd == null`, and the build
+scan showed exactly zero prior guard against a debug/release identifier mix-up (nothing stopped a
+future edit from swapping which constant went where). Neither reward-security rule from D-076
+changed — `onRewardEarned` is still wired to nothing but Google's genuine earned-reward callback.
+
+**Alternatives.** Per-flavor source sets (`debug`/`release` directories with their own
+`AndroidManifest.xml`) instead of manifest placeholders — rejected: two manifest files to keep in
+sync is a worse single-source-of-truth story than one manifest plus one placeholder, and this
+project has never used flavor-specific manifests for anything else. Exposing `RewardedAdState` via
+a callback parameter added to `load()` (`load(activity, onReady, onFailed)`) instead of a
+`StateFlow` — rejected: `load()` is also called autonomously from inside `show()`'s own dismiss
+handler to prepare the next ad, with no caller-supplied callback available to reuse at that point;
+a persistent, controller-owned `StateFlow` needs no such threading and matches this codebase's own
+established `StateFlow`-for-observable-state idiom already used at every ViewModel. Auto-retrying
+a `FAILED` load in the background — rejected per Reason above, since it would make the requested
+"Retry" action a no-op the user could never actually see land.
+
+**Tradeoffs.** `AdMobConfigTest`'s RELEASE-variant assertion reads Gradle Kotlin DSL source text
+rather than a real compiled `BuildConfig` — weaker evidence than the DEBUG-variant assertions
+(which read the genuine, AGP-resolved value), documented as such in the test's own KDoc rather than
+overstated. This is a real, accepted gap: a future change to the release `buildTypes` block that
+happens to keep the text pattern this test greps for, while actually breaking the wiring some other
+way, would not be caught by this test — only by the manual `assembleRelease` verification this
+session ran once, not by continuous CI. `RewardedAdState` is intentionally coarse (four states, no
+sub-states for "which specific SDK step is in flight") — matches what the UI actually needs to
+decide, not a full mirror of every AdMob/UMP callback this controller receives internally.

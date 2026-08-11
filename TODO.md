@@ -20,6 +20,14 @@ but none of it should be mistaken for making the app submittable until these are
       genuine release blocker, not an engineering task. The About screen's Privacy Policy row ships
       correctly disabled ("Not yet available") until this exists; no placeholder or fake URL was
       substituted.
+- [ ] **Regenerate `docs/PRIVACY_DATA_INVENTORY.md` before any Play Store submission.** Session
+      15's audit found "zero network / zero advertising SDK" — no longer true as of Session 17:
+      CountFlow now contains Google Mobile Ads SDK + the User Messaging Platform (UMP), and does
+      make network requests, for the rewarded-style-unlock flow (`DECISIONS.md` D-076, test ads
+      only for now). The inventory itself was deliberately **not** regenerated as part of that
+      change — it's release-readiness work, out of scope for engineering-only sessions — but must
+      happen before submission, alongside Play Console's Data Safety form and (if AdMob ships to
+      production) UMP's own required GDPR/consent messaging setup in the AdMob console.
 - [ ] **Decide: invest in getting real on-device `WIDE` (4×2) confirmation, or accept shipping on
       Robolectric-only evidence.** TD-016/TD-017, now unresolved across every session that has
       attempted it (8, 9, 10, 15) — Session 15's own attempt also failed to get a widget placed at
@@ -98,7 +106,13 @@ Milestone 6's essential scope (theme, dynamic color, notification status, About)
       profiler-measured numbers from any session; Session 12 gives a reasoned (alarm-count-based)
       battery answer, not an instrumented one (`docs/WIDGET_REFRESH_ARCHITECTURE.md` §11). Pull a
       first rough measurement forward if a stable device is available before this work starts.
-- [ ] Firebase, AdMob, Play Billing behind the existing interfaces.
+- [ ] Firebase, Play Billing behind the existing interfaces. (AdMob Rewarded — for unlocking
+      Glass/Rounded/Modern — delivered Session 17; DEBUG/RELEASE identifier separation delivered
+      Session 18, so CountFlow's real production App ID/Ad Unit ID now exist in the repo, correctly
+      gated to RELEASE builds only (`app/build.gradle.kts`'s `AdMobConfig`) — but no signed RELEASE
+      build has ever been produced or tested, so this remains unverified in a real shipped artifact.
+      Other ad formats and Billing/subscriptions remain entirely unstarted; see `DECISIONS.md`
+      D-075/D-076/D-077.)
 
 ---
 

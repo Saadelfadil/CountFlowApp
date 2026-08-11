@@ -231,6 +231,18 @@ launched directly gave Session 8 a fully stable device for the whole session. Tr
   4×2 (WIDE) widget specifically — this session's direct-activity-launch testing technique has no
   real `AppWidgetHost` behind it and always defaults to 2×2, the same standing gap as
   TD-016/TD-017, not a new one.
+- **Confirmed Session 17 (rewarded-style unlocking — Glass/Rounded/Modern gated behind a Google
+  AdMob Rewarded ad, test ads only)**: a new `WidgetStyle.isRewarded` axis and per-widget
+  `WidgetStyleEntitlementRepository` (Room migration 3→4, D-075), a lock badge + explicit-tap
+  unlock-confirmation dialog (never an automatic ad launch), and a real AdMob/UMP integration
+  behind a `:widget:glance`/`:app` module boundary, granting the entitlement only from Google's
+  genuine earned-reward callback (D-076). **This is the point at which Session 15's "zero network
+  requests / zero analytics/advertising SDK" finding above stopped being current** — Google Mobile
+  Ads + UMP are now real dependencies (`:app`-only, test ad unit/App ID only, each marked "MUST NOT
+  SHIP AS PRODUCTION CONFIGURATION"), so `docs/PRIVACY_DATA_INVENTORY.md` must be regenerated
+  before any Play Store submission. Verified by 19 new automated tests (fake ad controller, no real
+  ad requests) plus a clean `assembleDebug`/`lintDebug`; **not yet confirmed on a physical
+  device** — the real Google test-ad UI flow itself remains open for next session.
 - Still not measured on any device, by any session: update latency, memory, CPU, or TalkBack
   output. Battery now has a *reasoned* answer (Session 12, alarm-count-based, not
   profiler-measured — `docs/WIDGET_REFRESH_ARCHITECTURE.md` §11); see `docs/PRODUCT_REVIEW.md` for

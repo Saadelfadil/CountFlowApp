@@ -39,9 +39,52 @@ internal val MIGRATION_2_3: Migration = object : Migration(2, 3) {
 }
 
 /**
+ * Adds the `widget_style_entitlements` table — the rewarded-style foundation (no AdMob yet; see
+ * `WidgetStyleEntitlementRepository`'s own KDoc). A row's existence for `(app_widget_id, style)`
+ * *is* the entitlement; `ON DELETE CASCADE` off `widget_bindings.app_widget_id` means removing a
+ * widget's binding — directly, or transitively through its event being deleted — cleans up its
+ * entitlements too, with no extra application code (see `WidgetStyleEntitlementEntity`'s own
+ * KDoc).
+ *
+ * Backfills one grandfathered entitlement per widget already effectively rendering with a
+ * rewarded style (Glass/Rounded/Modern) before this table existed — "effectively" resolved the
+ * same way [com.countflow.core.domain.model.WidgetBinding.resolveWidgetStyle] already does
+ * (override, else the event's own default), expressed in SQL via `COALESCE` since this migration
+ * has no access to that Kotlin function. Without this, every widget that happened to already be
+ * using one of these three styles would find itself suddenly "locked" the first time anything
+ * asks — not because it did anything wrong, but because the entitlement table simply did not
+ * exist yet when it was configured. Free styles need no such backfill: nothing ever locks them,
+ * migrated or not.
+ */
+internal val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS widget_style_entitlements (
+                app_widget_id INTEGER NOT NULL,
+                style TEXT NOT NULL,
+                PRIMARY KEY(app_widget_id, style),
+                FOREIGN KEY(app_widget_id) REFERENCES widget_bindings(app_widget_id) ON UPDATE CASCADE ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO widget_style_entitlements (app_widget_id, style)
+            SELECT wb.app_widget_id, COALESCE(wb.widget_style_override, e.default_widget_style)
+            FROM widget_bindings wb
+            JOIN events e ON e.id = wb.event_id
+            WHERE COALESCE(wb.widget_style_override, e.default_widget_style) IN ('GLASS', 'ROUNDED', 'MODERN')
+            """.trimIndent(),
+        )
+    }
+}
+
+/**
  * Every schema migration, in order.
  *
  * Each entry must be paired with a test that inserts real rows at the old version and asserts
  * they survive. A migration that compiles is not a migration that works.
  */
-internal val CountFlowMigrations: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+internal val CountFlowMigrations: Array<Migration> =
+    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)

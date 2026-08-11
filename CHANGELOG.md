@@ -10,6 +10,55 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
+**AdMob production/test identifier separation + rewarded-ad readiness UX (D-077).** Two fixes to
+the rewarded-style-unlock feature below, found from real `CountFlowAds` diagnostic evidence on a
+physical Samsung Galaxy A55. (1) CountFlow's real production AdMob App ID and Rewarded Ad Unit ID
+now exist in the repo for the first time — declared exactly once, as named constants on an
+`AdMobConfig` object in `app/build.gradle.kts`, never as a Kotlin literal — and are resolved
+automatically per build variant (DEBUG always gets Google's test values; RELEASE always gets
+CountFlow's production values) via AGP's own `manifestPlaceholders`/`buildConfigField` mechanism.
+Verified both ways: `AdMobConfigTest` asserts the real DEBUG `BuildConfig` value is Google's test
+ID and never the production one; a manual `assembleRelease` build's merged manifest and generated
+`BuildConfig` were grepped directly and confirmed to carry CountFlow's production identifiers, with
+zero cross-contamination either direction. (2) The Unlock Style dialog now reflects a real
+`RewardedAdState` (`LOADING`/`READY`/`SHOWING`/`FAILED`), exposed from `RewardedStyleAdController`
+as a `StateFlow` — fixes a genuine bug where the very first "Watch ad & unlock" tap could land
+while the ad was still legitimately loading and get misreported as "Ad unavailable." The primary
+button now disables with "Preparing ad…" during `LOADING`/`SHOWING`, reads "Watch ad & unlock" only
+once `READY`, and becomes an explicit "Retry" on a genuine `FAILED` — enforced by the ViewModel
+itself (`onWatchAdClicked` refuses to call `show()` before `READY`), not just a disabled button. No
+change to the reward-security rule: only Google's genuine earned-reward callback still grants an
+entitlement. 401 tests total (+10 since the AdMob integration's own 391), 0 failures; 0 lint
+errors, 17 pre-existing warnings, unchanged.
+
+**Rewarded-style unlocking: Glass/Rounded/Modern gated behind a Google AdMob rewarded ad
+(test ads only).** Three previously-free `WidgetStyle`s now require a per-widget entitlement,
+unlocked by watching a rewarded ad. Tapping a locked style no longer selects it — a lock badge
+appears on its thumbnail, and tapping it opens a confirmation dialog ("Unlock Glass" / "Watch a
+short ad to unlock Glass for this widget") with explicit "Watch ad & unlock"/"Not now" actions; no
+ad is ever shown from a bare tap. The entitlement is granted **only** from Google's genuine
+earned-reward callback — the ad merely opening, displaying, or being dismissed never unlocks
+anything. See `DECISIONS.md` D-075 (the entitlement model: a new `WidgetStyle.isRewarded` axis,
+Room table `widget_style_entitlements`, migration 3→4 with a grandfathering backfill for widgets
+already using one of these styles) and D-076 (the AdMob/UMP integration itself: SDK choice,
+module-boundary abstraction, the reward-security pattern, and consent handling). Google Mobile Ads
+(`play-services-ads:25.4.0`) and the User Messaging Platform (`user-messaging-platform:4.0.0`) are
+new dependencies, `:app`-only — **test ad unit and test App ID only**
+(`ca-app-pub-3940256099942544/5224354917` /
+`ca-app-pub-3940256099942544~3347511713`, both Google's own published sample values), each marked
+with a prominent "MUST NOT SHIP AS PRODUCTION CONFIGURATION" comment at its declaration site. No
+production AdMob ID, no subscriptions/billing, no other ad format (banner/interstitial/native/
+app-open), and no advertising anywhere inside a widget/RemoteViews/Glance surface — ads exist only
+inside this one in-app confirmation flow, after an explicit user tap. 19 new tests cover the full
+flow (locked → reward request, cancel/unavailable/failed/dismissed-without-reward → no
+entitlement, genuine reward → entitlement granted + lock clears + style selected, and per-widget
+isolation); 391 tests total, 0 failures; 0 lint errors, 17 pre-existing warnings (one new
+`ContextCastToActivity` lint finding fixed along the way by switching to `LocalActivity`).
+**Privacy note:** CountFlow now contains a network-communicating third-party SDK for the first
+time — Session 15's `docs/PRIVACY_DATA_INVENTORY.md` ("zero network / zero advertising SDK") is no
+longer current and must be regenerated before any Play Store submission; not regenerated as part of
+this change, which is test-ads-only engineering work, not a release-readiness pass.
+
 **Style/Progress thumbnails: two preview levels.** The Customize Widget screen's Style and
 Progress rows changed from plain text `FilterChip`s to visual "design language" thumbnail cards
 (`WidgetStyleThumbnail`, `ProgressStyleThumbnail`), per a product clarification distinguishing two

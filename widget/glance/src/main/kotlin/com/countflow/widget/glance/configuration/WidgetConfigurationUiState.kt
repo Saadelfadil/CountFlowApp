@@ -2,6 +2,7 @@ package com.countflow.widget.glance.configuration
 
 import androidx.compose.runtime.Immutable
 import com.countflow.core.domain.model.AccentColor
+import com.countflow.core.domain.model.AppWidgetId
 import com.countflow.core.domain.model.Event
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.ProgressStyle
@@ -32,6 +33,24 @@ import com.countflow.widget.engine.model.WidgetRenderModel
  *   already use, so [onConfirm][com.countflow.widget.glance.configuration.WidgetConfigurationViewModel.onConfirm]
  *   derives the same "only write an override when it actually differs" precedence
  *   [com.countflow.core.domain.model.WidgetBinding] applies to style and progress style (D-013).
+ * @property unlockedRewardedStyles which of [WidgetStyle.rewarded] *this* widget currently owns
+ *   an entitlement for — resolved once per event selection via
+ *   [com.countflow.core.domain.repository.WidgetStyleEntitlementRepository.isStyleUnlocked], never
+ *   cached across widgets or events. A free style is never a member and never needs to be; see
+ *   [isStyleLocked].
+ * @property pendingRewardRequest set when the user taps a rewarded style this widget does not yet
+ *   own, instead of selecting it — drives the unlock-confirmation dialog. See [RewardRequired]'s
+ *   own KDoc for the full grant contract.
+ * @property rewardedAdState a live mirror of [RewardedStyleAdController.state] — what the unlock
+ *   dialog's primary button says and whether it can be tapped. [WidgetConfigurationViewModel]
+ *   collects the controller's [kotlinx.coroutines.flow.StateFlow] once, in `init`, and copies every
+ *   value into this field, so the dialog only ever needs to read [WidgetConfigurationUiState] like
+ *   everything else on this screen already does.
+ * @property adFeedback a short, user-presentable message for the unlock dialog when a rewarded ad
+ *   could not be shown (a genuine [RewardedAdState.FAILED] — unavailable, load error, show error)
+ *   — never set merely because [rewardedAdState] is still [RewardedAdState.LOADING], and never set
+ *   for a plain user-initiated dismiss, which needs no explanation. Cleared whenever
+ *   [pendingRewardRequest] is cleared or a new watch/retry attempt starts.
  * @property previewModel the render model step two's live preview draws — computed by
  *   [com.countflow.widget.engine.provider.WidgetRenderModelProvider.preview] from the selections
  *   above, the same pipeline a real widget render uses, never faked.
@@ -52,6 +71,10 @@ data class WidgetConfigurationUiState(
     val showTargetDate: Boolean = false,
     val showPercentage: Boolean = false,
     val accentColor: AccentColor = AccentColor.Default,
+    val unlockedRewardedStyles: Set<WidgetStyle> = emptySet(),
+    val pendingRewardRequest: RewardRequired? = null,
+    val rewardedAdState: RewardedAdState = RewardedAdState.LOADING,
+    val adFeedback: String? = null,
     val previewModel: WidgetRenderModel? = null,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
@@ -59,4 +82,29 @@ data class WidgetConfigurationUiState(
 ) {
     /** Whether step two (customize) should show — an event has been chosen for this widget. */
     val isCustomizing: Boolean get() = selectedEventId != null
+
+    /**
+     * Whether [style] should render locked in the Style row right now — true for exactly the
+     * styles that are [WidgetStyle.isRewarded] and not (yet) in [unlockedRewardedStyles]. A free
+     * style is never locked, regardless of what [unlockedRewardedStyles] happens to contain.
+     */
+    fun isStyleLocked(style: WidgetStyle): Boolean = style.isRewarded && style !in unlockedRewardedStyles
 }
+
+/**
+ * Requests that [style] be unlocked for [appWidgetId] before it can be selected — raised instead
+ * of selecting, the instant a user taps a rewarded style this widget does not yet own. Drives the
+ * unlock-confirmation dialog in `WidgetConfigurationActivity.kt`:
+ * ```
+ * RewardRequired(widgetId, GLASS)
+ *         -> unlock-confirmation dialog ("Watch ad & unlock")
+ *         -> RewardedStyleAdController.show
+ *         -> genuine earned-reward callback
+ *         -> WidgetStyleEntitlementRepository.grantRewardedStyle(widgetId, GLASS)
+ *         -> refresh entitlement state
+ *         -> select Glass
+ * ```
+ * AdMob itself never sees this type — [RewardedStyleAdController] is the one boundary an ad SDK
+ * type may cross, and nothing about this type depends on one.
+ */
+data class RewardRequired(val appWidgetId: AppWidgetId, val style: WidgetStyle)

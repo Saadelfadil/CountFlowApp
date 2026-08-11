@@ -7,9 +7,11 @@ import com.countflow.core.database.converter.Converters
 import com.countflow.core.database.dao.EventDao
 import com.countflow.core.database.dao.ReminderDao
 import com.countflow.core.database.dao.WidgetBindingDao
+import com.countflow.core.database.dao.WidgetStyleEntitlementDao
 import com.countflow.core.database.entity.EventEntity
 import com.countflow.core.database.entity.ReminderEntity
 import com.countflow.core.database.entity.WidgetBindingEntity
+import com.countflow.core.database.entity.WidgetStyleEntitlementEntity
 
 /**
  * The CountFlow database.
@@ -40,6 +42,7 @@ import com.countflow.core.database.entity.WidgetBindingEntity
         EventEntity::class,
         WidgetBindingEntity::class,
         ReminderEntity::class,
+        WidgetStyleEntitlementEntity::class,
     ],
     version = CountFlowDatabase.VERSION,
     exportSchema = true,
@@ -53,9 +56,11 @@ abstract class CountFlowDatabase : RoomDatabase() {
 
     abstract fun reminderDao(): ReminderDao
 
+    abstract fun widgetStyleEntitlementDao(): WidgetStyleEntitlementDao
+
     companion object {
         /** Current schema version. Bump this and add a migration; never reset it. */
-        const val VERSION: Int = 3
+        const val VERSION: Int = 4
 
         /** On-disk filename. */
         const val NAME: String = "countflow.db"

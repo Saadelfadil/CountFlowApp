@@ -4,11 +4,13 @@ import com.countflow.core.data.preferences.PreferencesRepositoryImpl
 import com.countflow.core.data.repository.EventRepositoryImpl
 import com.countflow.core.data.repository.ReminderRepositoryImpl
 import com.countflow.core.data.repository.WidgetBindingRepositoryImpl
+import com.countflow.core.data.repository.WidgetStyleEntitlementRepositoryImpl
 import com.countflow.core.domain.countdown.CountdownConfig
 import com.countflow.core.domain.repository.EventRepository
 import com.countflow.core.domain.repository.PreferencesRepository
 import com.countflow.core.domain.repository.ReminderRepository
 import com.countflow.core.domain.repository.WidgetBindingRepository
+import com.countflow.core.domain.repository.WidgetStyleEntitlementRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -42,6 +44,12 @@ internal abstract class DataModule {
     abstract fun bindsPreferencesRepository(
         impl: PreferencesRepositoryImpl,
     ): PreferencesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindsWidgetStyleEntitlementRepository(
+        impl: WidgetStyleEntitlementRepositoryImpl,
+    ): WidgetStyleEntitlementRepository
 }
 
 /** Supplies domain policy that depends on the device's configuration. */

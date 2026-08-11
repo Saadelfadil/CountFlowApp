@@ -50,6 +50,16 @@ kover = "0.9.9"
 robolectric = "4.16.1"
 androidxTestCore = "1.7.0"
 
+# --- Advertising (rewarded styles, :app only — see DECISIONS.md) -----------
+# play-services-ads: legacy-named but actively maintained (Google's own "maintenance mode," not
+# deprecated — full current setup docs and version releases as of this addition). The newer
+# "GMA Next-Gen SDK" (com.google.android.libraries.ads.mobile.sdk) was evaluated and rejected for
+# now: v1.x, marks its own ad-preloading API "(beta)", and its docs never confirmed an overall
+# GA/stable status — the legacy pairing below is the one with complete, unambiguous, currently-
+# published Google documentation for the exact reward-security flow this feature depends on.
+playServicesAds = "25.4.0"
+userMessagingPlatform = "4.0.0"
+
 [libraries]
 # --- Kotlin ----------------------------------------------------------------
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
@@ -123,6 +133,10 @@ truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 # fast JVM test source set, with no emulator. Only modules that need it declare it.
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core-ktx = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
+
+# --- Advertising (:app only — RewardedStyleAdController's real implementation) ---------------
+play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
+user-messaging-platform = { group = "com.google.android.ump", name = "user-messaging-platform", version.ref = "userMessagingPlatform" }
 
 # --- Build-logic plugin artifacts ------------------------------------------
 # Referenced as implementation deps inside build-logic so convention plugins can

@@ -7,6 +7,7 @@ import com.countflow.core.database.CountFlowMigrations
 import com.countflow.core.database.dao.EventDao
 import com.countflow.core.database.dao.ReminderDao
 import com.countflow.core.database.dao.WidgetBindingDao
+import com.countflow.core.database.dao.WidgetStyleEntitlementDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,4 +44,8 @@ internal object DatabaseModule {
 
     @Provides
     fun providesReminderDao(database: CountFlowDatabase): ReminderDao = database.reminderDao()
+
+    @Provides
+    fun providesWidgetStyleEntitlementDao(database: CountFlowDatabase): WidgetStyleEntitlementDao =
+        database.widgetStyleEntitlementDao()
 }

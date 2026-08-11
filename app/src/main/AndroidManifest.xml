@@ -24,6 +24,17 @@
         </activity>
 
         <!--
+          Resolved per build variant from AdMobConfig in app/build.gradle.kts (the
+          admobApplicationId manifest placeholder) — DEBUG builds always resolve Google's
+          published test AdMob App ID; RELEASE builds resolve CountFlow's real production App ID.
+          Never a hardcoded literal here, so there is nothing in this file that could accidentally
+          ship the wrong one — see DECISIONS.md and TODO.md.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobApplicationId}" />
+
+        <!--
           Removes WorkManager's on-startup initializer so the Application's
           Configuration.Provider is used instead. Without this, WorkManager initializes first
           with the default worker factory and every @HiltWorker fails to construct at runtime.

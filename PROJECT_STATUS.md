@@ -15,13 +15,13 @@ single-file orientation this document map assumes you do not yet have.
 
 | | |
 |---|---|
-| **Current milestone** | Milestone 5A follow-up (Session 16) complete: real physical-device QA fixes + Style/Progress selectors redesigned as visual design samples. Release verdict unchanged from Session 15: **MVP NOT READY** — two owner-action blockers (signing key, privacy-policy URL), no code-level blocker found |
-| **Last session** | Session 16 — 2026-08-10 |
-| **Build status** | ✅ `assembleDebug` succeeds; `assembleRelease`/`bundleRelease` unchanged (unsigned) from Session 15 |
-| **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9, all documented) |
-| **Tests** | 340 passing, 0 failing (unchanged from Session 15 — this session's changes were UI-layer only). `:core:domain` 97.0% line coverage, gated at 95% |
-| **Runtime** | ✅ **Session 16: the first real physical-device testing this project has had (Samsung Galaxy A55, One UI), plus a product-clarification feature.** Found and fixed two genuine real-device bugs on the Customize Widget screen: no vertical scroll, stranding controls below the fold (BUG-R016), and a clipped progress percentage in the 4×2 live preview (BUG-R017) — both fixed, verified on the `Pixel_9` emulator, and recorded resolved in `KNOWN_ISSUES.md`. Separately, the Style/Progress selectors on that same screen were redesigned from plain text chips into visual "design language" thumbnails (`WidgetStyleThumbnail`/`ProgressStyleThumbnail`) that show each style's real defining trait using abstract content — never the user's real event data — while the existing `WidgetPreviewCard` remains the single real-data preview; the tap-to-select → live-preview-update interaction was confirmed on-device for five of the ten options. See `DECISIONS.md` D-074. Real 4×2 WIDE confirmation on an actual launcher remains the standing open gap (TD-016/TD-017) — this session's own direct-activity-launch testing technique cannot produce it either. |
-| **Overall progress** | ~67% |
+| **Current milestone** | Milestone 5A follow-up (Session 18) complete: AdMob DEBUG/RELEASE identifier separation (CountFlow's real production App ID/Rewarded Ad Unit ID now exist, correctly gated to RELEASE-only) + a rewarded-ad readiness state (LOADING/READY/SHOWING/FAILED) fixing a real premature-tap "Ad unavailable" bug found via physical-device diagnostics. Release verdict unchanged from Session 15: **MVP NOT READY** — two owner-action blockers (signing key, privacy-policy URL), plus the standing documentation blocker (privacy inventory must be regenerated — see below) |
+| **Last session** | Session 18 — 2026-08-11 |
+| **Build status** | ✅ `assembleDebug` succeeds (test ads only, confirmed by manifest grep); `assembleRelease` also succeeds and now correctly resolves CountFlow's production AdMob identifiers (confirmed by manifest/BuildConfig grep) — still unsigned, unchanged from Session 15 |
+| **Lint** | 0 errors, 17 accepted warnings (unchanged since Session 9) |
+| **Tests** | 401 passing, 0 failing (+10 since Session 17: `AdMobConfigTest` plus the expanded rewarded-ad readiness-state coverage). `:core:domain` coverage gated at 95% |
+| **Runtime** | ✅ **Session 18: AdMob production/test separation + rewarded-ad readiness UX, both verified against real build outputs, neither yet confirmed on a physical device.** See `DECISIONS.md` D-077 and `SESSION_SUMMARY.md` for full detail. **Privacy inventory remains stale** (unchanged since Session 17): `docs/PRIVACY_DATA_INVENTORY.md` must be regenerated before submission. |
+| **Overall progress** | ~68% |
 
 ---
 
@@ -73,10 +73,12 @@ Read in this order when picking the project up cold:
 | Testing | JUnit4, Truth, Turbine, Robolectric | 4.16.1 |
 | Background | WorkManager | 2.11.2 |
 | Navigation | Navigation Compose, type-safe routes | 2.9.8 |
+| Advertising | Google Mobile Ads / User Messaging Platform (`:app`-only, test ads only) | 25.4.0 / 4.0.0 |
 | Architecture | Clean Architecture + MVVM, unidirectional data flow | — |
 
-**Not on the classpath by design:** Firebase, AdMob, Play Billing. All three are deferred to
-Milestone 9 behind interfaces (D-009), so cold start stays measurable and every module stays
+**On the classpath since Session 17, `:app`-only, test ads only:** Google Mobile Ads +
+UMP — see D-075/D-076. **Still not on the classpath by design:** Firebase, Play Billing, deferred
+to Milestone 9 behind interfaces (D-009), so cold start stays measurable and every module stays
 unit-testable.
 
 ---
@@ -233,14 +235,18 @@ D-059 for why the heavier Glance/AppWidget module stays unreused outside `:app`.
 - **A full, critical MVP release audit exists, with every finding classified and nothing hidden to
   claim readiness.** Session 15 was feature-freeze: no product code was written. The release build
   succeeds cleanly (debug, unsigned release APK, unsigned release AAB), leaks no debug-only code
-  into release, and every manifest permission/exported component is individually justified. Zero
-  network requests exist anywhere in the codebase and zero analytics/advertising SDK is present —
-  confirmed by direct inspection, not assumption (`docs/PRIVACY_DATA_INVENTORY.md`). The reminder
-  pipeline was re-verified live, end to end, on a genuine clean install. Two real release
-  **blockers** were found and not downplayed — no signing key, no privacy-policy URL, both owner
-  actions — alongside HIGH findings on cold-start time (measured, not reasoned: ~2.5–2.8 s on a
-  debug build) and 4×2 WIDE remaining unconfirmed on a real launcher after every session that has
-  attempted it. Full findings, classified BLOCKER/HIGH/MEDIUM/LOW/POST-MVP: `docs/MVP_RELEASE_AUDIT.md`.
+  into release, and every manifest permission/exported component is individually justified. As of
+  **Session 15**, zero network requests existed anywhere in the codebase and zero analytics/
+  advertising SDK was present — confirmed by direct inspection, not assumption
+  (`docs/PRIVACY_DATA_INVENTORY.md`). **No longer current as of Session 17**: Google Mobile Ads +
+  UMP were added (test ads only, `:app`-only, D-075/D-076) for the rewarded-style-unlock feature —
+  `docs/PRIVACY_DATA_INVENTORY.md` must be regenerated before any Play Store submission; see
+  `TODO.md` P0. The reminder pipeline was re-verified live, end to end, on a genuine clean install
+  at the time of Session 15's audit. Two real release **blockers** were found and not downplayed —
+  no signing key, no privacy-policy URL, both owner actions — alongside HIGH findings on cold-start
+  time (measured, not reasoned: ~2.5–2.8 s on a debug build) and 4×2 WIDE remaining unconfirmed on
+  a real launcher after every session that has attempted it. Full findings, classified
+  BLOCKER/HIGH/MEDIUM/LOW/POST-MVP: `docs/MVP_RELEASE_AUDIT.md`.
 
 ## What does not exist yet
 
@@ -334,7 +340,8 @@ Release readiness             20%  Milestone 8.9 (Session 15: full release audit
                                      manifest, dependencies, data, security, privacy, metadata, localisation
                                      all verified clean; two owner-action blockers found, not yet resolved —
                                      see docs/MVP_RELEASE_AUDIT.md)
-Play Store                    0%   Milestone 9 (Firebase, AdMob, billing, store assets — none started)
+Play Store                    0%   Milestone 9 (Firebase, billing, store assets — none started. AdMob
+                                     Rewarded delivered Session 17, test ads only — see below)
 Testing                      80%   domain, DAO, repository, ViewModel, widget engine, Glance UI
 ```
 

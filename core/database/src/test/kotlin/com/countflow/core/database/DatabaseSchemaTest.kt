@@ -48,19 +48,20 @@ class DatabaseSchemaTest {
     fun `the exported schema contains every table`() {
         val json = File(schemaDirectory, "${CountFlowDatabase.VERSION}.json").readText()
 
-        listOf("events", "widget_bindings", "reminders").forEach { table ->
+        listOf("events", "widget_bindings", "reminders", "widget_style_entitlements").forEach { table ->
             assertThat(json).contains("\"tableName\": \"$table\"")
         }
     }
 
     @Test
-    fun `cascade deletes are declared on both child tables`() {
-        // Losing the cascade would let bindings and reminders outlive their event, which the
-        // repositories are written to assume cannot happen.
+    fun `cascade deletes are declared on every child table`() {
+        // Losing a cascade would let bindings, reminders, or entitlements outlive the row they
+        // depend on, which the repositories are written to assume cannot happen. Three, not two,
+        // since widget_style_entitlements cascades off widget_bindings.app_widget_id.
         val json = File(schemaDirectory, "${CountFlowDatabase.VERSION}.json").readText()
         val cascades = Regex("\"onDelete\":\\s*\"CASCADE\"").findAll(json).count()
 
-        assertThat(cascades).isEqualTo(2)
+        assertThat(cascades).isEqualTo(3)
     }
 
     @Test

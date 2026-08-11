@@ -321,6 +321,47 @@ pre-existing style/progress-change pipeline, confirmed on-device for five of the
 direct-activity-launch technique used for all of this session's on-device verification has no real
 `AppWidgetHost` behind it, so it always defaults to 2×2. Same standing gap as TD-016/TD-017.
 
+### Milestone 5A follow-up — Rewarded-style unlocking (Glass/Rounded/Modern, test ads only) · Completed (Session 17)
+
+Three of the seven `WidgetStyle`s (Glass, Rounded, Modern) now require a per-widget entitlement
+before they can be selected, unlocked by watching a rewarded ad — the first monetization-adjacent
+feature in this project, deliberately test-ads-only with no production Ad Unit ID, no
+subscriptions/billing, and no ad format besides Rewarded.
+
+**Delivered, in two parts.** First, the entitlement foundation (D-075): a new `WidgetStyle
+.isRewarded` axis, deliberately separate from the still-unimplemented `isPremium` (D-009) since
+they model different unlock mechanisms; a new `:core:domain` interface,
+`WidgetStyleEntitlementRepository` (`isStyleUnlocked`/`grantRewardedStyle`), backed by a new Room
+table `widget_style_entitlements` (migration 3→4, cascading off `widget_bindings`, with a
+grandfathering backfill so a widget already using one of these three styles isn't retroactively
+locked); and UI gating — a lock badge on the Style row's thumbnails (D-074's
+`WidgetStyleThumbnail`), and a `pendingRewardRequest` state field that intercepts a tap on a locked
+style instead of selecting it. Second, the AdMob/UMP integration itself (D-076): an
+"Unlock Glass"-style confirmation dialog (explicit "Watch ad & unlock"/"Not now", never an
+automatic ad launch), a `RewardedStyleAdController` abstraction keeping Google Mobile Ads
+(`play-services-ads:25.4.0`) and UMP (`user-messaging-platform:4.0.0`) entirely out of
+`:core:domain`/`:core:database`/`:widget:engine` (the real implementation lives in `:app`, bound
+via this project's first `:app`-level Hilt module), UMP consent handled per Google's current
+guidance, and — the one hard security requirement — the entitlement granted **only** from Google's
+genuine earned-reward callback, never from the ad merely opening, displaying, or being dismissed.
+Both the test Ad Unit ID and the test App ID are Google's own published sample values, each marked
+"MUST NOT SHIP AS PRODUCTION CONFIGURATION" at its declaration site.
+
+**Verified by 19 new automated tests** (a hand-written fake `RewardedStyleAdController` drives
+every callback path — locked → reward request, cancel/unavailable/failed/dismissed-without-reward
+→ no entitlement, genuine reward → entitlement granted + lock clears + style selected, per-widget
+isolation, free styles never touch the ad controller at all) plus a clean `assembleDebug`/
+`lintDebug` (one new `ContextCastToActivity` lint finding surfaced and was fixed, not suppressed,
+by switching to `LocalActivity`). 391 tests total, 0 failures.
+
+**Not delivered, and said so plainly:** no physical-device confirmation of the real Google
+test-ad UI flow — this session's verification is automated-test-only, per the brief's own
+instruction not to make real ad requests in tests. **CountFlow now contains a network-communicating
+third-party SDK for the first time**: Session 15's `docs/PRIVACY_DATA_INVENTORY.md` ("zero network
+/ zero advertising SDK") is no longer current and must be regenerated before any Play Store
+submission — deliberately not regenerated as part of this engineering-scoped session; see
+`TODO.md` P0.
+
 ### Milestone 5B — Responsive widget system (2×1 / 2×2 / 4×2) · Completed (Session 10)
 
 The mission: turn the 2×2 visual language Session 9 delivered into one coherent responsive system

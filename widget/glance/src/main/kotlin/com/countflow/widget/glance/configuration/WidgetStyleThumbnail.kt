@@ -52,11 +52,13 @@ import com.countflow.core.domain.model.WidgetStyle
 internal fun WidgetStyleThumbnail(
     style: WidgetStyle,
     selected: Boolean,
+    locked: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ThumbnailCard(
         selected = selected,
+        locked = locked,
         onClick = onClick,
         label = style.displayName(),
         background = style.thumbnailBackground(),
@@ -67,7 +69,7 @@ internal fun WidgetStyleThumbnail(
     }
 }
 
-/** Same "design sample, not the real event" contract as [WidgetStyleThumbnail], for [ProgressStyle]. */
+/** Same "design sample, not the real event" contract as [WidgetStyleThumbnail], for [ProgressStyle]. Never locked — no [ProgressStyle] is rewarded. */
 @Composable
 internal fun ProgressStyleThumbnail(
     style: ProgressStyle,
@@ -77,6 +79,7 @@ internal fun ProgressStyleThumbnail(
 ) {
     ThumbnailCard(
         selected = selected,
+        locked = false,
         onClick = onClick,
         label = style.displayName(),
         background = MaterialTheme.colorScheme.surfaceVariant,
@@ -87,9 +90,19 @@ internal fun ProgressStyleThumbnail(
     }
 }
 
+/**
+ * [locked] is a restrained, secondary indicator only — appended to the caption below the
+ * thumbnail, never drawn over it. The thumbnail's own icon area ([content]) is exactly what an
+ * unlocked one shows, unchanged: a locked rewarded style must still read as "this is what Glass
+ * looks like," not as a generic padlock card standing in for it. Tapping a locked thumbnail is
+ * still a normal, enabled tap (never visually disabled) — [onClick] fires the same as any other
+ * thumbnail; whether that tap selects the style or requests a reward is
+ * [WidgetConfigurationViewModel.onWidgetStyleChange]'s decision, not this composable's.
+ */
 @Composable
 private fun ThumbnailCard(
     selected: Boolean,
+    locked: Boolean,
     onClick: () -> Unit,
     label: String,
     background: Color,
@@ -117,13 +130,15 @@ private fun ThumbnailCard(
                     shape = shape,
                 )
                 .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
-                .semantics { contentDescription = "$label style" }
+                .semantics {
+                    contentDescription = if (locked) "$label style, locked, requires unlocking" else "$label style"
+                }
                 .padding(10.dp),
             contentAlignment = Alignment.Center,
             content = content,
         )
         Text(
-            text = label,
+            text = if (locked) "$label 🔒" else label,
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )

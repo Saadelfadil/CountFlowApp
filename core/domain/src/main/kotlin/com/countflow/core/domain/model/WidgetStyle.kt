@@ -7,22 +7,30 @@ package com.countflow.core.domain.model
  * default) and with a widget binding (as an override), and the data layer must be able to map it
  * without depending on Glance.
  *
- * @property isPremium whether this style requires a premium entitlement. Premium is not
- *   implemented yet — the flag exists so gating can be written and tested before billing lands,
- *   per DECISIONS.md (D-009).
+ * @property isPremium whether this style requires a premium (subscription/billing) entitlement.
+ *   Premium is not implemented yet — the flag exists so gating can be written and tested before
+ *   billing lands, per DECISIONS.md (D-009). Deliberately a separate axis from [isRewarded]: the
+ *   two model different products (a subscription vs. a per-widget rewarded-ad unlock) that happen
+ *   to gate styles, not one shared "paid" concept — see [isRewarded]'s own KDoc.
+ * @property isRewarded whether this style requires a per-widget rewarded-ad entitlement (see
+ *   [com.countflow.core.domain.repository.WidgetStyleEntitlementRepository]) before a widget may
+ *   render with it. Independent of [isPremium] on purpose: Billing/subscriptions are still
+ *   entirely unimplemented and out of scope wherever this flag is used, and conflating the two
+ *   would mean a future billing feature and this rewarded-style feature fighting over the same
+ *   bit for two different unlock mechanisms.
  */
-enum class WidgetStyle(val isPremium: Boolean) {
+enum class WidgetStyle(val isPremium: Boolean, val isRewarded: Boolean) {
     /** Type only, no chrome. The default. */
-    MINIMAL(isPremium = false),
+    MINIMAL(isPremium = false, isRewarded = false),
 
     /** Material 3 surface with dynamic colour. */
-    MATERIAL(isPremium = false),
+    MATERIAL(isPremium = false, isRewarded = false),
 
     /** Translucent, blurred-looking background. */
-    GLASS(isPremium = true),
+    GLASS(isPremium = true, isRewarded = true),
 
     /** True black, for OLED always-on displays. */
-    OLED(isPremium = false),
+    OLED(isPremium = false, isRewarded = false),
 
     /**
      * Progress-led: the bar or ring is the primary element.
@@ -34,15 +42,16 @@ enum class WidgetStyle(val isPremium: Boolean) {
      * constant, not deleted, purely so a `WidgetStyle` persisted before this change (Room stores
      * enums by name, never by ordinal — see `Converters.kt`) still resolves to a real value
      * instead of an unknown-name fallback; [com.countflow.widget.engine.mapper.WidgetRenderMapper]
-     * is the one place that reinterprets it for rendering.
+     * is the one place that reinterprets it for rendering. Not rewarded — it is not selectable at
+     * all, so there is nothing for an entitlement to gate.
      */
-    PROGRESS(isPremium = false),
+    PROGRESS(isPremium = false, isRewarded = false),
 
     /** Heavily rounded card. */
-    ROUNDED(isPremium = false),
+    ROUNDED(isPremium = false, isRewarded = true),
 
     /** High-contrast editorial layout. */
-    MODERN(isPremium = true),
+    MODERN(isPremium = true, isRewarded = true),
     ;
 
     companion object {
@@ -59,6 +68,9 @@ enum class WidgetStyle(val isPremium: Boolean) {
 
         /** Styles available without a premium entitlement. */
         val free: List<WidgetStyle> get() = entries.filter { !it.isPremium }
+
+        /** Styles that require a per-widget rewarded-ad entitlement — see [isRewarded]. */
+        val rewarded: List<WidgetStyle> get() = entries.filter { it.isRewarded }
     }
 }
 

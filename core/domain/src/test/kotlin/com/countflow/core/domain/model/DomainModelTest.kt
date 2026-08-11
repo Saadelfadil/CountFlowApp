@@ -169,6 +169,14 @@ class DomainModelTest {
     }
 
     @Test
+    fun `exactly Glass, Rounded, and Modern require a rewarded-style entitlement`() {
+        assertThat(WidgetStyle.rewarded)
+            .containsExactly(WidgetStyle.GLASS, WidgetStyle.ROUNDED, WidgetStyle.MODERN)
+        assertThat(WidgetStyle.selectable - WidgetStyle.rewarded.toSet())
+            .containsExactly(WidgetStyle.MINIMAL, WidgetStyle.MATERIAL, WidgetStyle.OLED)
+    }
+
+    @Test
     fun `countdown config rejects nonsensical thresholds`() {
         assertThat(
             runCatching { com.countflow.core.domain.countdown.CountdownConfig(recentPastDays = 0) }

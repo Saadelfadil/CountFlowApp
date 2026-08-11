@@ -49,14 +49,14 @@ internal class MigrationTest {
 
         helper.runMigrationsAndValidate(TEST_DB, 2, true, MIGRATION_1_2)
 
-        // The real CountFlowDatabase class now declares VERSION = 3, so opening it against a
+        // The real CountFlowDatabase class now declares VERSION = 4, so opening it against a
         // version-2 file needs the rest of the path even though this test only cares about the
         // 1->2 step's own effect.
         val db = Room.databaseBuilder(
             ApplicationProvider.getApplicationContext(),
             CountFlowDatabase::class.java,
             TEST_DB,
-        ).allowMainThreadQueries().addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        ).allowMainThreadQueries().addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
 
         val cursor = db.query("SELECT * FROM reminders WHERE id = 'reminder-a'", null)
         cursor.use {
@@ -102,11 +102,14 @@ internal class MigrationTest {
 
         helper.runMigrationsAndValidate(TEST_DB, 3, true, MIGRATION_2_3)
 
+        // The real CountFlowDatabase class now declares VERSION = 4, so opening it against a
+        // version-3 file needs the rest of the path even though this test only cares about the
+        // 2->3 step's own effect.
         val db = Room.databaseBuilder(
             ApplicationProvider.getApplicationContext(),
             CountFlowDatabase::class.java,
             TEST_DB,
-        ).allowMainThreadQueries().addMigrations(MIGRATION_2_3).build()
+        ).allowMainThreadQueries().addMigrations(MIGRATION_2_3, MIGRATION_3_4).build()
 
         val cursor = db.query("SELECT * FROM widget_bindings WHERE app_widget_id = 1", null)
         cursor.use {
@@ -119,6 +122,60 @@ internal class MigrationTest {
             // accent_argb_override=NULL, which alone is ambiguous with "override is Dynamic").
             assertThat(it.getInt(it.getColumnIndexOrThrow("has_accent_override"))).isEqualTo(0)
             assertThat(it.isNull(it.getColumnIndexOrThrow("accent_argb_override"))).isTrue()
+        }
+        db.close()
+    }
+
+    @Test
+    fun `migrating 3 to 4 grandfathers widgets already using a rewarded style and adds no entry for free styles`() {
+        helper.createDatabase(TEST_DB, 3).apply {
+            execSQL(
+                """
+                INSERT INTO events (
+                    id, title, emoji, icon_key, category, target_epoch_millis, target_zone_id,
+                    is_all_day, created_at, accent_argb, default_widget_style,
+                    default_progress_style, reminders_enabled, is_archived, is_completed
+                ) VALUES
+                    ('event-a', 'Trip', NULL, NULL, 'GENERAL', 1000, 'UTC', 0, 0, NULL, 'MINIMAL', 'LINEAR', 1, 0, 0),
+                    ('event-b', 'Launch', NULL, NULL, 'GENERAL', 2000, 'UTC', 0, 0, NULL, 'ROUNDED', 'LINEAR', 1, 0, 0)
+                """.trimIndent(),
+            )
+            execSQL(
+                """
+                INSERT INTO widget_bindings (
+                    app_widget_id, event_id, widget_style_override, progress_style_override,
+                    has_accent_override, accent_argb_override, show_title, show_emoji,
+                    show_target_date, show_percentage, created_at
+                ) VALUES
+                    -- Widget 1: explicit override to a rewarded style (Glass).
+                    (1, 'event-a', 'GLASS', NULL, 0, NULL, 1, 1, 0, 0, 0),
+                    -- Widget 2: no override at all, but the event's own default is a rewarded
+                    -- style (Rounded) — the backfill must resolve this the same way
+                    -- WidgetBinding.resolveWidgetStyle does (override, else the event default).
+                    (2, 'event-b', NULL, NULL, 0, NULL, 1, 1, 0, 0, 0),
+                    -- Widget 3: a free style — must get no backfilled row at all.
+                    (3, 'event-a', 'MINIMAL', NULL, 0, NULL, 1, 1, 0, 0, 0)
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(TEST_DB, 4, true, MIGRATION_3_4)
+
+        val db = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            CountFlowDatabase::class.java,
+            TEST_DB,
+        ).allowMainThreadQueries().addMigrations(MIGRATION_3_4).build()
+
+        db.query("SELECT * FROM widget_style_entitlements ORDER BY app_widget_id", null).use { cursor ->
+            assertThat(cursor.count).isEqualTo(2)
+            assertThat(cursor.moveToFirst()).isTrue()
+            assertThat(cursor.getInt(cursor.getColumnIndexOrThrow("app_widget_id"))).isEqualTo(1)
+            assertThat(cursor.getString(cursor.getColumnIndexOrThrow("style"))).isEqualTo("GLASS")
+            assertThat(cursor.moveToNext()).isTrue()
+            assertThat(cursor.getInt(cursor.getColumnIndexOrThrow("app_widget_id"))).isEqualTo(2)
+            assertThat(cursor.getString(cursor.getColumnIndexOrThrow("style"))).isEqualTo("ROUNDED")
         }
         db.close()
     }

@@ -1,9 +1,11 @@
 package com.countflow.widget.glance.configuration
 
+import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -105,6 +108,14 @@ class WidgetConfigurationActivity : ComponentActivity() {
 
                 LaunchedEffect(Unit) { viewModel.load(AppWidgetId(appWidgetId)) }
                 LaunchedEffect(uiState.isSaved) { if (uiState.isSaved) onEventBound() }
+                // Prepares a rewarded ad the moment the unlock dialog appears — see
+                // WidgetConfigurationViewModel.onUnlockDialogShown's own doc for why this is not
+                // triggered any earlier than that.
+                LaunchedEffect(uiState.pendingRewardRequest) {
+                    if (uiState.pendingRewardRequest != null) {
+                        viewModel.onUnlockDialogShown(this@WidgetConfigurationActivity)
+                    }
+                }
 
                 WidgetConfigurationContent(
                     uiState = uiState,
@@ -120,6 +131,9 @@ class WidgetConfigurationActivity : ComponentActivity() {
                     onAccentColorChange = viewModel::onAccentColorChange,
                     onConfirm = viewModel::onConfirm,
                     onNavigateBack = { finish() },
+                    onWatchAdClicked = viewModel::onWatchAdClicked,
+                    onRetryClicked = viewModel::onRetryClicked,
+                    onRewardRequestHandled = viewModel::onRewardRequestHandled,
                 )
             }
         }
@@ -187,7 +201,21 @@ private fun WidgetConfigurationContent(
     onAccentColorChange: (AccentColor) -> Unit,
     onConfirm: () -> Unit,
     onNavigateBack: () -> Unit,
+    onWatchAdClicked: (Activity) -> Unit,
+    onRetryClicked: (Activity) -> Unit,
+    onRewardRequestHandled: () -> Unit,
 ) {
+    uiState.pendingRewardRequest?.let { request ->
+        UnlockStyleDialog(
+            style = request.style,
+            feedback = uiState.adFeedback,
+            adState = uiState.rewardedAdState,
+            onWatchAdClicked = onWatchAdClicked,
+            onRetryClicked = onRetryClicked,
+            onDismiss = onRewardRequestHandled,
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -253,6 +281,78 @@ private fun WidgetConfigurationContent(
             }
         }
     }
+}
+
+/**
+ * The one place a rewarded ad can ever be triggered from — an explicit, named choice
+ * ("Watch ad & unlock [Style]"), never something a bare tap on a locked thumbnail launches by
+ * itself. [style]'s real name is used throughout, not a generic "this style," so the value
+ * exchange being offered is concrete rather than vague.
+ *
+ * The primary button's label, and whether it can be tapped at all, comes entirely from [adState]:
+ * [RewardedAdState.LOADING]/[RewardedAdState.SHOWING] disable it ("Preparing ad…" — a legitimate
+ * load or an ad already being shown, never "Ad unavailable"); [RewardedAdState.READY] enables
+ * "Watch ad & unlock"; [RewardedAdState.FAILED] switches it to an enabled "Retry." The button's own
+ * `enabled` flag is real Compose enforcement, not just a visual hint — but the actual guarantee
+ * that a tap cannot reach [RewardedStyleAdController.show] before [RewardedAdState.READY] lives in
+ * `WidgetConfigurationViewModel.onWatchAdClicked`'s own guard, since a disabled button alone cannot
+ * be trusted against a tap that lands in the same frame as a state change.
+ *
+ * [feedback] surfaces inline rather than as a separate snackbar (a pattern this screen does not
+ * otherwise use anywhere) — appearing right where the user just took the action that produced it,
+ * and disappearing the same way the rest of this dialog does, with no separate host or queue to
+ * manage. Only ever set for a genuine [RewardedAdState.FAILED]; never for [RewardedAdState.LOADING]
+ * and never for a plain user-initiated dismiss, neither of which needs an explanation.
+ */
+@Composable
+private fun UnlockStyleDialog(
+    style: WidgetStyle,
+    feedback: String?,
+    adState: RewardedAdState,
+    onWatchAdClicked: (Activity) -> Unit,
+    onRetryClicked: (Activity) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val activity = checkNotNull(LocalActivity.current) { "UnlockStyleDialog must be shown from an Activity" }
+    val styleName = style.displayName()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Unlock $styleName") },
+        text = {
+            Column {
+                Text("Watch a short ad to unlock $styleName for this widget.")
+                feedback?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            val label = when (adState) {
+                RewardedAdState.LOADING, RewardedAdState.SHOWING -> "Preparing ad…"
+                RewardedAdState.READY -> "Watch ad & unlock"
+                RewardedAdState.FAILED -> "Retry"
+            }
+            TextButton(
+                onClick = {
+                    when (adState) {
+                        RewardedAdState.READY -> onWatchAdClicked(activity)
+                        RewardedAdState.FAILED -> onRetryClicked(activity)
+                        RewardedAdState.LOADING, RewardedAdState.SHOWING -> Unit
+                    }
+                },
+                enabled = adState == RewardedAdState.READY || adState == RewardedAdState.FAILED,
+            ) { Text(label) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Not now") }
+        },
+    )
 }
 
 @Composable
@@ -334,6 +434,7 @@ private fun CustomizeStep(
                 WidgetStyleThumbnail(
                     style = style,
                     selected = uiState.widgetStyle == style,
+                    locked = uiState.isStyleLocked(style),
                     onClick = { onWidgetStyleChange(style) },
                 )
             }
