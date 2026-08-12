@@ -79,15 +79,19 @@ ellipsizes cleanly (confirmed on-device to actually ellipsize, not hard-clip —
 ### Minimal — typography-first
 
 **Philosophy.** The countdown value is the entire point; everything else is a whisper around it.
-No progress bar — a bar is a second thing to compete for attention, and Minimal's whole premise is
-that there is only one thing to look at.
 
 **Hierarchy.** Centered identity row (optional) → a large, bold, centered headline (46sp for a
-number, 26sp for a word) → its unit caption → its secondary line, all centered.
+number, 26sp for a word) → its unit caption → its secondary line, all centered → its progress
+graphic and percentage, if either is enabled, smaller and quieter than everything above it.
 
-**What differentiates it.** The absence of a progress bar, full stop. Every other style that shows
-progress at all uses one; Minimal deliberately doesn't, on the theory that a bar competes with the
-number for the one thing this style exists to showcase.
+**What differentiates it.** No chrome, no forced background, no signature shape — restraint itself
+is the whole style. Style and Progress are independent settings (a Milestone 5A follow-up change):
+Minimal draws whichever progress graphic (bar or ring) and percentage text the user enabled, the
+same as every other style, just kept deliberately small and secondary so nothing competes with the
+headline for attention — this paragraph previously said Minimal omitted a progress bar entirely,
+which was already stale by the time Style/Progress independence shipped and was corrected once a
+real Samsung Galaxy A55 test found the real widget also silently dropping Minimal's percentage text
+specifically (`CountdownWidgetLayouts.kt`'s `MinimalLayout`/`MinimalLayoutWide`).
 
 **Corner radius.** System-tracked (`null` in `WidgetTheme`, resolved against
 `android.R.dimen.system_app_widget_background_radius` at render time) — Minimal has no opinion

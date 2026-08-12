@@ -96,8 +96,23 @@ internal fun MinimalLayout(model: WidgetRenderModel, headline: WidgetHeadline, c
             Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
         }
         if (model.progress.isVisible) {
-            Spacer(modifier = GlanceModifier.height(SPACING_SM))
-            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_STANDARD)
+            // Tightened from SPACING_SM and SECONDARY_RING_DP_STANDARD (Session 5A follow-up):
+            // Style and Progress became independent settings without ever giving Minimal a
+            // percentage-text slot to go with them — a real Samsung Galaxy A55 regression, not a
+            // design choice (docs/WIDGET_SIZE_MATRIX.md's own "Hidden: Nothing" convention for
+            // every other centered style already implied this should have shown). Reclaiming this
+            // spacer's 4dp keeps the now-longer stack (identity/headline/unit/secondary/ring/
+            // percentage) inside the same ~200dp budget SECONDARY_RING_DP_STANDARD_COMPACT's own
+            // doc explains, without touching any font size.
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_STANDARD_COMPACT)
+        }
+        if (model.showPercentageText) {
+            Text(
+                text = model.progress.percentText,
+                style = TextStyle(fontSize = PERCENT_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -113,41 +128,59 @@ internal fun MinimalLayoutCompact(model: WidgetRenderModel, headline: WidgetHead
 }
 
 /**
- * 4×2. Deliberately still one column, not two — splitting into a second column would itself be a
- * second thing to look at, which is exactly what Minimal exists to avoid. The extra width buys a
- * bigger number instead, the same lever [MinimalLayout] already pulls, just further.
+ * 4×2. Milestone 5A follow-up (WIDE design system): context (identity, secondary) start-aligned
+ * on the left when there is any, the countdown — Minimal's whole point — end-aligned on the
+ * right, generously spaced and undecorated, the same "maximum clarity, minimal decoration"
+ * restraint [MinimalLayout] already practices, just given a second axis to breathe into instead of
+ * only a taller single column. [hasWideContext] lets the countdown region reclaim the entire card,
+ * centered, when there is no context to show at all — never a blank left half. Neither region
+ * carries `defaultWeight()` — see [WIDE_HORIZONTAL_PADDING]'s own doc for why (a real Samsung
+ * Galaxy A55 finding: weighting only the context column pushed the countdown flush against the
+ * card's own edge) and how the outer `Row`'s `horizontalAlignment = CenterHorizontally` centers
+ * the whole context-gap-countdown block instead.
  */
 @Composable
 internal fun MinimalLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
-    Column(
-        modifier = modifier.padding(WIDGET_PADDING),
-        verticalAlignment = Alignment.CenterVertically,
+    val hasContext = hasWideContext(model, headline)
+    Row(
+        modifier = modifier.padding(horizontal = WIDE_HORIZONTAL_PADDING, vertical = WIDGET_PADDING),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
-            CenteredIdentity(model, colors, size = 14.sp, weight = FontWeight.Medium)
-            Spacer(modifier = GlanceModifier.height(SPACING_LG))
+        if (hasContext) {
+            Column(modifier = GlanceModifier.width(WIDE_CONTEXT_COLUMN_WIDTH), verticalAlignment = Alignment.CenterVertically) {
+                if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+                    StartIdentity(model, colors, size = 14.sp, weight = FontWeight.Medium)
+                }
+                headline.secondary?.let {
+                    Spacer(modifier = GlanceModifier.height(SPACING_XS))
+                    Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted), maxLines = 1)
+                }
+            }
+            Spacer(modifier = GlanceModifier.width(SPACING_LG))
         }
-        Text(
-            text = headline.primary,
-            style = TextStyle(
-                fontSize = headlineSize(headline, MINIMAL_WIDE_HEADLINE_SIZE, MINIMAL_WIDE_HEADLINE_WORD_SIZE),
-                fontWeight = FontWeight.Bold,
-                color = colors.statusColor,
-                textAlign = TextAlign.Center,
-            ),
-            maxLines = 1,
-        )
-        headline.unit?.let {
-            Text(text = it, style = TextStyle(fontSize = 15.sp, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
-        }
-        headline.secondary?.let {
-            Spacer(modifier = GlanceModifier.height(SPACING_XS))
-            Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
-        }
-        if (model.progress.isVisible) {
-            Spacer(modifier = GlanceModifier.height(SPACING_SM))
-            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_WIDE_SINGLE_COLUMN)
+        Column(horizontalAlignment = if (hasContext) Alignment.End else Alignment.CenterHorizontally) {
+            Text(
+                text = headline.primary,
+                style = TextStyle(
+                    fontSize = headlineSize(headline, MINIMAL_WIDE_HEADLINE_SIZE, MINIMAL_WIDE_HEADLINE_WORD_SIZE),
+                    fontWeight = FontWeight.Bold,
+                    color = colors.statusColor,
+                    textAlign = if (hasContext) TextAlign.End else TextAlign.Center,
+                ),
+                maxLines = 1,
+            )
+            headline.unit?.let {
+                Text(
+                    text = it,
+                    style = TextStyle(fontSize = 15.sp, color = colors.onSurfaceMuted, textAlign = if (hasContext) TextAlign.End else TextAlign.Center),
+                    maxLines = 1,
+                )
+            }
+            if (model.progress.style != ProgressStyle.NONE || model.showPercentageText) {
+                Spacer(modifier = GlanceModifier.height(SPACING_SM))
+                WideCountdownProgress(model, colors, ringDp = SECONDARY_RING_DP_WIDE, barWidth = WIDE_PROGRESS_COLUMN_WIDTH)
+            }
         }
     }
 }
@@ -241,56 +274,58 @@ internal fun MaterialLayoutCompact(model: WidgetRenderModel, headline: WidgetHea
 
 /**
  * 4×2. Left column: identity, secondary line, and the target date if enabled. Right column: a
- * larger headline and, beneath it, the progress row — the brief's own "LEFT identity + target
- * date / RIGHT large countdown" pattern. The two columns are genuinely independent `Column`s, not
- * one `Column` stretched sideways.
+ * larger headline and, beside it, the progress row — the brief's own "LEFT identity + target
+ * date / RIGHT large countdown" pattern, its clearest expression of any style since Material was
+ * always the "shows everything, structured" default. [hasWideContext] lets the countdown region
+ * take the full card, centered, on the rare render where the left column would otherwise be
+ * empty. The two columns are genuinely independent `Column`s, not one `Column` stretched sideways,
+ * and neither carries `defaultWeight()` — see [WIDE_HORIZONTAL_PADDING]'s own doc for why.
  */
 @Composable
 internal fun MaterialLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
+    val hasContext = hasWideContext(model, headline)
     Row(
-        modifier = modifier.padding(WIDGET_PADDING),
+        modifier = modifier.padding(horizontal = WIDE_HORIZONTAL_PADDING, vertical = WIDGET_PADDING),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = GlanceModifier.defaultWeight(), verticalAlignment = Alignment.CenterVertically) {
-            if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
-                StartIdentity(model, colors, size = 15.sp, weight = FontWeight.Medium)
-            }
-            headline.secondary?.let {
-                Spacer(modifier = GlanceModifier.height(SPACING_XS))
-                Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted), maxLines = 1)
-            }
-            if (model.showDate) {
-                Spacer(modifier = GlanceModifier.height(SPACING_XS))
-                TargetDateLine(model, colors)
-            }
-        }
-        Spacer(modifier = GlanceModifier.width(SPACING_LG))
-        Column(horizontalAlignment = Alignment.End) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = headline.primary,
-                    style = TextStyle(fontSize = headlineSize(headline, MATERIAL_WIDE_HEADLINE_SIZE, MATERIAL_WIDE_HEADLINE_WORD_SIZE), fontWeight = FontWeight.Bold, color = colors.statusColor),
-                    maxLines = 1,
-                )
-                headline.unit?.let {
-                    Text(
-                        text = it,
-                        style = TextStyle(fontSize = 14.sp, color = colors.onSurfaceMuted),
-                        maxLines = 1,
-                        modifier = GlanceModifier.padding(start = 4.dp),
-                    )
+        if (hasContext) {
+            Column(modifier = GlanceModifier.width(WIDE_CONTEXT_COLUMN_WIDTH), verticalAlignment = Alignment.CenterVertically) {
+                if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+                    StartIdentity(model, colors, size = 15.sp, weight = FontWeight.Medium)
+                }
+                headline.secondary?.let {
+                    Spacer(modifier = GlanceModifier.height(SPACING_XS))
+                    Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted), maxLines = 1)
+                }
+                if (model.showDate) {
+                    Spacer(modifier = GlanceModifier.height(SPACING_XS))
+                    TargetDateLine(model, colors)
                 }
             }
-            if (model.progress.isVisible) {
-                Spacer(modifier = GlanceModifier.height(SPACING_SM))
-                ProgressGraphic(model, colors, barModifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_WIDE)
-            }
-            if (model.showPercentageText) {
+            Spacer(modifier = GlanceModifier.width(SPACING_LG))
+        }
+        Column(horizontalAlignment = if (hasContext) Alignment.End else Alignment.CenterHorizontally) {
+            Text(
+                text = headline.primary,
+                style = TextStyle(
+                    fontSize = headlineSize(headline, MATERIAL_WIDE_HEADLINE_SIZE, MATERIAL_WIDE_HEADLINE_WORD_SIZE),
+                    fontWeight = FontWeight.Bold,
+                    color = colors.statusColor,
+                    textAlign = if (hasContext) TextAlign.End else TextAlign.Center,
+                ),
+                maxLines = 1,
+            )
+            headline.unit?.let {
                 Text(
-                    text = model.progress.percentText,
-                    style = TextStyle(fontSize = PERCENT_SIZE, color = colors.onSurfaceMuted),
+                    text = it,
+                    style = TextStyle(fontSize = 14.sp, color = colors.onSurfaceMuted, textAlign = if (hasContext) TextAlign.End else TextAlign.Center),
                     maxLines = 1,
                 )
+            }
+            if (model.progress.style != ProgressStyle.NONE || model.showPercentageText) {
+                Spacer(modifier = GlanceModifier.height(SPACING_SM))
+                WideCountdownProgress(model, colors, ringDp = SECONDARY_RING_DP_WIDE, barWidth = WIDE_PROGRESS_COLUMN_WIDTH)
             }
         }
     }
@@ -480,49 +515,69 @@ internal fun OledLayoutCompact(model: WidgetRenderModel, headline: WidgetHeadlin
     CompactCenteredHeadline(headline, colors, modifier, size = OLED_COMPACT_SIZE, weight = FontWeight.Bold)
 }
 
-/** 4×2. The extra width goes to an even larger number, the same "stay one thing, get bigger" logic [MinimalLayoutWide] uses. Same identity/date/percentage toggles as [OledLayout] — see its own doc. */
+/**
+ * 4×2. Milestone 5A follow-up (WIDE design system): replaces the earlier centered single-column
+ * form with the same sparse, high-contrast identity applied to a genuine two-region composition —
+ * context left (identity, date) when there is any, an even larger number right, still the largest
+ * headline of any style. Same identity/date/percentage toggles as [OledLayout] — see its own doc
+ * for why they exist at all on a style whose entire premise is starkness. [hasWideContext] lets the
+ * countdown reclaim the full card, centered, whenever the left region would otherwise sit empty —
+ * the sparsest possible OLED render, deliberately, rather than a blank half-card. Neither region
+ * carries `defaultWeight()` — see [WIDE_HORIZONTAL_PADDING]'s own doc for why.
+ */
 @Composable
 internal fun OledLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
-    Column(
-        modifier = modifier.padding(WIDGET_PADDING),
-        verticalAlignment = Alignment.CenterVertically,
+    val hasContext = hasWideContext(model, headline)
+    Row(
+        modifier = modifier.padding(horizontal = WIDE_HORIZONTAL_PADDING, vertical = WIDGET_PADDING),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
-            CenteredIdentity(model, colors, size = 14.sp, weight = FontWeight.Medium)
-            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+        if (hasContext) {
+            Column(modifier = GlanceModifier.width(WIDE_CONTEXT_COLUMN_WIDTH), verticalAlignment = Alignment.CenterVertically) {
+                if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+                    StartIdentity(model, colors, size = 14.sp, weight = FontWeight.Medium)
+                }
+                headline.secondary?.let {
+                    Spacer(modifier = GlanceModifier.height(SPACING_XS))
+                    Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted), maxLines = 1)
+                }
+                if (model.showDate) {
+                    Spacer(modifier = GlanceModifier.height(SPACING_XS))
+                    TargetDateLine(model, colors)
+                }
+            }
+            Spacer(modifier = GlanceModifier.width(SPACING_LG))
         }
-        Text(
-            text = headline.primary,
-            style = TextStyle(
-                fontSize = headlineSize(headline, OLED_WIDE_HEADLINE_SIZE, OLED_WIDE_HEADLINE_WORD_SIZE),
-                fontWeight = FontWeight.Bold,
-                color = colors.statusColor,
-                textAlign = TextAlign.Center,
-            ),
-            maxLines = 1,
-        )
-        headline.unit?.let {
-            Text(text = it, style = TextStyle(fontSize = 15.sp, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
-        }
-        headline.secondary?.let {
-            Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
-        }
-        if (model.showDate) {
-            Spacer(modifier = GlanceModifier.height(SPACING_XS))
-            TargetDateLine(model, colors)
-        }
-        if (model.showPercentageText) {
-            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+        Column(horizontalAlignment = if (hasContext) Alignment.End else Alignment.CenterHorizontally) {
             Text(
-                text = model.progress.percentText,
-                style = TextStyle(fontSize = PERCENT_SIZE, fontWeight = FontWeight.Medium, color = colors.accent, textAlign = TextAlign.Center),
+                text = headline.primary,
+                style = TextStyle(
+                    fontSize = headlineSize(headline, OLED_WIDE_HEADLINE_SIZE, OLED_WIDE_HEADLINE_WORD_SIZE),
+                    fontWeight = FontWeight.Bold,
+                    color = colors.statusColor,
+                    textAlign = if (hasContext) TextAlign.End else TextAlign.Center,
+                ),
                 maxLines = 1,
             )
-        }
-        if (model.progress.isVisible) {
-            Spacer(modifier = GlanceModifier.height(SPACING_XS))
-            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_OLED_WIDE)
+            headline.unit?.let {
+                Text(
+                    text = it,
+                    style = TextStyle(fontSize = 15.sp, color = colors.onSurfaceMuted, textAlign = if (hasContext) TextAlign.End else TextAlign.Center),
+                    maxLines = 1,
+                )
+            }
+            if (model.progress.style != ProgressStyle.NONE || model.showPercentageText) {
+                Spacer(modifier = GlanceModifier.height(SPACING_SM))
+                WideCountdownProgress(
+                    model,
+                    colors,
+                    ringDp = SECONDARY_RING_DP_WIDE,
+                    barWidth = WIDE_PROGRESS_COLUMN_WIDTH,
+                    percentColor = colors.accent,
+                    percentWeight = FontWeight.Medium,
+                )
+            }
         }
     }
 }
@@ -564,8 +619,17 @@ internal fun GlassLayout(model: WidgetRenderModel, headline: WidgetHeadline, col
             Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, fontWeight = FontWeight.Normal, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
         }
         if (model.progress.isVisible) {
-            Spacer(modifier = GlanceModifier.height(SPACING_LG))
-            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(4.dp), ringDp = SECONDARY_RING_DP_STANDARD)
+            // See MinimalLayout's own comment for the same fix and the same reasoning — Glass had
+            // the identical gap (no percentage-text slot despite Style/Progress independence).
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(4.dp), ringDp = SECONDARY_RING_DP_STANDARD_COMPACT)
+        }
+        if (model.showPercentageText) {
+            Text(
+                text = model.progress.percentText,
+                style = TextStyle(fontSize = PERCENT_SIZE, fontWeight = FontWeight.Normal, color = colors.onSurfaceMuted, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -596,25 +660,35 @@ internal fun GlassLayoutCompact(model: WidgetRenderModel, headline: WidgetHeadli
 }
 
 /**
- * 4×2. Left column: identity and secondary. Right column: headline plus a thin progress bar
- * spanning the column beneath it — the same two-column idea as [MaterialLayoutWide], kept light.
+ * 4×2. Left column: identity and secondary, start-aligned. Right column: headline plus a thin
+ * progress row, centered — "elegant asymmetry": context anchored left, countdown/progress
+ * balanced right, kept light by [FontWeight.Normal] everywhere the way every Glass size already
+ * is. [hasWideContext] lets the right region take the full card, still centered, whenever there is
+ * no context to show — never the large dead middle region a real Samsung Galaxy A55 test found
+ * here before ([StartIdentity], not [CenteredIdentity], is what actually fixed that — see
+ * [RoundedLayoutWide]'s own doc for the identical root cause). Neither region carries
+ * `defaultWeight()` — see [WIDE_HORIZONTAL_PADDING]'s own doc for why.
  */
 @Composable
 internal fun GlassLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
+    val hasContext = hasWideContext(model, headline)
     Row(
-        modifier = modifier.padding(GLASS_PADDING),
+        modifier = modifier.padding(horizontal = WIDE_HORIZONTAL_PADDING, vertical = GLASS_PADDING),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = GlanceModifier.defaultWeight()) {
-            if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
-                CenteredIdentity(model, colors, size = 14.sp, weight = FontWeight.Normal)
+        if (hasContext) {
+            Column(modifier = GlanceModifier.width(WIDE_CONTEXT_COLUMN_WIDTH)) {
+                if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+                    StartIdentity(model, colors, size = 14.sp, weight = FontWeight.Normal)
+                }
+                headline.secondary?.let {
+                    Spacer(modifier = GlanceModifier.height(SPACING_XS))
+                    Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, fontWeight = FontWeight.Normal, color = colors.onSurfaceMuted), maxLines = 1)
+                }
             }
-            headline.secondary?.let {
-                Spacer(modifier = GlanceModifier.height(SPACING_XS))
-                Text(text = it, style = TextStyle(fontSize = LABEL_SIZE, fontWeight = FontWeight.Normal, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
-            }
+            Spacer(modifier = GlanceModifier.width(SPACING_LG))
         }
-        Spacer(modifier = GlanceModifier.width(SPACING_LG))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = headline.primary,
@@ -624,9 +698,16 @@ internal fun GlassLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline,
             headline.unit?.let {
                 Text(text = it, style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, color = colors.onSurfaceMuted, textAlign = TextAlign.Center), maxLines = 1)
             }
-            if (model.progress.isVisible) {
+            if (model.progress.style != ProgressStyle.NONE || model.showPercentageText) {
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
-                ProgressGraphic(model, colors, barModifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(4.dp), ringDp = SECONDARY_RING_DP_WIDE)
+                WideCountdownProgress(
+                    model,
+                    colors,
+                    ringDp = SECONDARY_RING_DP_WIDE,
+                    barWidth = WIDE_PROGRESS_COLUMN_WIDTH,
+                    barHeight = 4.dp,
+                    percentWeight = FontWeight.Normal,
+                )
             }
         }
     }
@@ -664,8 +745,19 @@ internal fun RoundedLayout(model: WidgetRenderModel, headline: WidgetHeadline, c
             Pill(it, colors)
         }
         if (model.progress.isVisible) {
-            Spacer(modifier = GlanceModifier.height(SPACING_SM))
-            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_STANDARD, barColor = colors.accent)
+            // See MinimalLayout's own comment for the same fix and the same reasoning — Rounded
+            // had the identical gap. The pill-chip secondary is taller than plain text, so this
+            // style has the least headroom of the three; the tightened spacer and smaller
+            // SECONDARY_RING_DP_STANDARD_COMPACT ring matter most here.
+            Spacer(modifier = GlanceModifier.height(SPACING_XS))
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.fillMaxWidth().height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_STANDARD_COMPACT, barColor = colors.accent)
+        }
+        if (model.showPercentageText) {
+            Text(
+                text = model.progress.percentText,
+                style = TextStyle(fontSize = PERCENT_SIZE, color = colors.onSurfaceMuted, textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -697,22 +789,35 @@ internal fun RoundedLayoutCompact(model: WidgetRenderModel, headline: WidgetHead
 }
 
 /**
- * 4×2. Left column: identity. Right column: headline, the pill-chip secondary, and a progress
- * bar — everything [RoundedLayout] shows, given a second column to breathe into instead of a
- * taller single one.
+ * 4×2. Left column: identity, comfortably spaced. Right column: headline, unit, the pill-chip
+ * secondary, and progress — everything [RoundedLayout] shows, given a second region to breathe
+ * into instead of a taller single column; the pill stays Rounded's own signature element rather
+ * than moving into the left "context" region the way Material moves its own secondary line there —
+ * "do not turn it into Material with different corners." [hasWideContext] lets the right region
+ * take the full card, still centered, when the left has nothing to show.
+ *
+ * Left-anchored identity ([StartIdentity], not [CenteredIdentity]/`CenterHorizontally`) — the
+ * same real Samsung Galaxy A55 dead-zone finding as [GlassLayoutWide]'s own doc: centering
+ * identity inside the entire stretched `defaultWeight()` column left it stranded in the middle of
+ * the card instead of anchored near the left edge. Neither region carries `defaultWeight()` any
+ * more at all — see [WIDE_HORIZONTAL_PADDING]'s own doc for why.
  */
 @Composable
 internal fun RoundedLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
+    val hasContext = hasWideContext(model, headline)
     Row(
-        modifier = modifier.padding(ROUNDED_PADDING),
+        modifier = modifier.padding(horizontal = WIDE_HORIZONTAL_PADDING, vertical = ROUNDED_PADDING),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = GlanceModifier.defaultWeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-            if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
-                CenteredIdentity(model, colors, size = 14.sp, weight = FontWeight.Medium)
+        if (hasContext) {
+            Column(modifier = GlanceModifier.width(WIDE_CONTEXT_COLUMN_WIDTH)) {
+                if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+                    StartIdentity(model, colors, size = 14.sp, weight = FontWeight.Medium)
+                }
             }
+            Spacer(modifier = GlanceModifier.width(SPACING_LG))
         }
-        Spacer(modifier = GlanceModifier.width(SPACING_LG))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = headline.primary,
@@ -726,9 +831,9 @@ internal fun RoundedLayoutWide(model: WidgetRenderModel, headline: WidgetHeadlin
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
                 Pill(it, colors)
             }
-            if (model.progress.isVisible) {
+            if (model.progress.style != ProgressStyle.NONE || model.showPercentageText) {
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
-                ProgressGraphic(model, colors, barModifier = GlanceModifier.width(WIDE_PROGRESS_COLUMN_WIDTH).height(PROGRESS_HEIGHT), ringDp = SECONDARY_RING_DP_WIDE, barColor = colors.accent)
+                WideCountdownProgress(model, colors, ringDp = SECONDARY_RING_DP_WIDE, barWidth = WIDE_PROGRESS_COLUMN_WIDTH, barColor = colors.accent)
             }
         }
     }
@@ -810,45 +915,68 @@ internal fun ModernLayoutCompact(model: WidgetRenderModel, headline: WidgetHeadl
 }
 
 /**
- * 4×2. Left column: identity, date, and percentage stacked top-anchored. Right column: a larger
- * headline and a progress bar. The most "dashboard" of any wide layout, because Modern was
- * already the most information-dense style at 2×2 — a second column is this style benefiting the
- * most from the extra width, not just tolerating it.
+ * 4×2. Left column: identity, date, and percentage stacked top-anchored — a genuine dashboard
+ * grouping, not a placeholder, and a deliberate departure from every other style's "percentage
+ * beside the graphic" WIDE treatment: Modern is already the most information-dense style at 2×2,
+ * and its own "editorial, deliberate alignment" identity is served better by keeping every textual
+ * stat together on one side than by pairing percentage with the ring/bar the way five plainer
+ * styles do — "each Style may interpret [context/countdown] differently" is exactly this case.
+ * Right column: a larger headline and the progress graphic alone, undecorated by a second number
+ * repeating what the left column already stated. The most "dashboard" of any wide layout, because
+ * Modern was already the most information-dense style at 2×2 — a second region is this style
+ * benefiting the most from the extra width, not just tolerating it. `hasContext` below folds
+ * percentage into [hasWideContext]'s own "does the left region have anything at all" check, since
+ * percentage lives on the left here specifically, unlike every other style. Neither region carries
+ * `defaultWeight()` — see [WIDE_HORIZONTAL_PADDING]'s own doc for why; Modern's own top-anchored,
+ * start-aligned character inside each region is otherwise unchanged.
  */
 @Composable
 internal fun ModernLayoutWide(model: WidgetRenderModel, headline: WidgetHeadline, colors: WidgetColors, modifier: GlanceModifier) {
+    val hasContext = hasWideContext(model, headline) || model.showPercentageText
     Row(
-        modifier = modifier.padding(WIDGET_PADDING),
+        modifier = modifier.padding(horizontal = WIDE_HORIZONTAL_PADDING, vertical = WIDGET_PADDING),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalAlignment = Alignment.Top,
     ) {
-        Column(modifier = GlanceModifier.defaultWeight(), verticalAlignment = Alignment.Top, horizontalAlignment = Alignment.Start) {
-            if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
-                StartIdentity(model, colors, size = 13.sp, weight = FontWeight.Medium)
-                Spacer(modifier = GlanceModifier.height(SPACING_XS))
+        if (hasContext) {
+            Column(modifier = GlanceModifier.width(WIDE_CONTEXT_COLUMN_WIDTH), verticalAlignment = Alignment.Top, horizontalAlignment = Alignment.Start) {
+                if (headline.showIdentity && (model.showEmoji || model.showTitle)) {
+                    StartIdentity(model, colors, size = 13.sp, weight = FontWeight.Medium)
+                    Spacer(modifier = GlanceModifier.height(SPACING_XS))
+                }
+                headline.secondary?.let {
+                    Text(text = it, style = TextStyle(fontSize = 12.sp, color = colors.onSurfaceMuted), maxLines = 1)
+                }
+                if (model.showDate) {
+                    TargetDateLine(model, colors, size = 11.sp)
+                }
+                if (model.showPercentageText) {
+                    Text(
+                        text = model.progress.percentText,
+                        style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, color = colors.accent),
+                        maxLines = 1,
+                    )
+                }
             }
-            headline.secondary?.let {
-                Text(text = it, style = TextStyle(fontSize = 12.sp, color = colors.onSurfaceMuted), maxLines = 1)
-            }
-            if (model.showDate) {
-                TargetDateLine(model, colors, size = 11.sp)
-            }
-            if (model.showPercentageText) {
-                Text(
-                    text = model.progress.percentText,
-                    style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, color = colors.accent),
-                    maxLines = 1,
-                )
-            }
+            Spacer(modifier = GlanceModifier.width(SPACING_LG))
         }
-        Spacer(modifier = GlanceModifier.width(SPACING_LG))
-        Column(horizontalAlignment = Alignment.Start) {
+        Column(horizontalAlignment = if (hasContext) Alignment.Start else Alignment.CenterHorizontally) {
             Text(
                 text = headline.primary,
-                style = TextStyle(fontSize = headlineSize(headline, MODERN_WIDE_HEADLINE_SIZE, MODERN_WIDE_HEADLINE_WORD_SIZE), fontWeight = FontWeight.Bold, color = colors.statusColor),
+                style = TextStyle(
+                    fontSize = headlineSize(headline, MODERN_WIDE_HEADLINE_SIZE, MODERN_WIDE_HEADLINE_WORD_SIZE),
+                    fontWeight = FontWeight.Bold,
+                    color = colors.statusColor,
+                    textAlign = if (hasContext) TextAlign.Start else TextAlign.Center,
+                ),
                 maxLines = 1,
             )
             headline.unit?.let {
-                Text(text = it, style = TextStyle(fontSize = 14.sp, color = colors.onSurfaceMuted), maxLines = 1)
+                Text(
+                    text = it,
+                    style = TextStyle(fontSize = 14.sp, color = colors.onSurfaceMuted, textAlign = if (hasContext) TextAlign.Start else TextAlign.Center),
+                    maxLines = 1,
+                )
             }
             if (model.progress.isVisible) {
                 Spacer(modifier = GlanceModifier.height(SPACING_SM))
@@ -961,6 +1089,77 @@ private fun ProgressGraphic(
         // (false exactly when style is NONE) — kept so this `when` stays exhaustive rather than
         // relying on that external guarantee holding at every call site forever.
         ProgressStyle.NONE -> Unit
+    }
+}
+
+/**
+ * Whether a WIDE layout's context (left) region has anything at all to draw — the brief's own
+ * "if both [emoji and title] are off, the countdown region should rebalance rather than leaving a
+ * meaningless empty left region" rule, generalized to every field a left region can carry (not
+ * just identity: [WidgetHeadline.secondary] and [WidgetRenderModel.showDate] too, since Material's
+ * and Modern's left columns already carry those). Every `<Style>LayoutWide` checks this once and
+ * either reserves a weighted left column (true) or lets the countdown region alone fill the card,
+ * centered (false) — never a half-drawn, mostly-empty column sitting beside it either way.
+ */
+private fun hasWideContext(model: WidgetRenderModel, headline: WidgetHeadline): Boolean =
+    (headline.showIdentity && (model.showEmoji || model.showTitle)) || headline.secondary != null || model.showDate
+
+/**
+ * WIDE's countdown-region progress treatment, shared by all six styles' `<Style>LayoutWide`: the
+ * percentage sits *beside* the graphic (Ring or Bar), not beneath it the way STANDARD's narrower
+ * card still does — a horizontal pairing this session's own brief asked for, reading as "how far
+ * along" at a glance rather than a second stacked line. [ProgressStyle.NONE] draws the percentage
+ * alone, on its own line, with no placeholder graphic reserved in its place — "do not leave a
+ * placeholder for absent progress." Percentage stays fully independent of the graphic either way:
+ * [WidgetRenderModel.showPercentageText] alone decides whether it draws, at every branch here.
+ *
+ * Reuses [ProgressGraphic] for the graphic itself rather than re-implementing ring/bar drawing —
+ * the only new thing this function adds is the inline percentage and the row that pairs them.
+ */
+@Composable
+private fun WideCountdownProgress(
+    model: WidgetRenderModel,
+    colors: WidgetColors,
+    ringDp: Float,
+    barWidth: androidx.compose.ui.unit.Dp,
+    barHeight: androidx.compose.ui.unit.Dp = PROGRESS_HEIGHT,
+    barColor: ColorProvider = colors.statusColor,
+    percentColor: ColorProvider = colors.onSurfaceMuted,
+    percentWeight: FontWeight = FontWeight.Normal,
+    percentSize: TextUnit = PERCENT_SIZE,
+) {
+    when (model.progress.style) {
+        ProgressStyle.CIRCULAR -> Row(verticalAlignment = Alignment.CenterVertically) {
+            ProgressGraphic(model, colors, barModifier = GlanceModifier, ringDp = ringDp)
+            if (model.showPercentageText) {
+                Spacer(modifier = GlanceModifier.width(SPACING_SM))
+                Text(
+                    text = model.progress.percentText,
+                    style = TextStyle(fontSize = percentSize, fontWeight = percentWeight, color = percentColor),
+                    maxLines = 1,
+                )
+            }
+        }
+
+        ProgressStyle.LINEAR -> Row(verticalAlignment = Alignment.CenterVertically) {
+            ProgressGraphic(model, colors, barModifier = GlanceModifier.width(barWidth).height(barHeight), ringDp = ringDp, barColor = barColor)
+            if (model.showPercentageText) {
+                Spacer(modifier = GlanceModifier.width(SPACING_SM))
+                Text(
+                    text = model.progress.percentText,
+                    style = TextStyle(fontSize = percentSize, fontWeight = percentWeight, color = percentColor),
+                    maxLines = 1,
+                )
+            }
+        }
+
+        ProgressStyle.NONE -> if (model.showPercentageText) {
+            Text(
+                text = model.progress.percentText,
+                style = TextStyle(fontSize = percentSize, fontWeight = percentWeight, color = percentColor),
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1165,6 +1364,29 @@ private val COMPACT_VERTICAL_PADDING = 4.dp
 private val WIDE_PROGRESS_COLUMN_WIDTH = 120.dp
 private const val COMPACT_WORD_FRACTION = 0.62f
 
+// WIDE (4×2) horizontal balance — found on a real Samsung Galaxy A55: the earlier WIDE design
+// (context left, countdown right) put `defaultWeight()` on the context column alone, so it
+// silently absorbed *all* leftover Row width after the countdown column's own intrinsic size was
+// subtracted — pushing the countdown flush against the card's trailing padding, and hiding what
+// should have been a visible, bounded gap between the two regions inside the now-oversized context
+// column instead. Two changes together fix this, applied identically across every style's
+// `LayoutWide`:
+//   - [WIDE_HORIZONTAL_PADDING] replaces WIDE's horizontal padding (previously the same
+//     [WIDGET_PADDING]/[GLASS_PADDING]/[ROUNDED_PADDING] STANDARD also uses) with a WIDE-only,
+//     larger value — real breathing room on both sides, never touching STANDARD's own padding,
+//     which keeps using its existing constants unchanged. Vertical padding is untouched too.
+//   - Neither region carries `defaultWeight()` any more: the context column gets a fixed
+//     [WIDE_CONTEXT_COLUMN_WIDTH] instead (generous enough for a real event title at every style's
+//     own identity font size, with `maxLines = 1` truncating anything longer, same as always), and
+//     the countdown column stays intrinsic-width, sized to its own content. With both regions
+//     unweighted, each `LayoutWide`'s outer `Row` sets `horizontalAlignment = CenterHorizontally`
+//     — Glance's own documented behavior for a `Row` whose children do not fill its full width is
+//     to center that whole unweighted block, so "context, gap, countdown" reads as one centered
+//     composition with the leftover width split evenly as extra margin on both sides, rather than
+//     one region hugging each edge with an oversized gap hidden between them.
+private val WIDE_HORIZONTAL_PADDING = 20.dp
+private val WIDE_CONTEXT_COLUMN_WIDTH = 130.dp
+
 private const val RING_FRACTION_OF_CELL = 0.62f
 private const val MIN_RING_DP = 64f
 private const val MAX_RING_DP = 120f
@@ -1176,25 +1398,31 @@ private const val RING_PX_QUANTUM = 8
 // every other style already drew at full size, so it has to share the card rather than dominate
 // it.
 //
-// Found on a real Samsung Galaxy A55: WIDE and STANDARD share the *same* real measured card
-// height (224dp — WidgetSizeClass.kt's own doc; only width differs), so a WIDE ring sized larger
-// than STANDARD's on the assumption that extra width means extra vertical room was wrong, and the
-// actual cause of real-device clipping. Two further splits, both from the same 224dp budget minus
-// WIDGET_PADDING (12dp × 2 = 24dp, leaving ~200dp) and each style's own already-tuned constants
-// above, not a blanket shrink:
-//   - Single-column layouts (Minimal, OLED) stack identity + headline + unit + secondary + this
-//     ring all in one column, unlike Material/Glass/Rounded/Modern's WIDE layouts, which are two
-//     columns — the ring's column there holds only a headline + unit, with identity/secondary/date
-//     in the *other* column. Single-column WIDE therefore needs a real fraction of its budget
-//     back from the ring; two-column WIDE has ample headroom to keep the larger ring.
-//   - OLED specifically uses the largest headline of any style (50sp/62sp, vs Minimal's 46sp/58sp)
-//     and, as of this fix, also draws identity/date/percentage Minimal does not — its own smaller
-//     constants leave adequate room for its realistic default case (title/emoji + a ring, no
-//     optional date/percentage) with margin; the single most crowded combination (every optional
-//     field on at once) was not separately re-measured on a real device, consistent with this
-//     project's standing practice of not claiming a confirmation that was not obtained.
+// STANDARD (2×2) is single-column for every style — identity + headline + unit + secondary +
+// this ring (and, where enabled, percentage) all stack in one column against the real measured
+// ~200dp usable height (224dp card minus WIDGET_PADDING × 2 — WidgetSizeClass.kt's own doc) — so
+// [SECONDARY_RING_DP_STANDARD] (the generic size) and [SECONDARY_RING_DP_STANDARD_COMPACT] (a
+// smaller size, reused verbatim from OLED's own real-device-informed value) split on how much else
+// that one column already carries: OLED's own doc has the full account of which of the six styles
+// use which, and why.
+//
+// WIDE (4×2), as of the Milestone 5A follow-up WIDE design system, is two-region for every style —
+// a left context column and a right countdown column that holds only the headline, its unit, and
+// this ring (identity/secondary/date, if any, live in the other column instead) — so every style's
+// WIDE ring shares one size, [SECONDARY_RING_DP_WIDE], with no per-style split: none of the six
+// right columns carries more than a headline + unit above the ring any more, unlike STANDARD's
+// single column, so there is no longer a "some styles have less headroom than others" question to
+// answer per style. (Earlier per-style/single-column WIDE ring constants existed when Minimal and
+// OLED's own WIDE forms were still single-column, centered compositions rather than this two-region
+// system — removed along with those compositions, not still declared unused.)
 private const val SECONDARY_RING_DP_STANDARD = 56f
 private const val SECONDARY_RING_DP_OLED_STANDARD = 44f
 private const val SECONDARY_RING_DP_WIDE = 64f
-private const val SECONDARY_RING_DP_WIDE_SINGLE_COLUMN = 40f
-private const val SECONDARY_RING_DP_OLED_WIDE = 36f
+
+// Minimal/Glass/Rounded's STANDARD ring, once each gained a percentage-text slot (a prior
+// Milestone 5A follow-up fix) — reusing OLED's own already-tuned value rather than inventing a new
+// one, since OLED already proves a single column can fit identity + headline + unit + secondary +
+// ring + percentage inside the same budget. `_COMPACT` names the ring's size, not the widget's
+// [WidgetSizeClass] — do not confuse with [WidgetSizeClass.COMPACT], which never shows progress at
+// all.
+private const val SECONDARY_RING_DP_STANDARD_COMPACT = SECONDARY_RING_DP_OLED_STANDARD

@@ -6,6 +6,16 @@ one of them — not "does it compile," but "what is this specific combination *f
 implementation is `CountdownWidgetLayouts.kt`'s 21 `<Style>Layout[Compact|Wide]` composables; this
 document is why each one looks the way it does.
 
+**Known stale as of Milestone 5A follow-up (ring/percentage rendering-parity fix):** every row's
+own **Progress** column below still reflects this document's Session 10 baseline, predating Style
+and Progress becoming independent settings (`WidgetStyle.isPremium`'s sibling decision) — several
+say "Never" for a style that has drawn a progress bar/ring for at least one full session since
+(Minimal, OLED). The **Hidden** column is stale the same way for percentage text specifically.
+`CountdownWidgetLayouts.kt`'s own per-layout KDoc and `docs/WIDGET_DESIGN_GUIDE.md`'s Minimal entry
+are the current source of truth for Progress/percentage until this table gets its own full pass —
+not corrected here cell-by-cell, since that is a larger documentation task than this fix's own
+scope (real-widget rendering parity, not a design-doc rewrite).
+
 ## The three sizes, and the real numbers behind them
 
 | Size class | Footprint | Real measured/reasoned dp (this session) | What it's for |

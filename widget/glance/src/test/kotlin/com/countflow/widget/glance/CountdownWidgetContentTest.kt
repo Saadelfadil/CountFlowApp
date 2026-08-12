@@ -64,6 +64,7 @@ class CountdownWidgetContentTest {
         label: CountdownLabel = CountdownLabel.InDays(12),
         showDaysValue: Boolean = true,
         showTitle: Boolean = true,
+        showEmoji: Boolean = true,
         progressStyle: ProgressStyle = ProgressStyle.LINEAR,
         showPercentageText: Boolean = false,
         backgroundColorArgb: Int? = null,
@@ -99,7 +100,7 @@ class CountdownWidgetContentTest {
         target = target,
         targetZone = zone,
         showTitle = showTitle,
-        showEmoji = true,
+        showEmoji = showEmoji,
         showDate = showDate,
         showPercentageText = showPercentageText,
         isCompleted = isCompleted,
@@ -286,7 +287,16 @@ class CountdownWidgetContentTest {
     // ── Every style renders its headline without crashing, and actually differs in what it shows ──
 
     @Test
-    fun `minimal never draws percentage text, even when progress is visible and requested`() = runTest {
+    fun `minimal draws percentage text when requested — corrected from an earlier session's assumption`() = runTest {
+        // A real Samsung Galaxy A55 finding overturns what used to be asserted here: this test
+        // previously required Minimal to omit percentage text entirely, on the theory that it had
+        // "no percentage-text slot" by design. That theory did not survive physical-device
+        // evidence — the Customize Widget preview already showed percentage for every style
+        // unconditionally, so Minimal silently omitting it on the real widget was a Preview/Glance
+        // parity bug, not a deliberate minimalist choice (docs/WIDGET_SIZE_MATRIX.md's Minimal
+        // entry itself was already stale on this exact point, predating Style/Progress becoming
+        // independent settings). Percentage visibility must never be conditional on which
+        // WidgetStyle is active, only on the binding's own toggle — see the truth-table sweep below.
         runGlanceAppWidgetUnitTest {
             setAppWidgetSize(STANDARD_SIZE)
             setContext(ApplicationProvider.getApplicationContext())
@@ -294,11 +304,7 @@ class CountdownWidgetContentTest {
                 CountdownWidgetContent(model(style = WidgetStyle.MINIMAL, showPercentageText = true))
             }
 
-            // Minimal has no percentage-text slot at all — unrelated to, and unchanged by, Style
-            // and Progress becoming independent settings: Minimal still draws its own bar/ring
-            // like every other style now does (see the Style × Progress sweep below), it just
-            // never adds a number next to it.
-            onNode(hasTextEqualTo("40%")).assertDoesNotExist()
+            onNode(hasTextEqualTo("40%")).assertExists()
         }
     }
 
@@ -421,35 +427,197 @@ class CountdownWidgetContentTest {
         }
     }
 
-    // ── Ring clipping at 4x2 (Samsung Galaxy A55 physical-device finding): Minimal and OLED are
-    // the single-column WIDE layouts, stacking identity + headline + unit + secondary + the ring
-    // all in one column, unlike Material/Glass/Rounded/Modern's two-column WIDE layouts — the ones
-    // actually at risk of the ring being pushed past the card's real (measured, not assumed) 224dp
-    // height. Robolectric cannot measure real pixel bounds or detect clipping directly (there is
-    // no such assertion in Glance's unit-testing API), so this only confirms the fixed composition
-    // still renders correctly end to end at WIDE with every optional field on — the smaller ring
-    // diameters themselves are justified by arithmetic against each layout's own real constants,
-    // documented alongside SECONDARY_RING_DP_WIDE_SINGLE_COLUMN/SECONDARY_RING_DP_OLED_WIDE in
-    // CountdownWidgetLayouts.kt. ──
+    // ── Percentage/progress-graphic independence, per style, per size (this session's own
+    // Samsung Galaxy A55 finding: Ring correctly displayed in the Customize Widget preview with
+    // its percentage underneath, but the real widget dropped the percentage for Minimal, Glass,
+    // and Rounded — a Style-conditional omission the truth table below forbids). Percentage
+    // visibility must depend only on the binding's own toggle: never on Linear vs Circular, and
+    // never on which WidgetStyle is active. Sweeps every selectable style × every ProgressStyle at
+    // both size classes that draw a percentage at all (COMPACT never does — see its own dedicated
+    // test further down) — this subsumes the brief's minimum matrix (STANDARD/WIDE × Bar/Ring/None
+    // × percentage on) as one pair of loops rather than enumerating each cell by hand. ──
 
     @Test
-    fun `minimal and oled still render a full composition at wide with ring progress and every optional field on`() = runTest {
-        // Minimal has no target-date/percentage slot at all (unchanged, out of scope here) — only
-        // the fields common to both are asserted; OLED's own date/percentage rendering has its own
-        // dedicated test above.
-        listOf(WidgetStyle.MINIMAL, WidgetStyle.OLED).forEach { style ->
+    fun `percentage renders when requested, for every selectable style and every progress style, at standard and wide`() = runTest {
+        for (dpSize in listOf(STANDARD_SIZE, WIDE_SIZE)) {
+            WidgetStyle.selectable.forEach { style ->
+                ProgressStyle.entries.forEach { progressStyle ->
+                    runGlanceAppWidgetUnitTest {
+                        setAppWidgetSize(dpSize)
+                        setContext(ApplicationProvider.getApplicationContext())
+                        provideComposable {
+                            CountdownWidgetContent(
+                                model(style = style, progressStyle = progressStyle, showPercentageText = true),
+                            )
+                        }
+
+                        onNode(hasTextEqualTo("40%")).assertExists()
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `percentage never renders when not requested, for every selectable style and every progress style, at standard and wide`() = runTest {
+        for (dpSize in listOf(STANDARD_SIZE, WIDE_SIZE)) {
+            WidgetStyle.selectable.forEach { style ->
+                ProgressStyle.entries.forEach { progressStyle ->
+                    runGlanceAppWidgetUnitTest {
+                        setAppWidgetSize(dpSize)
+                        setContext(ApplicationProvider.getApplicationContext())
+                        provideComposable {
+                            CountdownWidgetContent(
+                                model(style = style, progressStyle = progressStyle, showPercentageText = false),
+                            )
+                        }
+
+                        onNode(hasTextEqualTo("40%")).assertDoesNotExist()
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Today/Tomorrow: a semantic headline word, not a 1-3 digit count (the brief's own explicit
+    // warning against assuming otherwise) — verified alongside a Ring and a percentage, at both
+    // sizes, since that combination stresses the vertical budget the most and is exactly the
+    // combination BUG 2/BUG 3's spacing and ring-size fixes target. Robolectric cannot assert real
+    // pixel wrapping (see WidgetHeadline.isNumeric's own tests above), only that the correct word
+    // renders, once, alongside everything else that should still be present. ──
+
+    @Test
+    fun `today and tomorrow headlines render correctly alongside a ring and percentage, at standard and wide`() = runTest {
+        for (dpSize in listOf(STANDARD_SIZE, WIDE_SIZE)) {
+            listOf(CountdownLabel.Today to "Today", CountdownLabel.Tomorrow to "Tomorrow").forEach { (label, text) ->
+                WidgetStyle.selectable.forEach { style ->
+                    runGlanceAppWidgetUnitTest {
+                        setAppWidgetSize(dpSize)
+                        setContext(ApplicationProvider.getApplicationContext())
+                        provideComposable {
+                            CountdownWidgetContent(
+                                model(
+                                    style = style,
+                                    label = label,
+                                    showDaysValue = false,
+                                    progressStyle = ProgressStyle.CIRCULAR,
+                                    showPercentageText = true,
+                                ),
+                            )
+                        }
+
+                        onNode(hasTextEqualTo(text)).assertExists()
+                        onNode(hasTestTag("progress-ring")).assertExists()
+                        onNode(hasTextEqualTo("40%")).assertExists()
+                    }
+                }
+            }
+        }
+    }
+
+    // ── WIDE design system (Milestone 5A follow-up): every selectable style's WIDE form is now a
+    // genuine two-region "context (left) ↔ countdown (right)" composition, not a centered 2×2
+    // stretched wide — including Minimal and OLED, previously the two single-column exceptions.
+    // Identity anchors to the left edge of its column (StartIdentity, never CenteredIdentity —
+    // the real Samsung Galaxy A55 dead-zone finding named specifically for Glass in the
+    // originating report: CenteredIdentity inside a stretched defaultWeight() column drifts toward
+    // the card's middle instead of staying near the edge). Robolectric has no bounds/position
+    // assertion for Glance nodes, so none of this can assert pixel positions directly — only that
+    // every region's content renders correctly, together, end to end. ──
+
+    @Test
+    fun `every selectable style still renders identity, headline, and ring together at wide`() = runTest {
+        WidgetStyle.selectable.forEach { style ->
             runGlanceAppWidgetUnitTest {
                 setAppWidgetSize(WIDE_SIZE)
                 setContext(ApplicationProvider.getApplicationContext())
                 provideComposable {
                     CountdownWidgetContent(
-                        model(style = style, progressStyle = ProgressStyle.CIRCULAR, label = CountdownLabel.NextWeek),
+                        model(style = style, progressStyle = ProgressStyle.CIRCULAR, showDate = true, showPercentageText = true),
                     )
                 }
 
-                onNode(hasText("Next week")).assertExists()
+                onNode(hasText("Trip to Kyoto")).assertExists()
+                onNode(hasTextEqualTo("12")).assertExists()
                 onNode(hasTestTag("progress-ring")).assertExists()
-                onNode(hasTestTag("progress-bar")).assertDoesNotExist()
+                onNode(hasTextEqualTo("40%")).assertExists()
+            }
+        }
+    }
+
+    // ── hasWideContext rebalancing: when a style's WIDE left ("context") region would have
+    // nothing to draw at all, the countdown region takes the full card instead of leaving a
+    // meaningless empty left half — the brief's own explicit requirement. Robolectric cannot
+    // assert that the empty column was never reserved, only that the countdown itself still
+    // renders correctly when context disappears; the structural change (no weighted left Column at
+    // all in that case) is verified by code review, not by this test. ──
+
+    @Test
+    fun `at wide, with no context to show at all, the countdown still renders correctly for every selectable style`() = runTest {
+        WidgetStyle.selectable.forEach { style ->
+            runGlanceAppWidgetUnitTest {
+                setAppWidgetSize(WIDE_SIZE)
+                setContext(ApplicationProvider.getApplicationContext())
+                provideComposable {
+                    CountdownWidgetContent(
+                        model(
+                            style = style,
+                            showTitle = false,
+                            showEmoji = false,
+                            showDate = false,
+                            progressStyle = ProgressStyle.CIRCULAR,
+                            showPercentageText = true,
+                        ),
+                    )
+                }
+
+                onNode(hasText("Trip to Kyoto")).assertDoesNotExist()
+                onNode(hasText("🌸")).assertDoesNotExist()
+                onNode(hasTextEqualTo("12")).assertExists()
+                onNode(hasTestTag("progress-ring")).assertExists()
+                onNode(hasTextEqualTo("40%")).assertExists()
+            }
+        }
+    }
+
+    @Test
+    fun `at wide, emoji alone still shows identity when title is off`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setAppWidgetSize(WIDE_SIZE)
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable { CountdownWidgetContent(model(showTitle = false, showEmoji = true)) }
+
+            onNode(hasText("🌸")).assertExists()
+            onNode(hasText("Trip to Kyoto")).assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun `at wide, title alone still shows identity when emoji is off`() = runTest {
+        runGlanceAppWidgetUnitTest {
+            setAppWidgetSize(WIDE_SIZE)
+            setContext(ApplicationProvider.getApplicationContext())
+            provideComposable { CountdownWidgetContent(model(showTitle = true, showEmoji = false)) }
+
+            onNode(hasText("Trip to Kyoto")).assertExists()
+            onNode(hasText("🌸")).assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun `at wide, target date toggles independently of the rest of the context region`() = runTest {
+        listOf(WidgetStyle.MATERIAL, WidgetStyle.MODERN).forEach { style ->
+            runGlanceAppWidgetUnitTest {
+                setAppWidgetSize(WIDE_SIZE)
+                setContext(ApplicationProvider.getApplicationContext())
+                provideComposable { CountdownWidgetContent(model(style = style, showDate = true)) }
+                onNode(hasText("Jun")).assertExists()
+            }
+            runGlanceAppWidgetUnitTest {
+                setAppWidgetSize(WIDE_SIZE)
+                setContext(ApplicationProvider.getApplicationContext())
+                provideComposable { CountdownWidgetContent(model(style = style, showDate = false)) }
+                onNode(hasText("Jun")).assertDoesNotExist()
             }
         }
     }

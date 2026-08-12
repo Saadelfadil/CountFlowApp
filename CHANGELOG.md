@@ -10,6 +10,86 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
+**4×2 (WIDE) horizontal balance fix.** Real Samsung Galaxy A55 testing confirmed the WIDE design
+system's context/countdown split (below) was directionally correct but both regions hugged the
+card's outer edges, with an oversized, accidental gap between them. Root cause: only the context
+(left) region carried `defaultWeight()`, so it silently absorbed all leftover row width, pushing
+the countdown (right) region flush against the card's own trailing padding while the gap between
+them sat hidden inside the now-oversized left column. Fixed for all six selectable styles: a new
+WIDE-only `WIDE_HORIZONTAL_PADDING` (20dp, up from 12–14dp) gives real breathing room on both
+sides without touching STANDARD's own padding constants; neither region carries `defaultWeight()`
+any more — context gets a fixed `WIDE_CONTEXT_COLUMN_WIDTH` (130dp), countdown stays intrinsic-
+width — and each style's outer `Row` now centers the whole "context, gap, countdown" block via
+Glance's own documented `horizontalAlignment` behavior for unweighted children, so leftover width
+splits evenly as extra margin on both sides instead of collapsing into one region's edge. No style
+needed an exception to this mechanism; each keeps its own established internal typography/
+alignment/weight. STANDARD (2×2) and Compact (2×1) confirmed untouched by direct re-read, not
+just by the test suite passing. 408 tests, 0 failures (unchanged — this is a pure spacing/alignment
+refinement the existing content-presence assertions already cover); 0 lint errors, 18 warnings
+(unchanged). No `DECISIONS.md` entry — presentation-layer padding/alignment tuning only.
+
+**4×2 (WIDE) widget design system — finalized.** Every selectable style's WIDE composition
+(`<Style>LayoutWide` in `CountdownWidgetLayouts.kt`) redesigned around one shared principle: 2×2
+is a vertical hierarchy, 4×2 is a horizontal one — context (identity/secondary/date) on the left,
+countdown (headline/unit/progress/percentage) on the right, never a 2×2 stack simply stretched
+wider. Minimal and OLED's WIDE forms, previously the two centered single-column exceptions, are
+now genuine two-region compositions too, each keeping its own established typography, weight, and
+restraint. A new shared rule — `hasWideContext` — means the countdown region takes the full card,
+centered, whenever the left region would otherwise be empty (all context toggles off), instead of
+reserving a blank half; a new shared `WideCountdownProgress` puts percentage *beside* the
+ring/bar rather than beneath it (WIDE's own horizontal room makes this legible where STANDARD's
+narrower card does not), draws nothing at all when Progress is NONE (no placeholder graphic), and
+keeps percentage fully independent of the graphic at every branch. Glass and Rounded's WIDE
+identity, fixed in a prior session to stop drifting into the card's dead middle region, now share
+that same `StartIdentity` pattern uniformly with the other four styles rather than as a one-off
+correction. Modern deliberately keeps its own dashboard arrangement — percentage grouped with its
+other left-column stats rather than paired with the graphic — as its own valid interpretation of
+the same context/countdown principle, not a deviation from it. Ring sizing is now uniform across
+all six styles' WIDE right column (`SECONDARY_RING_DP_WIDE`, 64dp) rather than split per style, now
+that no WIDE right column carries more than a headline and a unit above it; the now-unused
+single-column-specific ring constants were removed rather than left stale. **STANDARD (2×2) and
+Compact (2×1) layouts, `WidgetSizeClass` thresholds, `WidgetRenderModel`, Style/Progress semantics,
+persistence, Accent architecture, rewarded entitlements, AdMob/UMP, and the Customize Widget UI
+were all explicitly untouched** — verified line-for-line against this session's own starting
+state, not just by running the test suite. 3 new/revised tests plus a `showEmoji` toggle added to
+`CountdownWidgetContentTest`'s own model builder (39 → 42) cover the `hasWideContext` rebalancing
+rule (no context at all, emoji-only, title-only, at WIDE, across every selectable style) and target
+date toggling at WIDE; the existing percentage-independence and Today/Tomorrow sweeps from the
+prior session already covered the brief's own None/Bar/Ring × percentage matrix, so were not
+duplicated. 408 tests total, 0 failures; 0 lint errors, 18 warnings (unchanged, all pre-existing/
+environmental). No `DECISIONS.md` entry — a presentation-layer change to Compose/Glance layout
+code only, per this task's own instruction not to record one where unnecessary.
+
+**Real-widget ring/percentage rendering parity + STANDARD/WIDE composition fixes (D-078).** Three
+real Samsung Galaxy A55 findings in the placed home-screen widget itself (not the Customize Widget
+preview, which was already correct). **Fixed:**
+- Percentage text (`showPercentageText`) was silently never drawn for Minimal, Glass, or Rounded at
+  STANDARD or WIDE, regardless of the toggle — a Style-conditional gap the truth table (percentage
+  visibility depends only on the binding's own toggle, never on progress style or widget style)
+  forbids. Material, OLED, and Modern were already correct; the Customize Widget preview was always
+  correct. All six selectable styles now show percentage truthfully at both sizes.
+- STANDARD's vertical composition for Minimal/Glass/Rounded was tightened (a smaller, OLED-matched
+  secondary-ring diameter, a tightened pre-ring spacer, percentage placed directly after the ring
+  with no extra gap) to keep the now-longer stack inside the card once percentage joined it — no
+  font size was changed anywhere.
+- Glass and Rounded's WIDE (4×2) layout centered its identity column across the *entire* stretched
+  width available to it instead of anchoring near the left edge, leaving a large accidental empty
+  region between identity and the headline/ring column (named specifically for Glass in the
+  originating report). Fixed by switching to the same left-anchored `StartIdentity` pattern
+  Material and Modern's WIDE forms already used correctly.
+
+14 new/revised tests in `CountdownWidgetContentTest` (26 → 39) sweep percentage visibility across
+every selectable style × every progress style at STANDARD and WIDE, verify Today/Tomorrow semantic
+headlines alongside a ring and percentage at both sizes, and confirm Glass/Rounded's WIDE fix still
+renders every element correctly (Robolectric has no bounds/position assertion for Glance nodes, so
+this cannot itself confirm the dead zone shrank — only that nothing was dropped fixing it).
+`docs/WIDGET_DESIGN_GUIDE.md`'s Minimal entry (previously claimed "no progress bar, full stop," a
+Session 9 statement never updated when Style/Progress became independent settings) corrected;
+`docs/WIDGET_SIZE_MATRIX.md`'s wider, pre-existing staleness on the same point flagged at the top
+of that document rather than corrected cell-by-cell. 405 tests total, 0 failures; 0 lint errors, 18
+warnings (all pre-existing/environmental — a dependency-version-check drift, not from this change).
+No AdMob, entitlement, persistence, or Customize Widget UI code touched.
+
 **AdMob production/test identifier separation + rewarded-ad readiness UX (D-077).** Two fixes to
 the rewarded-style-unlock feature below, found from real `CountFlowAds` diagnostic evidence on a
 physical Samsung Galaxy A55. (1) CountFlow's real production AdMob App ID and Rewarded Ad Unit ID
