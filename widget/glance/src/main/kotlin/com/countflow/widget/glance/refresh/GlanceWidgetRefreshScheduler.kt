@@ -1,6 +1,7 @@
 package com.countflow.widget.glance.refresh
 
 import android.appwidget.AppWidgetManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -14,6 +15,8 @@ import com.countflow.widget.engine.lifecycle.WidgetLifecycleCoordinator
 import com.countflow.widget.engine.refresh.WidgetRefreshCoordinator
 import com.countflow.widget.engine.refresh.WidgetRefreshScheduler
 import com.countflow.widget.glance.CountdownGlanceWidgetReceiver
+import com.countflow.widget.glance.CountdownGlanceWidgetReceiverCompact
+import com.countflow.widget.glance.CountdownGlanceWidgetReceiverWide
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.launchIn
@@ -87,11 +90,21 @@ class GlanceWidgetRefreshScheduler @Inject constructor(
      * re-created, since `appWidgetId` values are allocated per device and cannot survive a
      * restore meaningfully. See data_extraction_rules.xml for why this runs here instead of
      * being handled by excluding the table from backup.
+     *
+     * Queries all three widget-picker providers (D-079), not just one — `getAppWidgetIds` is
+     * scoped to a single `ComponentName`, and a widget placed through the Compact or Wide picker
+     * entry lives under a different provider component than one placed through Square. Missing
+     * either of the two newer providers here would make every widget placed through them look
+     * orphaned to this method the moment it ran, and silently delete their otherwise-valid
+     * bindings — this method's own live-id set must be the union across every provider a
+     * CountFlow widget can actually be placed under, not just the original one.
      */
     private suspend fun pruneOrphanedBindings() {
         val manager = AppWidgetManager.getInstance(context)
-        val provider = ComponentName(context, CountdownGlanceWidgetReceiver::class.java)
-        val liveIds = manager.getAppWidgetIds(provider).map(::AppWidgetId).toSet()
+        val liveIds = COUNTDOWN_WIDGET_PROVIDER_CLASSES
+            .flatMap { manager.getAppWidgetIds(ComponentName(context, it)).toList() }
+            .map(::AppWidgetId)
+            .toSet()
 
         widgetLifecycleCoordinator.pruneOrphans(liveIds)
     }
@@ -115,9 +128,22 @@ class GlanceWidgetRefreshScheduler @Inject constructor(
         )
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "GlanceWidgetRefreshScheduler"
         val SAFETY_NET_INTERVAL: Duration = Duration.ofHours(6)
         val SAFETY_NET_FLEX: Duration = Duration.ofHours(2)
+
+        /**
+         * Every `GlanceAppWidgetReceiver` a CountFlow widget can be placed under — one per
+         * widget-picker entry (D-079). `internal`, not `private`: a unit test asserts this list
+         * stays in sync with the three receivers actually declared in `AndroidManifest.xml`
+         * without needing an `AppWidgetManager` (which Robolectric only partially supports) to do
+         * it.
+         */
+        val COUNTDOWN_WIDGET_PROVIDER_CLASSES: List<Class<out BroadcastReceiver>> = listOf(
+            CountdownGlanceWidgetReceiverCompact::class.java,
+            CountdownGlanceWidgetReceiver::class.java,
+            CountdownGlanceWidgetReceiverWide::class.java,
+        )
     }
 }

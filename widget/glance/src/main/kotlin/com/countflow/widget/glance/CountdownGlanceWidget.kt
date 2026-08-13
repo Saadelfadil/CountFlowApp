@@ -21,17 +21,25 @@ import dagger.hilt.EntryPoints
 /**
  * CountFlow's countdown widget.
  *
- * `sizeMode` is [SizeMode.Exact] (Session 10, D-053) — the widget is now resizable across three
- * footprints (2×1, 2×2, 4×2; `res/xml/countdown_widget_info.xml`'s `resizeMode` and
- * `maxResizeWidth`/`maxResizeHeight`), and `Exact` is what makes [LocalSize] report the real,
- * continuous current size at every recomposition rather than one fixed value. It is deliberately
- * **not** [SizeMode.Responsive]: that mode snaps [LocalSize] to the nearest of a fixed
- * `Set<DpSize>` the app declares, which fits a small number of curated exact breakpoints; `Exact`
- * fits this app's actual need better, since the three supported footprints are Android's own
- * `dp = 70×cells − 30` cell values (BUG-R009's formula), not arbitrary constants this app would
- * otherwise have to hand-declare and keep in sync with the manifest. `CountdownWidgetContent`
+ * `sizeMode` is [SizeMode.Exact] (Session 10, D-053) — the widget is resizable across three
+ * footprints (2×1, 2×2, 4×2; every `res/xml/countdown_widget_info_*.xml` shares the same
+ * `resizeMode` and `maxResizeWidth`/`maxResizeHeight` — see D-079 for why there are three of these
+ * files, one per widget-picker entry, rather than one), and `Exact` is what makes [LocalSize]
+ * report the real, continuous current size at every recomposition rather than one fixed value. It
+ * is deliberately **not** [SizeMode.Responsive]: that mode snaps [LocalSize] to the nearest of a
+ * fixed `Set<DpSize>` the app declares, which fits a small number of curated exact breakpoints;
+ * `Exact` fits this app's actual need better, since the three supported footprints are Android's
+ * own `dp = 70×cells − 30` cell values (BUG-R009's formula), not arbitrary constants this app
+ * would otherwise have to hand-declare and keep in sync with the manifest. `CountdownWidgetContent`
  * classifies the reported [LocalSize] into a [WidgetSizeClass] itself
  * ([classifyWidgetSize]) rather than relying on Glance to snap to one of a fixed set.
+ *
+ * One [CountdownGlanceWidget] instance is constructed per receiver
+ * ([CountdownGlanceWidgetReceiver], [CountdownGlanceWidgetReceiverCompact],
+ * [CountdownGlanceWidgetReceiverWide]) — this class itself has no notion of which picker entry
+ * placed any given widget instance, and does not need one: [provideGlance] always resolves what to
+ * render from [AppWidgetId] and the real, launcher-reported [LocalSize] alone, so identical
+ * content/sizing logic serves every picker entry without being duplicated three times.
  *
  * Reaches its dependencies through [WidgetEntryPoint] rather than an `@Inject` constructor,
  * because [GlanceAppWidget] is instantiated by Glance's own runtime, not by Hilt

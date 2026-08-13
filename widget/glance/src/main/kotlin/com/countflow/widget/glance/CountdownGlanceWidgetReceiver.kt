@@ -13,7 +13,21 @@ import javax.inject.Inject
 
 /**
  * Delegates system events for [CountdownGlanceWidget] to the framework, and cleans up bindings
- * when widgets are removed.
+ * when widgets are removed — shared by every one of CountFlow's widget picker entries
+ * ([CountdownGlanceWidgetReceiver], [CountdownGlanceWidgetReceiverCompact],
+ * [CountdownGlanceWidgetReceiverWide]), so this logic exists exactly once regardless of how many
+ * initial-footprint choices the Android/Samsung widget picker exposes.
+ *
+ * A separate `GlanceAppWidgetReceiver` subclass per picker entry is required by the platform —
+ * each `<receiver>` in `AndroidManifest.xml` needs its own distinct component so
+ * `AppWidgetManager`/the launcher can treat them as independently selectable picker entries with
+ * their own default footprint and preview — but every one of them points at the exact same
+ * [CountdownGlanceWidget] class: the six Style renderers, `WidgetRenderMapper`, and the responsive
+ * Compact/Standard/Wide layouts are never duplicated, only this thin platform-glue class is.
+ *
+ * `@AndroidEntryPoint` here, not only on the concrete subclasses — Hilt supports a hierarchy of
+ * `@AndroidEntryPoint`-annotated classes, and this is that pattern: the `@Inject` fields declared
+ * here are what each subclass's own `@AndroidEntryPoint` annotation makes available at runtime.
  *
  * `@AndroidEntryPoint` with field injection, not a constructor — `BroadcastReceiver`s are
  * instantiated by the OS, so constructor injection is not available the way it is for a
@@ -27,7 +41,7 @@ import javax.inject.Inject
  * flagged in Google's sample and set out not to repeat.
  */
 @AndroidEntryPoint
-class CountdownGlanceWidgetReceiver : GlanceAppWidgetReceiver() {
+abstract class BaseCountdownGlanceWidgetReceiver : GlanceAppWidgetReceiver() {
 
     override val glanceAppWidget: GlanceAppWidget = CountdownGlanceWidget()
 
@@ -47,3 +61,14 @@ class CountdownGlanceWidgetReceiver : GlanceAppWidgetReceiver() {
         }
     }
 }
+
+/**
+ * The "CountFlow Square" widget picker entry — 2×2 default placement footprint
+ * (`res/xml/countdown_widget_info_square.xml`). The original, single provider this app shipped
+ * with before [CountdownGlanceWidgetReceiverCompact] and [CountdownGlanceWidgetReceiverWide] were
+ * added; its component name is kept stable (never renamed) specifically so widgets already placed
+ * under it are not orphaned by this change — Android ties a placed widget instance permanently to
+ * its provider's exact component name.
+ */
+@AndroidEntryPoint
+class CountdownGlanceWidgetReceiver : BaseCountdownGlanceWidgetReceiver()

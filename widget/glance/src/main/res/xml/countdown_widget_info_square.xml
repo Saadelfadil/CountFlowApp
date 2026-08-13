@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "CountFlow Square" — the 2×2 widget picker entry (D-079). One of three sibling files
+  (countdown_widget_info_compact.xml, _square.xml, _wide.xml), one per
+  CountdownGlanceWidgetReceiver* subclass/picker entry — see BaseCountdownGlanceWidgetReceiver's
+  own class doc for why three receivers exist. minWidth/minHeight, maxResizeWidth/maxResizeHeight,
+  resizeMode, widgetFeatures, configure, and initialLayout are IDENTICAL across all three files on
+  purpose: every placed CountFlow widget, regardless of which picker entry created it, must remain
+  freely resizable across the full 2×1↔2×2↔4×2 range — the picker choice only ever decides the
+  DEFAULT placement footprint (targetCellWidth/targetCellHeight), never a permanent per-provider
+  renderer mode. Only targetCellWidth/targetCellHeight, description, and previewLayout differ
+  between the three files.
+
+  Every dp value here follows Android's documented cell-size formula, dp = 70*cells - 30 (the same
+  formula BUG-R009 exists to remind every session to check a size value against, rather than trust
+  a comment): 1 cell = 40dp, 2 cells = 110dp, 4 cells = 250dp.
+
+  minWidth/minHeight are the smallest footprint's dimensions on each axis (2x1's width, 2x1's
+  height) — 110dp and 40dp respectively, NOT 2x2's height reused for both, which would silently
+  forbid ever resizing down to 2x1 despite resizeMode below claiming to allow it.
+  maxResizeWidth/maxResizeHeight (API 31+, this app's minSdk) are the largest footprint's
+  dimensions on each axis (4x2's width, and 2x2/4x2's shared height) — 250dp and 110dp.
+  targetCellWidth/Height stay at 2x2 for this entry — the size a launcher places this specific
+  picker choice at by default, before any drag-resize.
+
+  resizeMode allows both axes so a user can actually reach all three declared footprints by
+  dragging resize handles on the home screen — CountdownGlanceWidget's sizeMode=SizeMode.Exact
+  (D-053) is what lets Glance report the widget's real current size through LocalSize as that drag
+  happens, rather than only ever rendering for one fixed size.
+
+  widgetFeatures combines two things that sound contradictory but are not: configuration_optional
+  means a launcher MAY place this widget without running configuration first, so the renderer
+  must cope with an absent binding (CountdownWidgetContent's UnconfiguredContent does); configure
+  being set at all means most launchers still run it immediately on placement, which is the path
+  this app actually exercises. reconfigurable lets a placed widget be re-pointed at a different
+  event without deleting and re-adding it.
+
+  initialLayout (Session 9) is our own branded layout_widget_initial_layout, not Glance's generic
+  spinner — see that file's own comment for what this does and does not fix (KNOWN_ISSUES.md
+  BUG-011), shared unmodified across all three picker entries since it is deliberately
+  size-agnostic (match_parent). previewLayout (API 31+, Session 9) is a plain Android layout the
+  launcher inflates directly for the widget picker — Glance cannot render into the picker itself,
+  so this is a deliberately realistic static approximation of the Material style at this entry's
+  own 2x2 default size, not a live render.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/countdown_widget_square_description"
+    android:initialLayout="@layout/widget_initial_layout"
+    android:previewLayout="@layout/widget_preview_square"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:maxResizeWidth="250dp"
+    android:maxResizeHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen|keyguard"
+    android:widgetFeatures="reconfigurable|configuration_optional"
+    android:configure="com.countflow.widget.glance.configuration.WidgetConfigurationActivity" />

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "CountFlow Compact" — the 2×1 widget picker entry (D-079). See countdown_widget_info_square.xml's
+  own comment for the full reasoning shared by all three sibling files; only this file's own
+  targetCellWidth/targetCellHeight, description, and previewLayout differ from it.
+
+  targetCellWidth/Height = 2x1 for this entry only — the default placement footprint a launcher
+  gives a widget added through *this* picker choice, before any drag-resize. minWidth/minHeight,
+  maxResizeWidth/maxResizeHeight, and resizeMode are identical to the other two files: a widget
+  placed Compact remains freely resizable up to 2x2 or 4x2 from the home screen, exactly as one
+  placed Square or Wide would be.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/countdown_widget_compact_description"
+    android:initialLayout="@layout/widget_initial_layout"
+    android:previewLayout="@layout/widget_preview_compact"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:maxResizeWidth="250dp"
+    android:maxResizeHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen|keyguard"
+    android:widgetFeatures="reconfigurable|configuration_optional"
+    android:configure="com.countflow.widget.glance.configuration.WidgetConfigurationActivity" />

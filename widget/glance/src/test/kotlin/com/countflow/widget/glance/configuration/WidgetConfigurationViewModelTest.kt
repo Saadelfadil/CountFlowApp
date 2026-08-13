@@ -3,10 +3,12 @@ package com.countflow.widget.glance.configuration
 import android.app.Activity
 import com.countflow.core.domain.countdown.CountdownConfig
 import com.countflow.core.domain.countdown.CountdownEngine
+import com.countflow.core.domain.model.AccentColor
 import com.countflow.core.domain.model.AppWidgetId
 import com.countflow.core.domain.model.Event
 import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.EventTarget
+import com.countflow.core.domain.model.ProgressStyle
 import com.countflow.core.domain.model.WidgetBinding
 import com.countflow.core.domain.model.WidgetStyle
 import com.countflow.core.domain.repository.BoundWidget
@@ -16,6 +18,7 @@ import com.countflow.core.domain.repository.EventSort
 import com.countflow.core.domain.repository.WidgetBindingRepository
 import com.countflow.core.domain.repository.WidgetStyleEntitlementRepository
 import com.countflow.widget.engine.provider.WidgetRenderModelProvider
+import com.countflow.widget.glance.WidgetSizeClass
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -109,6 +112,186 @@ class WidgetConfigurationViewModelTest {
         viewModel.onWidgetStyleChange(style)
         adController.nextLoadOutcome = FakeRewardedStyleAdController.LoadOutcome.Ready
         viewModel.onUnlockDialogShown(activity)
+    }
+
+    // ── Actual widget size drives the preview — the manual preview-size selector this screen
+    // briefly had was removed: Save could never actually resize the real, launcher-controlled
+    // widget, so offering a manual choice here was misleading (see SESSION_SUMMARY.md). There is
+    // no setter for uiState.sizeClass any more; onPreviewSizeChange no longer exists on this
+    // ViewModel at all, which is itself the guarantee — enforced by the compiler, not a runtime
+    // check — that no manual preview-size mutation remains anywhere in this class's public API. ──
+
+    @Test
+    fun `an actual COMPACT widget size produces a COMPACT preview with the 2x1 label`() {
+        val fresh = newViewModel()
+        fresh.load(AppWidgetId(3), WidgetSizeClass.COMPACT)
+        fresh.onEventSelected(event.id)
+
+        val state = fresh.uiState.value
+        assertThat(state.sizeClass).isEqualTo(WidgetSizeClass.COMPACT)
+        assertThat(state.sizeClass.displayName()).isEqualTo("2×1")
+    }
+
+    @Test
+    fun `an actual STANDARD widget size produces a STANDARD preview with the 2x2 label`() {
+        // setUp()'s own viewModel.load(AppWidgetId(1)) call omits actualSizeClass entirely — the
+        // same fallback WidgetConfigurationActivity itself uses when AppWidgetManager has not yet
+        // reported real dimensions (a fresh placement, or a direct-launch test with no real
+        // AppWidgetHost behind it).
+        val state = viewModel.uiState.value
+        assertThat(state.sizeClass).isEqualTo(WidgetSizeClass.STANDARD)
+        assertThat(state.sizeClass.displayName()).isEqualTo("2×2")
+    }
+
+    @Test
+    fun `an actual WIDE widget size produces a WIDE preview with the 4x2 label`() {
+        val fresh = newViewModel()
+        fresh.load(AppWidgetId(4), WidgetSizeClass.WIDE)
+        fresh.onEventSelected(event.id)
+
+        val state = fresh.uiState.value
+        assertThat(state.sizeClass).isEqualTo(WidgetSizeClass.WIDE)
+        assertThat(state.sizeClass.displayName()).isEqualTo("4×2")
+    }
+
+    // ── Save persists real customization only — never a widget-size value, which WidgetBinding
+    // has no field for in the first place. ──
+
+    @Test
+    fun `save persists the selected style`() = runTest {
+        viewModel.onWidgetStyleChange(WidgetStyle.MATERIAL)
+
+        viewModel.onConfirm()
+
+        val saved = bindings.getBinding(AppWidgetId(1))
+        assertThat(saved?.widgetStyleOverride).isEqualTo(WidgetStyle.MATERIAL)
+    }
+
+    @Test
+    fun `save persists the selected progress style`() = runTest {
+        viewModel.onProgressStyleChange(ProgressStyle.CIRCULAR)
+
+        viewModel.onConfirm()
+
+        val saved = bindings.getBinding(AppWidgetId(1))
+        assertThat(saved?.progressStyleOverride).isEqualTo(ProgressStyle.CIRCULAR)
+    }
+
+    @Test
+    fun `save persists the selected accent color`() = runTest {
+        val fixed = AccentColor.Fixed(0xFF1E88E5.toInt())
+        viewModel.onAccentColorChange(fixed)
+
+        viewModel.onConfirm()
+
+        val saved = bindings.getBinding(AppWidgetId(1))
+        assertThat(saved?.accentColorOverride).isEqualTo(fixed)
+    }
+
+    @Test
+    fun `save persists the show-on-widget toggles`() = runTest {
+        viewModel.onShowTitleChange(false)
+        viewModel.onShowEmojiChange(false)
+        viewModel.onShowTargetDateChange(true)
+        viewModel.onShowPercentageChange(true)
+
+        viewModel.onConfirm()
+
+        val saved = bindings.getBinding(AppWidgetId(1))
+        assertThat(saved?.showTitle).isFalse()
+        assertThat(saved?.showEmoji).isFalse()
+        assertThat(saved?.showTargetDate).isTrue()
+        assertThat(saved?.showPercentage).isTrue()
+    }
+
+    @Test
+    fun `reopening Customize restores saved customization`() = runTest {
+        val fixed = AccentColor.Fixed(0xFF1E88E5.toInt())
+        viewModel.onWidgetStyleChange(WidgetStyle.MATERIAL)
+        viewModel.onProgressStyleChange(ProgressStyle.CIRCULAR)
+        viewModel.onAccentColorChange(fixed)
+        viewModel.onShowTitleChange(false)
+        viewModel.onConfirm()
+
+        val reopened = newViewModel()
+        reopened.load(AppWidgetId(1))
+        reopened.onEventSelected(event.id)
+
+        val state = reopened.uiState.value
+        assertThat(state.widgetStyle).isEqualTo(WidgetStyle.MATERIAL)
+        assertThat(state.progressStyle).isEqualTo(ProgressStyle.CIRCULAR)
+        assertThat(state.accentColor).isEqualTo(fixed)
+        assertThat(state.showTitle).isFalse()
+    }
+
+    @Test
+    fun `no widget-size value is written into WidgetBinding`() = runTest {
+        // Two widgets with identical customization but different actual sizes — if the real size
+        // ever leaked into what Save writes, these two saved bindings would differ by more than
+        // just their own appWidgetId.
+        val compactVm = newViewModel()
+        compactVm.load(AppWidgetId(5), WidgetSizeClass.COMPACT)
+        compactVm.onEventSelected(event.id)
+        compactVm.onConfirm()
+
+        val wideVm = newViewModel()
+        wideVm.load(AppWidgetId(6), WidgetSizeClass.WIDE)
+        wideVm.onEventSelected(event.id)
+        wideVm.onConfirm()
+
+        val compactBinding = bindings.getBinding(AppWidgetId(5))
+        val wideBinding = bindings.getBinding(AppWidgetId(6))
+        assertThat(compactBinding).isNotNull()
+        assertThat(wideBinding).isNotNull()
+        assertThat(compactBinding!!.copy(appWidgetId = wideBinding!!.appWidgetId)).isEqualTo(wideBinding)
+    }
+
+    @Test
+    fun `all six style options are exposed`() {
+        assertThat(WidgetStyle.selectable).containsExactly(
+            WidgetStyle.MINIMAL,
+            WidgetStyle.MATERIAL,
+            WidgetStyle.GLASS,
+            WidgetStyle.OLED,
+            WidgetStyle.ROUNDED,
+            WidgetStyle.MODERN,
+        )
+    }
+
+    // ── Progress, Accent, and Show-on-widget toggles — previously exercised only by hand on a
+    // real device, never by this test class; closing that gap as this session's own brief
+    // explicitly requires, confirming none of it changed. ──
+
+    @Test
+    fun `progress style selection is unchanged`() {
+        viewModel.onProgressStyleChange(ProgressStyle.CIRCULAR)
+
+        val state = viewModel.uiState.value
+        assertThat(state.progressStyle).isEqualTo(ProgressStyle.CIRCULAR)
+        assertThat(state.previewModel?.progress?.style).isEqualTo(ProgressStyle.CIRCULAR)
+    }
+
+    @Test
+    fun `accent color selection is unchanged`() {
+        val fixed = AccentColor.Fixed(0xFF1E88E5.toInt())
+
+        viewModel.onAccentColorChange(fixed)
+
+        assertThat(viewModel.uiState.value.accentColor).isEqualTo(fixed)
+    }
+
+    @Test
+    fun `show-on-widget toggles are unchanged`() {
+        viewModel.onShowTitleChange(false)
+        viewModel.onShowEmojiChange(false)
+        viewModel.onShowTargetDateChange(true)
+        viewModel.onShowPercentageChange(true)
+
+        val state = viewModel.uiState.value
+        assertThat(state.showTitle).isFalse()
+        assertThat(state.showEmoji).isFalse()
+        assertThat(state.showTargetDate).isTrue()
+        assertThat(state.showPercentage).isTrue()
     }
 
     // ── Free styles always select immediately, regardless of entitlement state ──

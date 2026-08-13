@@ -7,14 +7,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -91,13 +97,19 @@ internal fun ProgressStyleThumbnail(
 }
 
 /**
- * [locked] is a restrained, secondary indicator only — appended to the caption below the
- * thumbnail, never drawn over it. The thumbnail's own icon area ([content]) is exactly what an
- * unlocked one shows, unchanged: a locked rewarded style must still read as "this is what Glass
- * looks like," not as a generic padlock card standing in for it. Tapping a locked thumbnail is
- * still a normal, enabled tap (never visually disabled) — [onClick] fires the same as any other
- * thumbnail; whether that tap selects the style or requests a reward is
+ * [locked] draws as a small badge overlaid near the thumbnail's top-right corner, never as a
+ * dimmed/disabled treatment and never as text appended to the caption — the thumbnail's own icon
+ * area ([content]) is exactly what an unlocked one shows, unchanged, so a locked rewarded style
+ * still reads as "this is what Glass looks like" first, "and it's locked" second, not as a generic
+ * padlock card standing in for it. The caption underneath is always the plain style name. Tapping
+ * a locked thumbnail is still a normal, enabled tap (never visually disabled) — [onClick] fires the
+ * same as any other thumbnail; whether that tap selects the style or requests a reward is
  * [WidgetConfigurationViewModel.onWidgetStyleChange]'s decision, not this composable's.
+ *
+ * Responsive, not a fixed size: the icon area fills whatever width its caller's own layout gives
+ * it (a `Modifier.weight(1f)` cell in a grid row, typically) and stays square via [aspectRatio] —
+ * the 3-column Style grid and the 3-item Progress row both size every card the same way, so the
+ * grid holds together at any real phone width without ever needing to scroll horizontally.
  */
 @Composable
 private fun ThumbnailCard(
@@ -116,31 +128,62 @@ private fun ThumbnailCard(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         val shape = RoundedCornerShape(cornerRadius)
-        Box(
-            modifier = Modifier
-                .size(THUMBNAIL_SIZE)
-                .background(background, shape)
-                .border(
-                    width = if (selected) 2.dp else 1.dp,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant
-                    },
-                    shape = shape,
-                )
-                .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
-                .semantics {
-                    contentDescription = if (locked) "$label style, locked, requires unlocking" else "$label style"
-                }
-                .padding(10.dp),
-            contentAlignment = Alignment.Center,
-            content = content,
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .background(background, shape)
+                    .border(
+                        width = if (selected) 2.dp else 1.dp,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        },
+                        shape = shape,
+                    )
+                    .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+                    .semantics {
+                        contentDescription = if (locked) "$label style, locked, requires unlocking" else "$label style"
+                    }
+                    .padding(10.dp),
+                contentAlignment = Alignment.Center,
+                content = content,
+            )
+            if (locked) {
+                LockBadge(modifier = Modifier.align(Alignment.TopEnd).padding(4.dp))
+            }
+        }
         Text(
-            text = if (locked) "$label 🔒" else label,
+            text = label,
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * A small, solid badge — never just a bare icon — so it stays readable overlaid on top of *any*
+ * of the six styles' own thumbnail background, including OLED's true black and Glass's dark
+ * surface. Purely decorative on its own ([contentDescription] is null here): the real "locked,
+ * requires unlocking" announcement lives on [ThumbnailCard]'s own tappable area, which already
+ * covers the badge visually, so a screen reader is never asked to read this a second time.
+ */
+@Composable
+private fun LockBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(LOCK_BADGE_SIZE)
+            .background(MaterialTheme.colorScheme.surface, CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Lock,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(12.dp),
         )
     }
 }
@@ -303,6 +346,6 @@ private fun WidgetStyle.thumbnailCornerRadius(): Dp = when (this) {
     else -> DEFAULT_CORNER_RADIUS
 }
 
-private val THUMBNAIL_SIZE = 84.dp
 private val DEFAULT_CORNER_RADIUS = 12.dp
+private val LOCK_BADGE_SIZE = 20.dp
 private const val PROGRESS_SAMPLE_FRACTION = 0.6f

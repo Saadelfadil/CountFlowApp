@@ -10,17 +10,53 @@
 
     <application>
 
+        <!--
+          Three widget-picker entries sharing one renderer (D-079) — CountdownGlanceWidgetReceiver
+          (unrenamed: this is the original single provider this app shipped with, kept stable so
+          already-placed widgets are not orphaned by this change) is "CountFlow Square" (2x2,
+          countdown_widget_info_square.xml); the two below are "CountFlow Compact" (2x1) and
+          "CountFlow Wide" (4x2). All three point at the exact same GlanceAppWidget
+          (BaseCountdownGlanceWidgetReceiver's own class doc) and the exact same configuration
+          Activity below — the picker entries differ only in their own metadata/default footprint
+          and preview, never in rendering logic.
+        -->
         <receiver
             android:name=".CountdownGlanceWidgetReceiver"
             android:exported="false"
-            android:label="@string/countdown_widget_label">
+            android:label="@string/countdown_widget_square_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="android.intent.action.LOCALE_CHANGED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/countdown_widget_info" />
+                android:resource="@xml/countdown_widget_info_square" />
+        </receiver>
+
+        <receiver
+            android:name=".CountdownGlanceWidgetReceiverCompact"
+            android:exported="false"
+            android:label="@string/countdown_widget_compact_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/countdown_widget_info_compact" />
+        </receiver>
+
+        <receiver
+            android:name=".CountdownGlanceWidgetReceiverWide"
+            android:exported="false"
+            android:label="@string/countdown_widget_wide_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/countdown_widget_info_wide" />
         </receiver>
 
         <!--

@@ -1,16 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The widget picker's preview (android:previewLayout, API 31+) — a plain Android layout the
-  launcher inflates directly, not a Glance composable at all. Glance has no way to render a
-  preview into the picker itself, so this is a deliberately static approximation of the Material
-  style with realistic example content: what a Pixel user actually decides "do I want this on my
-  home screen" from, so it needs to look like the real thing, not a generic placeholder.
+  "CountFlow Square" (2x2) picker preview — android:previewLayout (API 31+) referenced from
+  countdown_widget_info_square.xml. A plain Android layout the launcher inflates directly, not a
+  Glance composable at all: Glance has no way to render a preview into the picker itself, so this
+  is a deliberately static approximation of the Material style with realistic example content —
+  what a Pixel/Samsung user actually decides "do I want this on my home screen" from, so it needs
+  to look like the real thing, not a generic placeholder. Sample content is fixed, never derived
+  from a real event (D-079) — the picker has no signed-in user's data to draw from at this point.
 
   Content mirrors the Material style's own hierarchy (docs/WIDGET_DESIGN_GUIDE.md): identity row,
   a headline day count with its unit, a second line only because "Next week" genuinely adds
   information beyond the number (the same NextWeek case CountdownWidgetContent's own resolver
   treats as non-redundant), and a progress bar — the everyday shape of the widget most users will
-  actually see.
+  actually see. See widget_preview_compact.xml and widget_preview_wide.xml for the other two
+  entries' own previews, each following their real renderer's own content hierarchy rather than a
+  scaled copy of this one.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="180dp"

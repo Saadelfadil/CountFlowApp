@@ -8,6 +8,7 @@ import com.countflow.core.domain.model.EventId
 import com.countflow.core.domain.model.ProgressStyle
 import com.countflow.core.domain.model.WidgetStyle
 import com.countflow.widget.engine.model.WidgetRenderModel
+import com.countflow.widget.glance.WidgetSizeClass
 
 /**
  * The configuration screen, as one immutable value.
@@ -54,13 +55,23 @@ import com.countflow.widget.engine.model.WidgetRenderModel
  * @property previewModel the render model step two's live preview draws — computed by
  *   [com.countflow.widget.engine.provider.WidgetRenderModelProvider.preview] from the selections
  *   above, the same pipeline a real widget render uses, never faked.
+ * @property sizeClass the real footprint this placed widget currently occupies, read once (in
+ *   [com.countflow.widget.glance.configuration.WidgetConfigurationViewModel.load]) from the actual
+ *   size `WidgetConfigurationActivity` reads off `AppWidgetManager`, and never changed from
+ *   anywhere else in this UI — there is deliberately no way for the user to pick a different value
+ *   here. Physical widget size is launcher-controlled (Android/One UI decides it when the widget is
+ *   placed or resized on the home screen); this screen only *displays* it, via [previewModel]
+ *   rendering at [sizeClass] and the "Preview · {size}" label reading it, matching the size the
+ *   real widget will actually be redrawn at. [WidgetBinding][com.countflow.core.domain.model.WidgetBinding]
+ *   has no size field at all, so [com.countflow.widget.glance.configuration.WidgetConfigurationViewModel.onConfirm]
+ *   is structurally incapable of persisting this value even by accident.
  * @property isLoading true until the event list has loaded once.
  * @property isSaving true once the user has confirmed and the binding is being written.
  * @property isSaved true once the binding write has completed and the activity should finish
  *   with `RESULT_OK`.
  */
 @Immutable
-data class WidgetConfigurationUiState(
+internal data class WidgetConfigurationUiState(
     val events: List<Event> = emptyList(),
     val currentEventId: EventId? = null,
     val selectedEventId: EventId? = null,
@@ -76,6 +87,7 @@ data class WidgetConfigurationUiState(
     val rewardedAdState: RewardedAdState = RewardedAdState.LOADING,
     val adFeedback: String? = null,
     val previewModel: WidgetRenderModel? = null,
+    val sizeClass: WidgetSizeClass = WidgetSizeClass.STANDARD,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val isSaved: Boolean = false,

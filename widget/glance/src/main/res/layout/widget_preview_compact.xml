@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "CountFlow Compact" (2x1) picker preview — android:previewLayout (API 31+) referenced from
+  countdown_widget_info_compact.xml. See widget_preview_square.xml's own comment for why this is a
+  static Android layout rather than a live Glance render, and why its sample content is fixed
+  rather than derived from a real event.
+
+  Deliberately omits the secondary line and progress bar the Square/Wide previews both show —
+  matching the real COMPACT renderer's own established rule (docs/WIDGET_SIZE_MATRIX.md,
+  CountdownWidgetContent's isCompact guard): COMPACT never draws a secondary line, a progress
+  indicator, or a percentage, regardless of what the widget is configured to show. A picker
+  preview that drew those anyway would advertise a widget this footprint can never actually
+  render — identity row plus the headline number and unit is the whole, honest picture.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="240dp"
+    android:layout_height="90dp"
+    android:background="@drawable/widget_preview_background"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✈️"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="Trip"
+            android:textColor="#FFF3F3F5"
+            android:textSize="13sp"
+            android:textStyle="normal" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:gravity="bottom">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="21"
+            android:textColor="#FF4FD8BE"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginBottom="4dp"
+            android:text="days"
+            android:textColor="#FFA9AEB4"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "CountFlow Wide" (4x2) picker preview — android:previewLayout (API 31+) referenced from
+  countdown_widget_info_wide.xml. See widget_preview_square.xml's own comment for why this is a
+  static Android layout rather than a live Glance render, and why its sample content is fixed
+  rather than derived from a real event.
+
+  Mirrors the real WIDE renderer's own established two-region composition (Sessions 20/21,
+  CountdownWidgetLayouts.kt's *LayoutWide functions): context (identity + date) on the left,
+  countdown (headline + unit + progress, percentage beside the graphic rather than beneath it) on
+  the right — a horizontal split, never a 2x2 layout simply stretched wider. This is what makes
+  the Wide picker entry look genuinely different from the Square one rather than a taller/shorter
+  crop of the same content.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="320dp"
+    android:layout_height="150dp"
+    android:background="@drawable/widget_preview_background"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:baselineAligned="false"
+    android:padding="16dp">
+
+    <!-- Context: identity + date, left-anchored, own column. -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="✈️"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="Trip"
+                android:textColor="#FFF3F3F5"
+                android:textSize="14sp"
+                android:textStyle="normal" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Next week"
+            android:textColor="#FFA9AEB4"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- Countdown: headline + unit, with progress alongside it, right column. -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="end">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="bottom">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="21"
+                android:textColor="#FF4FD8BE"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginBottom="4dp"
+                android:text="days"
+                android:textColor="#FFA9AEB4"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ProgressBar
+                android:id="@+id/widget_preview_progress"
+                style="@android:style/Widget.ProgressBar.Horizontal"
+                android:layout_width="0dp"
+                android:layout_height="6dp"
+                android:layout_weight="1"
+                android:indeterminate="false"
+                android:max="100"
+                android:progress="65"
+                android:progressTint="#FF4FD8BE"
+                android:progressBackgroundTint="#FF3A3C42" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="65%"
+                android:textColor="#FFA9AEB4"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>

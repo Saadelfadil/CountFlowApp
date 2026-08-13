@@ -14,6 +14,7 @@ import com.countflow.core.domain.repository.EventRepository
 import com.countflow.core.domain.repository.WidgetBindingRepository
 import com.countflow.core.domain.repository.WidgetStyleEntitlementRepository
 import com.countflow.widget.engine.provider.WidgetRenderModelProvider
+import com.countflow.widget.glance.WidgetSizeClass
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,7 +43,7 @@ import javax.inject.Inject
  * design would have reopened exactly the risk this class was built to close in Milestone 4.
  */
 @HiltViewModel
-class WidgetConfigurationViewModel @Inject constructor(
+internal class WidgetConfigurationViewModel @Inject constructor(
     private val eventRepository: EventRepository,
     private val widgetBindingRepository: WidgetBindingRepository,
     private val widgetStyleEntitlementRepository: WidgetStyleEntitlementRepository,
@@ -69,8 +70,19 @@ class WidgetConfigurationViewModel @Inject constructor(
         }
     }
 
-    /** Loads step one's event list for [appWidgetId]. Safe to call more than once; only the first counts. */
-    fun load(appWidgetId: AppWidgetId) {
+    /**
+     * Loads step one's event list for [appWidgetId]. Safe to call more than once; only the first
+     * counts.
+     *
+     * @param actualSizeClass the real footprint this placed widget currently occupies —
+     *   `WidgetConfigurationActivity` reads it straight off `AppWidgetManager`, outside any
+     *   composition, the same way it always has. Copied verbatim into
+     *   [WidgetConfigurationUiState.sizeClass], which the live preview renders at and the
+     *   "Preview · {size}" label reads — display-only, with no UI anywhere on this screen able to
+     *   change it. Physical widget size is entirely launcher-controlled: the user resizes the real
+     *   widget from the home screen, not from here.
+     */
+    fun load(appWidgetId: AppWidgetId, actualSizeClass: WidgetSizeClass = WidgetSizeClass.STANDARD) {
         if (this.appWidgetId != null) return
         this.appWidgetId = appWidgetId
 
@@ -79,7 +91,12 @@ class WidgetConfigurationViewModel @Inject constructor(
             existingBinding = existing
             val events = eventRepository.getAllEvents().sortedBy { it.target.epochMillis }
             _uiState.update {
-                it.copy(events = events, currentEventId = existing?.eventId, isLoading = false)
+                it.copy(
+                    events = events,
+                    currentEventId = existing?.eventId,
+                    sizeClass = actualSizeClass,
+                    isLoading = false,
+                )
             }
         }
     }

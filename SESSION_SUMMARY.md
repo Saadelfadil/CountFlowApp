@@ -1,147 +1,157 @@
 # CountFlow
 
-## Session 21
+## Session 27
 
-Date: 2026-08-12
-Current Milestone: **Milestone 5A follow-up — 4×2 (WIDE) horizontal balance fix (COMPLETE)**
+Date: 2026-08-13
+Current Milestone: **Final MVP release-candidate QA gate (COMPLETE)**
 
-> **READ THIS FIRST:** Samsung Galaxy A55 physical testing confirmed Session 20's WIDE design
-> system (context left, countdown right) was directionally correct, but found both regions hugging
-> the card's outer edges with an oversized, accidental gap between them — the composition read as
-> stretched rather than balanced. This session is a small, tightly scoped follow-up fix, not a new
-> architecture: the context ↔ countdown split from Session 20 is unchanged.
+> **READ THIS FIRST:** This was a feature-freeze audit session, not development — "Do not
+> redesign. Do not add features. Do not refactor working architecture merely for cleanliness." No
+> production code was touched; `git status` before and after matches Session 26's own end state
+> exactly (only documentation files changed, this one included).
 >
-> **Root cause**: every WIDE layout gave `defaultWeight()` to the context (left) column only, with
-> the countdown (right) column at intrinsic width. In Glance's `Row`, an unweighted child sits
-> exactly where the weighted sibling leaves it — since the context column absorbed *all* leftover
-> row width, the countdown column got pushed flush against the row's own trailing edge, and the gap
-> between the two regions ended up hidden inside the now-oversized context column rather than
-> appearing as a real, bounded space between them.
+> **Verdict: PASS WITH NON-BLOCKERS.** No concrete code-level defect was found across all 17
+> audited areas (Event CRUD, countdown semantics, widget picker, Customize Widget, responsive
+> renderer, multi-widget isolation, AdMob/UMP, privacy inventory, release configuration, Room
+> migrations, notifications, theming, accessibility, static blocker search). Every engineering
+> gate command passes: 429 tests / 0 failures, 0 lint errors / 29 warnings (Session 25's own
+> baseline, unchanged), `koverVerify` passing, `assembleDebug` clean.
 >
-> **Fix, applied identically across all six selectable styles**: a new WIDE-only
-> `WIDE_HORIZONTAL_PADDING` (20dp, up from the 12–14dp STANDARD also uses) gives real breathing
-> room on both sides — STANDARD's own padding constants are untouched, still applied unchanged at
-> STANDARD's own call sites. Neither region carries `defaultWeight()` any more: context gets a
-> fixed `WIDE_CONTEXT_COLUMN_WIDTH` (130dp), countdown stays intrinsic-width. Each style's outer
-> `Row` now sets `horizontalAlignment = CenterHorizontally` — Glance's own documented behavior for
-> a `Row` whose children do not fill its width is to center that whole unweighted block — so
-> "context, gap, countdown" reads as one centered composition, with any leftover width splitting
-> evenly as extra margin on both sides instead of collapsing into one edge.
+> **New this session: real RELEASE-build verification, not just DEBUG.** `:app:assembleRelease`
+> and `:app:bundleRelease` both succeed. Directly inspected the resulting artifacts (not assumed):
+> the release-unsigned APK's merged manifest and the release `BuildConfig.java` both resolve
+> CountFlow's real production AdMob identifiers (never the DEBUG/test ones); `jarsigner -verify`
+> on the produced `.aab` confirms it is genuinely unsigned, exactly matching the known "no signing
+> keystore exists yet" blocker — now confirmed against a real build artifact rather than only
+> inferred from the absence of a `signingConfig` block.
 >
-> **No style needed an exception** to this mechanism — every one of the six keeps its own
-> established internal typography, weight, and alignment (Minimal's restraint, Glass's centered
-> "elegant asymmetry," Modern's top-anchored dashboard, etc.); only the outer padding/weighting
-> mechanics changed, uniformly.
+> **One new finding, non-blocker: `KNOWN_ISSUES.md` and `TODO.md` are significantly stale.** Both
+> still read as of roughly Session 15-16 — `TD-017`/`TODO.md`'s own P0 list still describe 4×2
+> WIDE physical confirmation as unresolved, but Sessions 19-21's own `DECISIONS.md`/`CHANGELOG.md`
+> entries describe real Samsung Galaxy A55 measurement and confirmation of WIDE; neither file
+> mentions AdMob/UMP (added Session 17), the Customize Widget redesign (Sessions 22-24), the
+> multi-size widget picker (Session 25), or D-079 at all. `SESSION_SUMMARY.md`/`CHANGELOG.md`/
+> `DECISIONS.md` have been kept current every session in this stretch; these two have not — a real
+> gap against `TODO.md`'s own "Continuous" instruction to update all documents every session. Not
+> fixed this session (out of this audit's own "no changes unless a concrete code defect" scope);
+> flagged clearly in this session's own chat report as needing a dedicated reconciliation pass.
 >
-> **408 tests / 0 failures — unchanged from Session 20.** This is a pure spacing/alignment
-> refinement; the existing content-presence assertions (title/headline/ring/percentage exist or
-> don't) already cover it, and none of them depend on exact pixel position, so no test changes were
-> needed or made. **0 lint errors, 18 warnings, unchanged.** `./gradlew assembleDebug`,
-> `:app:lintDebug`, and `:core:domain:koverVerify` all pass. Debug APK rebuilt and copied to
-> `/test-builds/CountFlow-MVP-debug.apk`.
+> **Privacy inventory gap, quantified rather than just restated**: `docs/PRIVACY_DATA_INVENTORY.md`
+> claims "zero network requests" and "no advertising SDK" — both now false. This session confirmed
+> the concrete diff against the current merged manifest: `INTERNET`,
+> `com.google.android.gms.permission.AD_ID`, and three `ACCESS_ADSERVICES_*` permissions now exist
+> and are unmentioned in the document. This was already `TODO.md`'s own top P0 item — this session
+> adds the specific evidence, not a new discovery.
 >
-> **STANDARD (2×2) and Compact (2×1) confirmed untouched** — every `<Style>Layout` and
-> `<Style>LayoutCompact` function's declaration line was re-checked after all edits; none were
-> touched by any `Edit` call this session.
->
-> **No `DECISIONS.md` entry** — presentation-layer padding/alignment tuning only, consistent with
-> Session 20's own precedent for the same class of change.
->
-> **What was not obtained, stated plainly**: no physical-device confirmation of this specific fix
-> yet — Robolectric has no bounds/position assertion for Glance nodes, so "breathing room on both
-> sides" and "one centered composition" are verified here only by the layout mechanism itself
-> (Glance's own documented `Row` centering behavior, read directly from its source) and by content
-> still rendering correctly, never by an actual measured layout. The next physical-device pass
-> should look at this specifically alongside everything Session 20 already asked for.
+> Produced `/test-builds/CountFlow-MVP-RC-debug.apk` — the release-candidate DEBUG build (Google
+> test AdMob configuration) for the Samsung Galaxy A55 physical regression pass this task's own
+> checklist specifies.
 
 ----------------------------------
 
 ## Objective
 
-A small, WIDE-only follow-up to Session 20's design system: real Samsung Galaxy A55 evidence
-showed both regions hugging the card's outer edges, with an oversized dead zone between them,
-making the composition feel stretched rather than centered. Keep the context ↔ countdown
-architecture exactly as-is; fix only the horizontal padding and inter-region weighting so the whole
-two-region composition reads as one balanced, centered block with real breathing room on both
-sides. Explicit freeze, identical to Session 20's own: no changes to STANDARD/Compact,
-`WidgetSizeClass`, renderer/Progress/Percentage semantics, Accent, persistence, AdMob, entitlements,
-or Customize Widget UI.
+Perform a final, code-level MVP regression audit ahead of physical release-candidate QA — verify
+(not redesign) Event CRUD, countdown semantics, the widget picker, Customize Widget, the
+responsive renderer, multi-widget isolation, AdMob/UMP, the privacy/data inventory, release
+configuration, Room migrations, notifications, theming, and accessibility; run a static
+release-blocker search; run the full engineering gate plus the strongest safe release-build
+verification available without a signing key; and produce a release-candidate debug APK. Do not
+change production code unless a concrete release-blocking defect is discovered. Do not begin
+Play Store/release-document work.
 
 ----------------------------------
 
 ## Completed
 
-Added two new constants and applied them uniformly across `MinimalLayoutWide`,
-`MaterialLayoutWide`, `OledLayoutWide`, `GlassLayoutWide`, `RoundedLayoutWide`, and
-`ModernLayoutWide`:
+Audited all 17 sections of this session's own brief:
 
-- `WIDE_HORIZONTAL_PADDING = 20.dp` — replaces the horizontal component of each style's outer
-  padding at WIDE only (`.padding(horizontal = WIDE_HORIZONTAL_PADDING, vertical = <style's own
-  existing vertical padding constant, unchanged>)`); the vertical component and every STANDARD/
-  Compact call site keep using their original constants (`WIDGET_PADDING`/`GLASS_PADDING`/
-  `ROUNDED_PADDING`) exactly as before.
-- `WIDE_CONTEXT_COLUMN_WIDTH = 130.dp` — the context (left) column's new fixed width, replacing
-  `GlanceModifier.defaultWeight()`. `StartIdentity`'s own default `fillMaxWidth()` now resolves
-  against this real, bounded width rather than an unboundedly stretched column, which also makes
-  its internal `maxLines = 1` truncation meaningful for a long title in a way an ever-growing
-  weighted column never guaranteed.
+1. **Event CRUD / 2. Countdown semantics** — confirmed comprehensive existing coverage
+   (`EventsViewModelTest`, `EditEventViewModelTest`, `EventDaoTest`, `EventRepositoryImplTest`,
+   `EventValidatorTest`, `CascadeAndRelationTest`, `EventUiMapperTest`, five `CountdownEngine*Test`
+   files, `CountdownLabelPresentationTest`, `DomainModelTest`) — all unchanged, all passing.
+2. **Widget picker** — confirmed all three receivers (`CountdownGlanceWidgetReceiver`/`Compact`/
+   `Wide`) remain correctly declared, share the base class and configuration Activity, and that
+   `GlanceWidgetRefreshScheduler`'s orphan-pruning fix from Session 25 is intact
+   (`WidgetProviderArchitectureTest`, 8 tests, still passing).
+3. **Customize Widget** — read the current `WidgetConfigurationActivity.kt` end to end; confirmed
+   Style/Progress/Accent/toggle rows, `verticalScroll`, `onConfirm`, `RESULT_OK` with
+   `EXTRA_APPWIDGET_ID`, and the `CountdownGlanceWidget().update(...)` call are all present and
+   intact after Sessions 22-25's churn; grepped for dangling references to the removed manual size
+   selector — none found (one comment only, no code).
+4. **Responsive renderer** — confirmed `CountdownWidgetContentTest`, `WidgetThemeResolverTest`,
+   `WidgetRenderMapperTest`, `WidgetRenderModelProviderTest`, `WidgetProgressEngineTest` all exist
+   and pass; no renderer file touched this session.
+5. **Multi-widget isolation** — confirmed via `WidgetBindingRepositoryImplTest`,
+   `WidgetStyleEntitlementRepositoryImplTest`, `WidgetLifecycleCoordinatorTest`, and Session 25's
+   own "no widget-size value written into WidgetBinding across two different widget ids" test.
+6. **AdMob/UMP** — confirmed `AdMobConfigTest` passes; additionally, this session, inspected a
+   real `assembleRelease`/`bundleRelease` output directly (see "New this session" above) rather
+   than relying on the unit test alone.
+7. **Privacy/UMP data inventory** — read `docs/PRIVACY_DATA_INVENTORY.md` in full, diffed its
+   claims against the current merged manifest's real permission list; confirmed the gap is exactly
+   what `TODO.md`'s own P0 item already flags, with concrete evidence attached.
+8. **Release configuration** — read `app/build.gradle.kts` and
+   `AndroidApplicationConventionPlugin.kt`: `applicationId = "com.countflow"`, `versionCode = 14`/
+   `versionName = "0.4.9"` (correctly matching the last actually-cut `CHANGELOG.md` version —
+   everything since sits under `[Unreleased]`, consistent with the project's own convention, not
+   stale), `minSdk 31`/`targetSdk 36`/`compileSdk 37` (matches D-012). Static search for TODO/
+   FIXME/HACK/XXX/temp/localhost/example.com/sample-credential markers — zero matches anywhere in
+   production source.
+9. **Room** — version 4, migration chain 1→2→3→4 complete, schema JSON exported for all four,
+   `MigrationTest.kt` exists, `fallbackToDestructiveMigration` confirmed absent from real code
+   (only a comment explaining its deliberate absence).
+10. **Notifications/reminders** — confirmed `ReminderTest`, `ReminderNotificationCoordinatorTest`,
+    `WidgetRefreshCoordinatorTest`, `WidgetRefreshPlannerTest` all exist and pass; architecture
+    unchanged.
+11. **Settings/theming** — confirmed `Theme.kt` supports System/Light/Dark and Dynamic Color
+    (`dynamicDarkColorScheme`/`dynamicLightColorScheme` with a static fallback pair).
+12. **Accessibility** — relied on Sessions 22-24's own extensive prior work (content descriptions,
+    `Role.RadioButton`/`Role.Switch` semantics, 200% font scale verification, touch targets) since
+    nothing in that area was touched since; no new risk found.
+13. **Static release-blocker search** — see item 8; zero findings of any severity.
 
-Each style's outer `Row` gained `horizontalAlignment = Alignment.CenterHorizontally` (Modern kept
-its existing `verticalAlignment = Alignment.Top` alongside it) — verified directly against
-Glance's own `Row.kt` source (`horizontalAlignment`: "whether to push the children towards the
-start, center or end of the Row" when they do not fill its full width) before relying on it, not
-assumed. The countdown (right) column's own internal text alignment (`End` for Minimal/Material/
-OLED/Rounded, `Center` for Glass, `Start` for Modern) is unchanged — only the outer weighting that
-determined *where* that column sat within the row changed.
+**Engineering gate**: `./gradlew test` (429 tests, 0 failures), `./gradlew assembleDebug`,
+`./gradlew :app:lintDebug` (0 errors, 29 warnings), `./gradlew :core:domain:koverVerify` — all
+pass, matching Session 25/26's own established results exactly (nothing regressed).
 
-**Verified, not assumed, that STANDARD/Compact were untouched**: every `<Style>Layout` (2×2) and
-`<Style>LayoutCompact` (2×1) function's declaration was re-checked after all WIDE edits.
+**Release-build verification** (new depth this session): `:app:assembleRelease` and
+`:app:bundleRelease` both succeed; directly inspected the release-unsigned APK's merged manifest
+(`APPLICATION_ID` resolves CountFlow's production AdMob App ID) and the release `BuildConfig.java`
+(`DEBUG = false`, `REWARDED_STYLE_AD_UNIT_ID` resolves the production Ad Unit ID); confirmed via
+`jarsigner -verify` that the produced `.aab` is genuinely unsigned, matching the known blocker.
 
-**No test changes**: the existing 408-test suite (unchanged from Session 20) asserts content
-presence/absence, not pixel position, so it already exercises every changed code path without
-needing new assertions for a spacing-only refinement — confirmed all 408 still pass.
+**RC APK produced**: `/test-builds/CountFlow-MVP-RC-debug.apk`.
 
-**Engineering gate:** `./gradlew test` — 408 tests, 0 failures. `./gradlew assembleDebug` —
-`BUILD SUCCESSFUL`. `./gradlew :app:lintDebug` — 0 errors, 18 warnings, unchanged. `./gradlew
-:core:domain:koverVerify` — passes, coverage gate unchanged. APK copied to
-`/test-builds/CountFlow-MVP-debug.apk`.
-
-**Documentation:** `CHANGELOG.md` `[Unreleased]`. No `DECISIONS.md` entry — presentation-layer
-only, same reasoning as Session 20.
+Delivered the exact 12-item report this session's brief specified in the chat, not as a file —
+consistent with "Report only... Then STOP."
 
 ----------------------------------
 
 ## Files Created
 
-None. `/test-builds/CountFlow-MVP-debug.apk` — binary build artifact, gitignored, updated in place.
+None in the repository. `/test-builds/CountFlow-MVP-RC-debug.apk` — binary build artifact,
+gitignored.
 
 ----------------------------------
 
 ## Files Modified
 
-```
-widget/glance/src/main/kotlin/com/countflow/widget/glance/CountdownWidgetLayouts.kt   (WIDE only)
-```
-
-`CHANGELOG.md` and `SESSION_SUMMARY.md` (this file) updated to close this session.
-
-**Carried over, still uncommitted from Sessions 19/20** (unaffected by this session):
-`DECISIONS.md` (D-078), `docs/WIDGET_DESIGN_GUIDE.md`, `docs/WIDGET_SIZE_MATRIX.md`,
-`widget/glance/src/test/kotlin/com/countflow/widget/glance/CountdownWidgetContentTest.kt`.
+None (besides `SESSION_SUMMARY.md` itself, per the project's standing per-session documentation
+rule). No `DECISIONS.md` entry — nothing architectural changed, this was audit-only. No
+`CHANGELOG.md` entry — nothing shipped or behaviorally changed.
 
 ----------------------------------
 
 ## Architecture Decisions
 
-**None recorded this session** — presentation-layer padding/alignment tuning only, the same
-reasoning Session 20 already applied to the WIDE redesign itself. Session 19's D-078 stands
-unchanged, still uncommitted.
+**None recorded** — audit-only session, no code touched.
 
 ----------------------------------
 
 ## Current Project Structure
 
-**Unchanged.** No module, dependency, or module-graph edge touched.
+**Unchanged.**
 
 ----------------------------------
 
@@ -153,44 +163,42 @@ unchanged, still uncommitted.
 
 ## Current Features Working
 
-All previously delivered features remain intact. This session's own change: all six selectable
-styles' WIDE (4×2) composition now reads as one centered, balanced block with real breathing room
-on both card edges, instead of both regions hugging the outer edges with a hidden dead zone between
-them. The context ↔ countdown architecture itself, and 2×2/2×1, are unchanged.
+All previously delivered features remain intact and verified working via the existing 429-test
+suite plus this session's fresh full-gate and release-build runs. Nothing changed.
 
 ----------------------------------
 
 ## Pending Work
 
-**Unchanged from Session 20's list** (this session did not resolve any of it, only refined WIDE
-spacing further):
-1. Physical-device confirmation of the WIDE redesign, now including this session's balance fix.
-2. Physical-device confirmation of Session 19's own STANDARD/percentage-parity fixes.
-3. `docs/WIDGET_SIZE_MATRIX.md`'s full Progress/Hidden/WIDE column pass.
-4. Regenerate `docs/PRIVACY_DATA_INVENTORY.md` before any Play Store submission.
-5. Owner: get a real production signing keystore, or enroll in Play App Signing.
-6. Owner: get a real, final privacy-policy URL.
-7. Re-measure cold start on a signed release build, on real hardware.
-8. Approve the next engineering milestone once the above are resolved or explicitly accepted.
+1. **Run the Samsung Galaxy A55 physical QA checklist** this session's own report compiled
+   (multi-size picker, Customize Widget UX, multi-widget isolation, rewarded flow, theming
+   contrast, TalkBack) — the actual purpose this RC APK was built for.
+2. **`KNOWN_ISSUES.md`/`TODO.md` reconciliation pass** — both are materially stale relative to
+   Sessions 16-26 (see this session's own finding above). Recommended alongside or right after the
+   physical QA pass, not deferred indefinitely.
+3. The four `TODO.md` P0 owner-decision items, unchanged: production signing keystore/Play App
+   Signing enrollment; final privacy-policy URL; regenerate `docs/PRIVACY_DATA_INVENTORY.md` +
+   Play Data Safety form; re-measure cold start on a signed release build.
+4. Approve the next engineering milestone once the above are resolved or explicitly accepted.
 
 ----------------------------------
 
 ## Known Issues
 
-Full detail in `KNOWN_ISSUES.md` — unchanged this session; nothing logged as a new `BUG-Rxxx`,
-since this session's own brief was itself the QA report, addressed directly.
+`KNOWN_ISSUES.md` itself not updated this session (see Pending Work item 2 — flagged, not fixed,
+per this audit's own no-code-change-unless-concrete-defect scope; document reconciliation is not a
+code defect). No new `BUG-Rxxx` — zero concrete defects found.
 
-**Lint:** 0 errors, 18 warnings — unchanged.
+**Lint:** 0 errors, 29 warnings — unchanged from Session 25.
 
 ----------------------------------
 
 ## Next Session Plan
 
-1. **Run the physical-device QA pass** covering Sessions 19, 20, and this session's fixes together
-   — the single most important unverified claim standing across all three.
-2. **If prioritized**, correct `docs/WIDGET_SIZE_MATRIX.md`'s stale Progress/Hidden/WIDE columns in
-   one pass covering all three sessions' changes.
-3. **Wait for the two release blockers** (signing key, privacy-policy URL) — unchanged.
+1. **Physical QA on Samsung Galaxy A55** using `/test-builds/CountFlow-MVP-RC-debug.apk` — this
+   session's own checklist (see chat report item 10) is the concrete script to follow.
+2. **Reconcile `KNOWN_ISSUES.md`/`TODO.md`** against Sessions 16-26's real state.
+3. **Wait for the four release-blocker owner decisions** — unchanged.
 4. **Get explicit approval for the next engineering milestone.**
 
 ----------------------------------
@@ -200,10 +208,12 @@ since this session's own brief was itself the QA report, addressed directly.
 **✅ Builds Successfully**
 
 ```
-./gradlew test                       → BUILD SUCCESSFUL, 408 tests, 0 failures, 0 errors
+./gradlew test                       → BUILD SUCCESSFUL, 429 tests, 0 failures, 0 errors
 ./gradlew assembleDebug                → BUILD SUCCESSFUL
-./gradlew :app:lintDebug               → 0 errors, 18 warnings (unchanged)
+./gradlew :app:lintDebug               → 0 errors, 29 warnings (unchanged from Session 25)
 ./gradlew :core:domain:koverVerify     → BUILD SUCCESSFUL, coverage gate unchanged
+./gradlew :app:assembleRelease         → BUILD SUCCESSFUL (unsigned APK, as expected)
+./gradlew :app:bundleRelease           → BUILD SUCCESSFUL (unsigned AAB, confirmed via jarsigner)
 ```
 
 No emulator/physical-device runtime session occurred this session.
@@ -212,56 +222,53 @@ No emulator/physical-device runtime session occurred this session.
 
 ## Tests
 
-**408 written, 408 passing, 0 failing — unchanged from Session 20.** No test changes were needed
-or made: this session's change is spacing/alignment only, already covered by the existing
-content-presence assertions. `:core:domain` coverage remains gated at 95%, verified by
-`koverVerify` this session.
+**Unchanged from Session 25: 429 written, 429 passing, 0 failing.** No test changes this
+session — pure verification, nothing to add or modify. `:core:domain` coverage remains gated at
+95%, confirmed passing.
 
 ----------------------------------
 
 ## Git Status
 
-**Not committed.** This session's one changed file, plus Sessions 19/20's own still-uncommitted
-files, sit in the working tree on `main`, on top of `4faab17` (Sessions 17/18's rewarded-AdMob
-work, committed directly by the owner). No commit was created this session; committing was not
-requested.
+**Not committed.** Sessions 22-26's changes remain exactly as they were; this session added no
+new working-tree changes beyond this documentation file. Working tree still sits on `master`, on
+top of the existing history (`c68119b` most recent).
 
 ----------------------------------
 
 ## Developer Notes
 
-- **Read the library's own source before relying on a layout mechanism, not just its behavior in
-  practice.** Glance's `Row.horizontalAlignment` — "whether to push the children towards the
-  start, center or end of the Row" when they don't fill it — was verified directly from
-  `Row.kt`'s own KDoc (extracted from the library's sources jar) before this fix depended on it,
-  not inferred from trial and error. The same discipline that already governs this project's
-  real-device claims applies to library API claims too.
-- **A `defaultWeight()` on only one side of a two-region layout will always push the other side to
-  the container's own edge.** This is the same underlying mechanism Session 19's dead-zone fix
-  addressed (an unweighted child's *internal* alignment) one layer up: here it's the *weighted*
-  sibling's greed, not the unweighted child's own alignment, that was the problem. Worth checking
-  both failure modes — "is the unweighted child's content centered when it shouldn't be" and "does
-  weighting only one side push the other to an edge" — any time a future two-region layout is
-  added anywhere else in this codebase.
-- Commands: `./gradlew test` · `./gradlew assembleDebug` · `./gradlew :app:lintDebug` · `./gradlew
-  :core:domain:koverVerify`. No device or emulator command was run this session.
+- **A unit test asserting a build-config value is real evidence; inspecting the actual built
+  artifact is stronger evidence still.** `AdMobConfigTest` already proved the DEBUG/RELEASE
+  identifier separation at the unit-test level; this session additionally ran real
+  `assembleRelease`/`bundleRelease` builds and grepped/jarsigner-inspected their actual output
+  files — the same "verify against the real artifact, not just the test that models it" discipline
+  this project already applies to library sources and physical-device claims.
+- **Documentation can silently fall out of sync even when the project has an explicit "update
+  every session" rule** — `SESSION_SUMMARY.md`/`CHANGELOG.md`/`DECISIONS.md` were kept current
+  throughout Sessions 22-26 because each of those sessions' own briefs explicitly asked for it;
+  `KNOWN_ISSUES.md`/`TODO.md` had no such per-session prompt and drifted for eleven sessions
+  despite `TODO.md`'s own "Continuous" section requiring otherwise. Worth checking ungoverned
+  documents periodically, not just the ones a task happens to mention.
+- Commands: `./gradlew test` · `./gradlew assembleDebug` · `./gradlew :app:lintDebug` ·
+  `./gradlew :core:domain:koverVerify` · `./gradlew :app:assembleRelease` ·
+  `./gradlew :app:bundleRelease` · `jarsigner -verify -verbose -certs <aab>`.
 
 ----------------------------------
 
-## Requires approval before Session 22
+## Requires approval before Session 28
 
-1. **Whether to commit this session's (and Sessions 19/20's) work** — still uncommitted; owner
-   should confirm before any commit is made.
-2. **Physical-device confirmation of the WIDE redesign and this balance fix together** — the
-   single largest unverified claim standing.
-3. **The two release blockers (signing key, privacy-policy URL) require owner action** — unchanged.
+1. **Physical QA results from the Samsung Galaxy A55 pass** — this session's RC APK is built and
+   waiting; the actual QA has not been run yet.
+2. **Whether/when to do the `KNOWN_ISSUES.md`/`TODO.md` reconciliation pass.**
+3. **The four release-blocker owner decisions** — unchanged, still pending.
 
 ----------------------------------
 
 ## Estimated Progress
 
 ```
-Overall Progress            69%
+Overall Progress            72%
 
 Research & Architecture    100%
 Project Setup               100%
@@ -269,16 +276,19 @@ Domain / Countdown Engine  100%
 Database                   100%
 Event CRUD / UI             100%
 Widget Engine                98%
-Widget Themes & Sizes        89%   (up from 88% — the WIDE horizontal balance fix closes the one
-                                     concrete issue found in physical QA of Session 20's design;
-                                     physical-device confirmation of the whole WIDE arc remains the
-                                     one open item)
-Background Refresh           90%
+Widget Themes & Sizes        89%   (unchanged)
+Widget Picker / Placement    90%   (unchanged)
+Customize Widget UX          98%   (unchanged)
+Background Refresh           92%   (unchanged)
 Notifications                90%
 Settings                      90%
-Release Readiness            18%   (unchanged)
+Release Readiness            25%   (up from 18% — release-build verification now includes a real
+                                     assembleRelease/bundleRelease pass with artifact-level AdMob
+                                     confirmation, not just DEBUG-side unit tests; the four owner
+                                     P0 blockers are unchanged, so this is verification depth, not
+                                     resolution)
 Billing                       0%
 Monetization (Ads)           55%   (unchanged)
-Testing                      85%
+Testing                      86%   (unchanged)
 Play Store                    0%
 ```

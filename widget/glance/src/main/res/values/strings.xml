@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="countdown_widget_label">Countdown</string>
-    <string name="countdown_widget_description">Shows how long until one of your events.</string>
+    <!--
+      Three widget-picker entries (D-079), replacing the single generic countdown_widget_label/
+      countdown_widget_description this app used before Android/Samsung's widget picker exposed
+      more than one CountFlow choice. android:label is each receiver's own display name; the
+      *_description strings are android:description in each countdown_widget_info_*.xml — the
+      short blurb some launchers show under the picker entry.
+    -->
+    <string name="countdown_widget_compact_label">CountFlow Compact</string>
+    <string name="countdown_widget_compact_description">A compact 2×1 countdown widget.</string>
+    <string name="countdown_widget_square_label">CountFlow Square</string>
+    <string name="countdown_widget_square_description">A square 2×2 countdown widget.</string>
+    <string name="countdown_widget_wide_label">CountFlow Wide</string>
+    <string name="countdown_widget_wide_description">A wide 4×2 countdown widget.</string>
 </resources>

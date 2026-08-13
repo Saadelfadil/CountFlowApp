@@ -10,6 +10,95 @@ Milestone 9, so the version stays at `0.x`.
 
 ## [Unreleased]
 
+**Multi-size widget picker (D-079).** CountFlow's home-screen widget picker now offers three
+independently-selectable entries — "CountFlow Compact" (2×1 default), "CountFlow Square" (2×2
+default), "CountFlow Wide" (4×2 default) — the same native Android/One UI concept Samsung's own
+Battery widget uses, replacing the single generic entry (always 2×2) this app shipped with before.
+**Initial widget footprint is now chosen from the launcher picker; subsequent physical resizing
+remains entirely launcher-controlled**, exactly as before — choosing "Compact" only sets where the
+widget starts, and every placed widget, regardless of which picker entry created it, stays freely
+resizable across the full 2×1↔2×2↔4×2 range from the home screen afterward. Implemented as three
+thin `GlanceAppWidgetReceiver` subclasses sharing one new `BaseCountdownGlanceWidgetReceiver` base
+(Hilt's documented multi-level-`@AndroidEntryPoint` pattern) and, through it, the exact same
+`CountdownGlanceWidget` renderer, `WidgetRenderMapper`, and responsive Compact/Standard/Wide
+layouts already frozen and Samsung Galaxy A55-verified — none of that was duplicated or touched.
+The original receiver's component name (`CountdownGlanceWidgetReceiver`, now "CountFlow Square")
+was deliberately kept unchanged so widgets already placed under it are not orphaned by this
+update. Each entry's own `res/xml/countdown_widget_info_*.xml` differs only in its default
+`targetCellWidth`/`targetCellHeight`, `android:description`, and `android:previewLayout` — every
+other attribute (min/max size, resize mode, `configure`, `widgetFeatures`) is identical across all
+three, so resizability is never narrowed by which entry a widget started from. Two new static
+`previewLayout` layouts (Compact, Wide) join the existing Square one, each mirroring its own real
+renderer's actual content hierarchy rather than a generic placeholder or a scaled copy of Square's
+— Compact correctly omits the secondary line and progress bar COMPACT never draws; Wide uses the
+same context-left/countdown-right composition the real WIDE renderer uses.
+
+**Found and fixed while tracing the background-refresh path this new architecture touches**:
+`GlanceWidgetRefreshScheduler.pruneOrphanedBindings()` queried only the original receiver's
+`ComponentName` for "live" widget ids — left unfixed, every widget placed through the new Compact
+or Wide picker entries would have looked orphaned at the next app start and had its binding
+silently deleted. Now unions live ids across all three receiver classes.
+
+**Save → Glance update path traced and confirmed already correct, not modified**:
+`WidgetConfigurationActivity.onEventBound()` already obtains the placed widget's `GlanceId` and
+calls `CountdownGlanceWidget().update(context, id)` for that exact instance (never `updateAll()`),
+then returns `RESULT_OK` with `EXTRA_APPWIDGET_ID` — verified against Glance 1.1.1's own sources
+that this path is provider-agnostic, so reconfiguring an existing widget (any of the three
+providers) already refreshes its home-screen content immediately, with no periodic-update wait.
+
+8 new tests (`WidgetProviderArchitectureTest`) cover each provider's default footprint, that all
+three share identical resizability and the same configuration Activity/renderer, and that the
+refresh scheduler's provider list matches the three declared receivers. `WidgetBinding` still has
+no size field at all — no physical size is or was ever persisted by any of this. 429 tests total
+(421 + 8), 0 failures; 0 lint errors, 29 warnings (up from 18 — entirely `HardcodedText` on the two
+new static preview layouts' fixed sample content, the same category of warning the pre-existing
+Square preview layout already carried and was never suppressed; one genuine `DisableBaselineAlignment`
+suggestion on the new Wide layout was fixed rather than left). `:core:domain:koverVerify` passes.
+**D-079** records the full architecture, alternatives considered, and open physical-device
+verification.
+
+**Customize Widget — final UX polish (MVP UI freeze candidate).** The Customize Widget screen
+redesigned for visual, discoverable, compact customization, with the frozen home-screen renderer
+(Compact/Standard/Wide layouts, `WidgetSizeClass` thresholds, Style/Progress semantics, Accent and
+rewarded-entitlement persistence, AdMob rewarded architecture) left completely untouched. Final
+target hierarchy: top bar with Save → Live Preview with a compact "Preview · {size}" label and one
+secondary line ("Resize from your home screen to change widget size.") → Style as a visible 3×2
+grid (no horizontal scroll) → Progress cards → Accent color row → Show on widget toggles.
+
+A manual widget-size preview selector was prototyped mid-milestone, then removed after
+physical-device QA judged its premise misleading: Save can never actually command Android/One UI
+to resize an already-placed widget, so presenting three tappable size options next to a Save
+button reasonably implied it could. Physical widget size is entirely launcher-controlled — the
+live preview now again renders exclusively at `WidgetConfigurationUiState.sizeClass`, the widget's
+real current footprint read once from `AppWidgetManager` when the screen opens
+(`WidgetConfigurationViewModel.load`'s own `actualSizeClass` parameter, reusing the existing
+detection path unchanged), with no UI on this screen able to change it. `WidgetBinding` has no
+size field at all, so Save was always structurally incapable of persisting a size value regardless
+— this is now also structurally true of the UI, not just the persistence layer: there is no setter
+for `sizeClass` anywhere on the ViewModel.
+
+The Style row is a plain `chunked(3)` of `WidgetStyle.selectable`'s own declared order
+(Minimal/Material/Glass, then OLED/Rounded/Modern) — no reordering needed — with each thumbnail a
+responsive `aspectRatio(1f)` square instead of a fixed size, so the grid stays legible across
+phone widths without horizontal scrolling. Locked rewarded styles (Glass, Rounded, Modern, until
+unlocked) keep their thumbnail fully visible and add a small circular lock badge inside its
+top-right corner instead of the old dimmed treatment or a "🔒" appended to the label; the label
+stays plain, and the content description communicates "locked, requires unlocking" for
+accessibility. Show-on-widget toggles rebuilt on the same `ListItem` +
+`clickable(role = Role.Switch)` whole-row-tappable convention already established in
+`feature/settings`. Progress cards, Accent color row (including its own horizontal scroll nested
+inside the page's vertical scroll), and all existing Style/Progress/Accent/toggle persistence
+behavior are unchanged. ViewModel tests cover: the actual widget size producing the matching
+preview size class and label for all three footprints; Save persisting Style, Progress, Accent,
+and each visibility toggle into `WidgetBinding`; reopening Customize restoring previously-saved
+customization; and two widgets with identical customization but different actual sizes producing
+identical saved bindings (proof the real size never flows into anything Save writes) — replacing
+the now-removed manual-selection tests from the selector's brief existence. 421 tests total, 0
+failures; 0 lint errors, 18 warnings (unchanged, pre-existing/environmental);
+`:core:domain:koverVerify` passes. No `DECISIONS.md` entry — the size selector's removal restores
+this screen to purely presentation-layer UI state; no architecture was ever introduced by its
+brief existence, so none needed reverting.
+
 **4×2 (WIDE) horizontal balance fix.** Real Samsung Galaxy A55 testing confirmed the WIDE design
 system's context/countdown split (below) was directionally correct but both regions hugged the
 card's outer edges, with an oversized, accidental gap between them. Root cause: only the context

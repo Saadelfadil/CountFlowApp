@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -40,7 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,14 +101,18 @@ class WidgetConfigurationActivity : ComponentActivity() {
             return
         }
 
-        val sizeClass = currentWidgetSizeClass()
+        // Read once, outside Compose — the real footprint this placed widget currently occupies.
+        // Physical widget size is entirely launcher-controlled; this screen only displays it
+        // (WidgetConfigurationUiState.sizeClass, and the "Preview · {size}" label below), with no
+        // way to change it from here — see that property's own doc for why.
+        val actualSizeClass = currentWidgetSizeClass()
 
         setContent {
             CountFlowTheme {
                 val viewModel: WidgetConfigurationViewModel = hiltViewModel()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-                LaunchedEffect(Unit) { viewModel.load(AppWidgetId(appWidgetId)) }
+                LaunchedEffect(Unit) { viewModel.load(AppWidgetId(appWidgetId), actualSizeClass) }
                 LaunchedEffect(uiState.isSaved) { if (uiState.isSaved) onEventBound() }
                 // Prepares a rewarded ad the moment the unlock dialog appears — see
                 // WidgetConfigurationViewModel.onUnlockDialogShown's own doc for why this is not
@@ -119,7 +125,6 @@ class WidgetConfigurationActivity : ComponentActivity() {
 
                 WidgetConfigurationContent(
                     uiState = uiState,
-                    sizeClass = sizeClass,
                     onEventSelected = viewModel::onEventSelected,
                     onChangeEvent = viewModel::onChangeEvent,
                     onWidgetStyleChange = viewModel::onWidgetStyleChange,
@@ -189,7 +194,6 @@ class WidgetConfigurationActivity : ComponentActivity() {
 @Composable
 private fun WidgetConfigurationContent(
     uiState: WidgetConfigurationUiState,
-    sizeClass: WidgetSizeClass,
     onEventSelected: (EventId) -> Unit,
     onChangeEvent: () -> Unit,
     onWidgetStyleChange: (WidgetStyle) -> Unit,
@@ -255,7 +259,6 @@ private fun WidgetConfigurationContent(
 
             uiState.isCustomizing -> CustomizeStep(
                 uiState = uiState,
-                sizeClass = sizeClass,
                 onWidgetStyleChange = onWidgetStyleChange,
                 onProgressStyleChange = onProgressStyleChange,
                 onShowTitleChange = onShowTitleChange,
@@ -374,7 +377,6 @@ private fun EventPickerRow(event: Event, isCurrent: Boolean, onClick: () -> Unit
 @Composable
 private fun CustomizeStep(
     uiState: WidgetConfigurationUiState,
-    sizeClass: WidgetSizeClass,
     onWidgetStyleChange: (WidgetStyle) -> Unit,
     onProgressStyleChange: (ProgressStyle) -> Unit,
     onShowTitleChange: (Boolean) -> Unit,
@@ -397,26 +399,33 @@ private fun CustomizeStep(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         uiState.previewModel?.let { model ->
             // Capped to PREVIEW_MAX_WIDTH rather than the old fillMaxWidth() square, which ran
             // ~340dp tall on a typical phone and pushed every control below it near or past the
             // fold — confirmed on-device (docs/RESPONSIVE_WIDGET_REVIEW.md) before settling on
-            // this width. Sized by sizeClass, not always square, so the shape itself previews
-            // which footprint is actually placed — a 2×1 widget should look like a short wide
-            // bar here too, not a shrunken square.
+            // this width. Sized by uiState.sizeClass — the real, launcher-controlled footprint
+            // this placed widget currently occupies, not a user choice made on this screen (a
+            // manual size selector shipped briefly and was removed: Save could never actually
+            // resize the real widget, so offering the choice here was misleading). A short
+            // "Preview · {size}" label plus one secondary guidance line communicate that the shape
+            // is informational, not interactive.
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 WidgetPreviewCard(
                     model = model,
-                    sizeClass = sizeClass,
+                    sizeClass = uiState.sizeClass,
                     modifier = Modifier.width(PREVIEW_MAX_WIDTH).padding(vertical = 8.dp),
                 )
                 Text(
-                    text = "Preview shown at this widget's current size (${sizeClass.displayName()}). Resize it from the home screen to change size.",
+                    text = "Preview · ${uiState.sizeClass.displayName()}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = "Resize from your home screen to change widget size.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -425,60 +434,75 @@ private fun CustomizeStep(
         // ("what will MY widget look like") belongs to WidgetPreviewCard alone, above. Tapping a
         // card here changes the Main Preview immediately; the card itself never fills with the
         // user's own event data. See WidgetStyleThumbnail.kt.
-        Text("Style", style = MaterialTheme.typography.titleSmall)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            WidgetStyle.selectable.forEach { style ->
-                WidgetStyleThumbnail(
-                    style = style,
-                    selected = uiState.widgetStyle == style,
-                    locked = uiState.isStyleLocked(style),
-                    onClick = { onWidgetStyleChange(style) },
-                )
+        //
+        // A fixed 3-column grid, not a horizontally scrolling row — found to hide half the six
+        // options off-screen with no visual hint more existed. WidgetStyle.selectable's own
+        // declared order (Minimal, Material, Glass, OLED, Rounded, Modern) already chunks evenly
+        // into the two rows the brief's own mockup shows.
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Style", style = MaterialTheme.typography.titleSmall)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                WidgetStyle.selectable.chunked(3).forEach { rowStyles ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        rowStyles.forEach { style ->
+                            WidgetStyleThumbnail(
+                                style = style,
+                                selected = uiState.widgetStyle == style,
+                                locked = uiState.isStyleLocked(style),
+                                onClick = { onWidgetStyleChange(style) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
             }
         }
 
-        Text("Progress", style = MaterialTheme.typography.titleSmall)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ProgressStyle.entries.forEach { style ->
-                ProgressStyleThumbnail(
-                    style = style,
-                    selected = uiState.progressStyle == style,
-                    onClick = { onProgressStyleChange(style) },
-                )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Progress", style = MaterialTheme.typography.titleSmall)
+            // Same responsive-card language as the Style grid above (a plain Row is enough here —
+            // three items always fit at once, so nothing needs to scroll or wrap).
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ProgressStyle.entries.forEach { style ->
+                    ProgressStyleThumbnail(
+                        style = style,
+                        selected = uiState.progressStyle == style,
+                        onClick = { onProgressStyleChange(style) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
 
-        Text("Accent color", style = MaterialTheme.typography.titleSmall)
-        AccentColorPicker(
-            selected = uiState.accentColor,
-            onSelect = onAccentColorChange,
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Accent color", style = MaterialTheme.typography.titleSmall)
+            AccentColorPicker(
+                selected = uiState.accentColor,
+                onSelect = onAccentColorChange,
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            )
+        }
 
-        Text("Show on widget", style = MaterialTheme.typography.titleSmall)
-        ToggleRow("Title", uiState.showTitle, onShowTitleChange)
-        ToggleRow("Emoji", uiState.showEmoji, onShowEmojiChange)
-        ToggleRow("Target date", uiState.showTargetDate, onShowTargetDateChange)
-        ToggleRow("Percentage", uiState.showPercentage, onShowPercentageChange)
+        Column {
+            Text("Show on widget", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
+            ToggleRow("Title", uiState.showTitle, onShowTitleChange)
+            ToggleRow("Emoji", uiState.showEmoji, onShowEmojiChange)
+            ToggleRow("Target date", uiState.showTargetDate, onShowTargetDateChange)
+            ToggleRow("Percentage", uiState.showPercentage, onShowPercentageChange)
+        }
     }
 }
 
+/** A standard, whole-row-clickable Material 3 switch row — the same `ListItem` + `Role.Switch` pattern `feature/settings`'s own `SettingsScreen` already established. */
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
+    ListItem(
+        headlineContent = { Text(label) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Switch) { onCheckedChange(!checked) },
+    )
 }
 
 internal fun WidgetStyle.displayName(): String = when (this) {
@@ -497,7 +521,7 @@ internal fun ProgressStyle.displayName(): String = when (this) {
     ProgressStyle.CIRCULAR -> "Ring"
 }
 
-private fun WidgetSizeClass.displayName(): String = when (this) {
+internal fun WidgetSizeClass.displayName(): String = when (this) {
     WidgetSizeClass.COMPACT -> "2×1"
     WidgetSizeClass.STANDARD -> "2×2"
     WidgetSizeClass.WIDE -> "4×2"
